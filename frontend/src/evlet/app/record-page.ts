@@ -37,7 +37,7 @@ import { CardRow, fieldsSummary, imageSource, MoreRow, RecordImage, rowsText, va
 import type { LayoutBlock } from '../model/schema';
 import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage, type RelatedPages } from './related-data';
 import { filterFields } from './filters';
-import { follow, openForm, takePrefill, type Outcome } from './prompts';
+import { confirmText, follow, openForm, takePrefill, type Outcome } from './prompts';
 import { openEvaPanel } from '../eva/chat';
 import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden, keepCreateAttempts, discardKeptChanges } from './unsaved';
 import { UnsavedBar } from './unsaved-bar';
@@ -72,17 +72,6 @@ function gate(field: Field, locked: Readable<boolean>, canWrite: boolean): Field
  * sidebar after it, the way the page reads, and it stays folded once the sidebar has left.
  */
 export const SIDE_DRAWER = '(max-width: 1380px)';
-
-/** Ask a model script's yes-or-no question (this.ui.confirm); resolves true for OK. */
-function confirmText(text: string): Promise<boolean> {
-  return new Promise(resolve => {
-    let answered = false;
-    const answer = (value: boolean, done: () => void) => { answered = true; resolve(value); done(); };
-    openModal({ title: text, icon: 'info', narrow: true, body: () => null,
-      footer: done => DialogFooter({ cancel: () => answer(false, done), submit: { label: 'OK', variant: 'primary', onClick: () => answer(true, done) } }),
-      onClose: () => { if (!answered) resolve(false); } });
-  });
-}
 
 /** Ask before discarding unsaved changes; resolves true to leave. */
 export function confirmDiscard(reason?: string): Promise<boolean> {
@@ -843,7 +832,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       button.tabIndex = -1;
       return button;
     })()}</span>` : null;
-    return html`<div class="ev-cmp-table" class:is-empty=${empty} data-table-block=${child.name}>
+    // Hidden while the Table's applies_when or visible_when is false (a save removes rows that do not apply).
+    return html`<div class="ev-cmp-table" class:is-empty=${empty} hidden=${() => !table.rules.get().visible} data-table-block=${child.name}>
       ${withTitle ? html`<div class="ev-cmp-th"><h3>${child.label}</h3><span class="muted num ev-cmp-count">${() => String(count())}</span>${selectionBar()}<span class="grow"></span>${tools}</div>`
         : toolsOut ? (toolsOut.set([selectionBar(), tools]), null) : html`<div class="ev-cmp-th ev-cmp-th-tools">${selectionBar()}<span class="grow"></span>${tools}</div>`}
       ${when(empty, () => html`<div class="ev-cmp-empty"><span>${`No ${child.label.toLowerCase()} yet.`}</span></div>`)}
@@ -887,9 +877,12 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
           const collapsed = block.collapsible === false ? false : block.collapsed ?? true;
           const start = folds.start(collapsed === 'empty' ? untrack(() => table.rows.get().length) === 0 : collapsed, position, []);
           // Drawn while closed too, so print shows its rows.
-          rows.push(MoreRow({ title: child.label, folds, start, wide: true, eager: true,
+          const more = MoreRow({ title: child.label, folds, start, wide: true, eager: true,
             description: child.read_only ? derivedText() : undefined, tools: () => tools.get(),
-            summary: () => rowsText(table.rows.get().length), none: 'No rows', body: () => compactTable(child, false, tools) }));
+            summary: () => rowsText(table.rows.get().length), none: 'No rows', body: () => compactTable(child, false, tools) });
+          // The whole row hides with its Table's rules.
+          effect(() => { more.hidden = !table.rules.get().visible; });
+          rows.push(more);
           break;
         }
         case 'related': {

@@ -28,11 +28,15 @@ DEFAULT_TABLE_ROWS = 100
 class Table:
     """Owned rows. `min_rows` is checked on save (`required=True` means at least one row);
     `max_rows` (default 100, at most 1,000) bounds the collection in both runtimes. `sections=True` lets
-    the Table hold section rows: headings that group the rows below them (evlet/sections.py). `totals` names
-    fields of the owning model shown under the table, in order (checked when the model is defined)."""
+    the Table hold section rows: headings that group the rows below them (evlet/sections.py).
+
+    `applies_when` and `visible_when` are finite Booleans on the record that owns the rows, as on a field:
+    while applies_when is false the Table is hidden, calculations read it as empty and a save removes
+    its rows; while visible_when is false it is only hidden (docs/finite-calculations.md#field-rules).
+    `totals` names fields of the owning model shown under the table, in order (checked when the model is defined)."""
     def __init__(self, child, *, required=False, min_rows=None, max_rows=DEFAULT_TABLE_ROWS, label=None,
                  storage_name=None, owner_field='evlet_owner', panel=True, copy=True, sections=False, derived=False,
-                 totals=()):
+                 applies_when=None, visible_when=None, totals=()):
         for name, value in (('min_rows', min_rows), ('max_rows', max_rows)):
             if value is not None and (type(value) is not int or value < 0):
                 raise ValueError(f'Table {name} must be a nonnegative integer')
@@ -67,6 +71,16 @@ class Table:
         if not isinstance(totals, (tuple, list)) or not all(type(name) is str for name in totals):
             raise ValueError('Table totals must be a tuple of field names of the owning model')
         self.totals = tuple(totals)
+        from .fields import _finite_option
+        self.applies_when = _finite_option(applies_when, 'applies_when')
+        self.visible_when = _finite_option(visible_when, 'visible_when')
+        if applies_when is not None and self.required:
+            raise ValueError('A Table that may not apply cannot require rows; drop required/min_rows or applies_when')
+        if applies_when is not None and derived:
+            raise ValueError('derive() builds the rows of a derived Table; applies_when is for rows people enter')
+        if visible_when is not None and self.required:
+            raise ValueError('A Table that requires rows must stay visible, so it cannot have visible_when; '
+                             'drop required/min_rows, or use applies_when without them')
         if sections and 'section' in {*getattr(child, '__declared_fields__', {}), *getattr(child, '__tables__', {})}:
             # {"section": label} marks a section row, so the rows cannot have a field of that name.
             raise ValueError('A Table with sections=True needs a row model without a field named section')
@@ -197,7 +211,7 @@ NAME = r'[A-Za-z][A-Za-z0-9_]*'
 # Context.action(model, record_id, name, **inputs) takes these names itself.
 RESERVED_INPUTS = ('self', 'model', 'record_id', 'name')
 INPUT_OPTIONS = ('compute', 'query', 'fetch', 'initial', 'applies_when', 'required_when', 'locked_when',
-                 'visible_if', 'required_if', 'read_only_if')
+                 'visible_when', 'visible_if', 'required_if', 'read_only_if')
 
 
 def guard_expression(value, name):

@@ -134,11 +134,73 @@ def test_wrong_hook_names_fail_where_they_are_declared(declare, message):
         declare()
 
 
-def test_a_prompt_has_no_script(tmp_path):
-    from evlet import Prompt
-    with pytest.raises(ValueError, match='a Prompt has no model script'):
-        class Ask(Prompt):
-            reason = Text(on_change='changed')
+PROMPT = '''
+from evlet import Prompt
+
+
+class Confirm(Prompt):
+    order_date = Text(on_change='date_changed', tooltip=Js('date_tip'))
+
+    class Line(Child):
+        qty = Decimal(scale=2, control='qty_input', look=Js('qty_look'))
+
+    lines = Table(Line)
+
+    class Meta:
+        script = 'quote.js'
+        on_open = 'opened'
+
+    def submit(self):
+        return None
+'''
+
+
+def test_a_prompt_takes_a_script_and_its_open_response_carries_it(tmp_path):
+    from evlet.prompts import schema
+    module, _ = models(tmp_path, QUOTE + PROMPT)
+    entries = schema(Registry(module.Quote), module.Confirm, module.Confirm.__form_name__)
+    prompt, line = entries[0], entries[1]
+    # The same file a model names, in the shape /api/schema uses: the URL, on_open and each field's hooks.
+    assert prompt['script'] == {'url': Registry(module.Quote).scripts[module.Quote]['url'], 'on_open': 'opened'}
+    assert next(item for item in prompt['fields'] if item['name'] == 'order_date')['script'] == {'on_change': 'date_changed', 'tooltip': 'date_tip'}
+    assert line['fields'][0]['script'] == {'control': 'qty_input', 'look': 'qty_look'} and 'script' not in line
+    app = start(Database(tmp_path / 'db.sqlite3', Registry(module.Quote)))
+    try:
+        assert http(app, 'GET', prompt['script']['url'])[0] == 200
+    finally:
+        app.database.close()
+
+
+@pytest.mark.parametrize('change, message', [
+    (("        script = 'quote.js'\n        on_open = 'opened'\n", "        title = 'Confirm'\n"), r"Confirm.order_date names a script method, so Confirm needs Meta.script"),
+    (("script = 'quote.js'", "script = 'quote.ts'"), r"Confirm.Meta.script: name a .js file"),
+    (("script = 'quote.js'", "script = 'missing.js'"), r"Confirm.Meta.script: missing.js is not a file"),
+])
+def test_a_prompts_script_and_hooks_are_checked_when_it_is_defined(tmp_path, change, message):
+    with pytest.raises(ValueError, match=message):
+        models(tmp_path, PROMPT.replace(*change), {'quote.js': '', 'quote.ts': ''})
+
+
+def test_a_prompt_without_a_script_has_none_and_custom_blocks_stay_refused(tmp_path):
+    from evlet.prompts import check, schema
+    module, _ = models(tmp_path, '''
+from evlet import Prompt
+
+
+class Plain(Prompt):
+    note = Text()
+
+    class Meta:
+        layout = (Main(('note',)), Section('Drawn', custom='draw'))
+
+    def submit(self):
+        return None
+''', {})
+    assert module.Plain.__script__ is None
+    with pytest.raises(ValueError, match='custom blocks are not supported in a prompt'):
+        check(module.Plain)
+    module.Plain.Meta.layout = (module.Main(('note',)),)
+    assert 'script' not in schema(Registry(), module.Plain, module.Plain.__form_name__)[0]
 
 
 def test_scripts_are_served_hashed_with_the_usual_csp_and_cannot_import_evlet_files(tmp_path):

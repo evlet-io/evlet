@@ -20,7 +20,7 @@ from .permissions import trusted
 
 RESULT_LIMIT = 65536
 EXPIRES = 3600
-META = ('title', 'primary', 'layout', 'focus')
+META = ('title', 'primary', 'layout', 'focus', 'script', 'on_open')
 
 # Every Prompt class by its id (module.qualname); a ticket names the prompt it opened.
 PROMPTS = {}
@@ -62,13 +62,19 @@ class Prompt(Model):
         for key, value in vars(cls).items():
             if isinstance(value, Table):
                 value.child.__form_name__ = f'{cls.__form_name__}.{key}'
-        # Model scripts belong to documents (docs/model-scripts.md); a prompt has none.
-        from .fields import Field
+        # A model script, as on a document (docs/model-scripts.md): its hooks on the prompt's fields and rows.
+        from .fields import Field, script_method
         rows = [value.child for value in vars(cls).values() if isinstance(value, Table)]
         hooked = [f'{owner.__name__}.{name}' for owner, fields in ((cls, vars(cls)), *((row, getattr(row, '__app_fields__', {})) for row in rows))
                   for name, field in fields.items() if isinstance(field, Field) and field.hooks]
-        if hooked:
-            raise ValueError(f'{hooked[0]}: a Prompt has no model script, so its fields take no on_change, Js, look=Js or control')
+        script, on_open = option(cls, 'script'), option(cls, 'on_open')
+        if on_open is not None:
+            hooked.append(f'{cls.__name__}.Meta.on_open')
+            script_method(on_open, f'{cls.__name__}.Meta.on_open')
+        if hooked and script is None:
+            raise ValueError(f'{hooked[0]} names a script method, so {cls.__name__} needs Meta.script, the .js file that holds it')
+        from .ui.scripts import prompt_script
+        cls.__script__ = None if script is None else prompt_script(cls, script, on_open)
 
     def __init__(self, **values):
         """Starting values, applied after load(); trusted like load()."""
@@ -315,7 +321,7 @@ def check(prompt):
     if warnings:
         raise ValueError(warnings[0])
     if any(block['kind'] == 'custom' for block in blocks):
-        raise ValueError(f'{prompt.__name__}.Meta.layout: a Prompt has no model script, so it has no custom blocks')
+        raise ValueError(f'{prompt.__name__}.Meta.layout: custom blocks are not supported in a prompt')
     if option(prompt, 'focus') is not None:
         check_focus(f'{prompt.__name__}.Meta.focus', prompt, option(prompt, 'focus'))
     return blocks
@@ -341,6 +347,7 @@ def schema(registry, prompt, name):
                      for table, declared in prompt.__tables__.items()],
         'permissions': {'create': True, 'update': True, 'delete': False}, 'actions': [], 'autosave': False,
         **({'focus': option(prompt, 'focus')} if option(prompt, 'focus') else {}),
+        **({'script': vars(prompt)['__script__']} if vars(prompt).get('__script__') else {}),
     }]
     for table, declared in prompt.__tables__.items():
         entries += schema(registry, declared.child, declared.child.__form_name__)
@@ -361,9 +368,14 @@ def surface(business, user, ticket, prompt, draft, model, record, errors, states
         readable = business.policy.fields(user, model)
         title = getattr(record, field, None) if field in readable else None
         source = {'model': business.registry.name_for(model), 'id': record.id, 'title': str(title or record.id)}
+    models = schema(business.registry, prompt, name)
+    # A Table that load() (or the starting values) filled takes no new rows (form_draft): the grid offers none.
+    for child in models[0]['children']:
+        if draft._rows.get(child['name']):
+            child['max_rows'] = len(draft._rows[child['name']])
     return {'ticket': ticket, 'name': name, 'title': option(prompt, 'title') or prompt.__name__,
             'primary': option(prompt, 'primary') or 'Submit', 'source': source,
-            'models': schema(business.registry, prompt, name), 'values': draft_values(draft), 'errors': errors, 'states': states}
+            'models': models, 'values': draft_values(draft), 'errors': errors, 'states': states}
 
 
 def check_origin(business, context, origin, model, record_id):

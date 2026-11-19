@@ -8,6 +8,20 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Model scripts in prompts.** A Prompt takes `Meta.script` and `Meta.on_open`, and its fields and its Table rows'
+  fields take `on_change=`, `tooltip=Js(...)`, `look=Js(...)` and `control=`, as on a model. A hook on a prompt
+  without `Meta.script` now fails naming the field, instead of every hook being refused. The open response carries
+  the script, the modal runs it over the prompt's form (`id` null, `is_new` true; `call`, `move`, `save` and
+  `reload` reject), and closing the modal makes its views inert. Custom blocks stay unsupported in a prompt
+  ([docs/model-scripts.md](docs/model-scripts.md#in-a-prompt)).
+- **`visible_when=` on fields.** A finite Boolean such as `F("payment") == "card"` that hides the field
+  while it is false, live in the browser. Display only: the value is kept, saved and validated as usual,
+  so it is not a permission boundary. An undecided rule shows the field. A required field (`required=True`
+  or `required_when`) cannot have it; use `applies_when` with `required_when` for that.
+- **`applies_when=` and `visible_when=` on `Table(...)`.** `visible_when` hides the whole Table block.
+  `applies_when` false hides it, calculations read it as empty, and a save removes its rows, as for a field
+  that does not apply. Passing either to `Table` raised `TypeError: unexpected keyword argument` before.
+  `Document.table_states` / `tableStates` report them; `rule_states` / `ruleStates` now include `visible`.
 - **Declared totals under a table.** `Table(Line, totals=("net_total", "discount_percent", "grand_total"))`
   names fields of the owning model to show under the table, in that order, in place of the inferred totals:
   a read-only value for a calculated or locked field, the usual control for one people edit (the lines below
@@ -19,9 +33,31 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Changed
 
+- **Derived values show without the 600 ms pause.** The form changes the draft only when an edit is committed, so
+  the pause before `POST /api/_draft` guarded nothing and delayed every derived value. The preview now goes at once:
+  changes in one turn of the event loop as one request, at most one in flight, and once more when it returns if the
+  draft moved meanwhile; a stale answer is still dropped. `PREVIEW_PAUSE_MS` is gone (an internal name).
 - Link dropdowns, record pickers and the search bar also search the model's own text fields the
   option shows with `F("field")`, so typing what the subtext says finds the record ("fifo" in
   `code · valuation`). Those matches rank after the title and `Meta.search_fields`.
+
+### Fixed
+
+- **A suggestion (`initial=`) no longer overwrites what the caller set.** One that reads a calculated field fired
+  on any save (a rate typed under manual pricing was replaced when only a note changed) and over a value sent on
+  create; one that reads through a Link that is itself suggested replaced a value sent in the same create. An
+  input now counts as changed only when its value after the write differs from the saved one, and a value the
+  caller sent always stays, in the browser and on the server (API, MCP, Eva, imports)
+  ([docs/finite-calculations.md](docs/finite-calculations.md)).
+- **Keys typed in a script control in a table cell reach it.** The grid started its own edit and swallowed the
+  first key, so typing 25 gave 5. While the focus is inside a control drawn by `control=`, its keys are its own; the
+  grid keeps Tab and Shift Tab ([docs/model-scripts.md](docs/model-scripts.md#control)).
+- **A prompt's fields are readable on a phone.** Its field grid stayed four columns (68 px each at 390 px wide, a
+  date showing one character), because the rules that narrow it belong to the record page. It now narrows with the
+  dialog's own width, at the same steps.
+- **A prompt Table that `load()` filled offers no Add row.** The modal still showed Add row, Enter on the last cell
+  added a blank row and Duplicate copied one, and submit then refused it (422). The open response now gives such a
+  table `max_rows` at its rows, and Duplicate and Insert below respect `max_rows` like Add row.
 
 ## 0.4.13 (17-11-2026)
 

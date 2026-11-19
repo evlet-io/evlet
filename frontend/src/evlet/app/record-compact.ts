@@ -49,7 +49,7 @@ export function valueText(field: FieldLike, links: LinkSource | null): string {
 /** "Label: value · Label: Not set · ..." over the fields that apply, in their order. A number at a zero default reads
  * Not set (isBlank). */
 export function fieldsSummary(fields: FieldLike[], links: LinkSource | null): string {
-  return fields.filter(field => field.rules.get().applies).map(field => `${field.meta.label}: ${(!isBlank(field) && valueText(field, links)) || 'Not set'}`).join(' · ');
+  return fields.filter(field => field.rules.get().visible).map(field => `${field.meta.label}: ${(!isBlank(field) && valueText(field, links)) || 'Not set'}`).join(' · ');
 }
 
 /** "3 rows", "1 row" or "No rows". */

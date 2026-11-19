@@ -36,7 +36,7 @@ PROJECTS = Workspace('Projects', icon='kanban', groups=(
 ))
 
 COMPANY = Workspace('Company', icon='building-2', groups=(
-    NavGroup('People', icon='users', items=('employee',)),
+    NavGroup('People', icon='users', items=('employee', 'expense')),
     NavGroup('Catalogue', icon='package', items=('item',)),
 ))
 

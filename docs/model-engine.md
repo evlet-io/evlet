@@ -47,6 +47,10 @@ class Contact(Model):
   so `required=True` works. The field uses two columns, `<name>` (HTML) and `<name>_text` (the
   plain-text extract that search, filters and list cells use); it cannot be unique or indexed.
 - `Image()` holds one image, such as an item photo or a company logo. See [Image fields](#image-fields).
+- Field rules decide when a field applies, is required, is locked or shows: `applies_when=`,
+  `required_when=`, `locked_when=` and `visible_when=`, finite Booleans such as `F("stage") == "lost"`.
+  A `Table` takes `applies_when=` and `visible_when=` too. `visible_when` is display only; see
+  [finite-calculations.md](finite-calculations.md#field-rules).
 - Omitted values use defaults; explicit `None` stays null unless required.
   Callable defaults run when a new record is constructed. A partial update keeps
   omitted values, including their original defaults.
@@ -422,7 +426,7 @@ rich text images). The field's value is that attachment's id: an `int` in Python
 - **Trusted Python and the Connector.** A trusted session may save any held image's id (it has no
   person); the other rules are the same. The Connector uses the HTTP routes above.
 - **Options.** `label`, `help_text`, `tooltip`, `required`, `hidden`, `read_only`, `panel` and the
-  rules (`required_when`, `locked_when`, `applies_when`). Images have no `default`, `compute`,
+  rules (`required_when`, `locked_when`, `applies_when`, `visible_when`). Images have no `default`, `compute`,
   `query` or `fetch`, and cannot be unique or indexed.
 - **Migrations.** One nullable integer column, added with `AddField("product", "photo", Image())`.
 

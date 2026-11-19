@@ -260,6 +260,8 @@ def test_an_action_returns_a_prompt_with_a_ticket_and_writes_nothing(app):
     model = surface['models'][0]
     assert model['name'] == '_prompt.confirm_quotation' and model['children'][0]['model'] == '_prompt.confirm_quotation.lines'
     assert [block['kind'] for block in model['record_layout']['blocks']] == ['section', 'table']
+    # load() filled the lines, so the table takes no new rows: max_rows is the rows it has, and the grid offers no Add.
+    assert model['children'][0]['max_rows'] == 2
     # The finite plan ships, so the browser calculates as on a record.
     assert model['calculation']['plan']['tables']['$root']['model'] == '_prompt.confirm_quotation'
     assert read(app, Quotation, quotation_id)._detail == before._detail

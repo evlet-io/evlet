@@ -560,7 +560,7 @@ class Customization:
         for name, field in model.__declared_fields__.items():
             if getattr(field, 'instance', None) and name in readable:
                 entry['fields'].append({**field_schema(field), 'read_only': name not in writable, 'stored': True, 'compute': None,
-                                        'initial': None, 'applies_when': None, 'required_when': None, 'locked_when': None})
+                                        'initial': None, 'applies_when': None, 'required_when': None, 'locked_when': None, 'visible_when': None})
         props = self.effective.get(model, {})
         for field in entry['fields']:
             changed = props.get(field['name'])

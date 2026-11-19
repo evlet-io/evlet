@@ -42,7 +42,7 @@ export function isBlank(field: FieldLike): boolean {
 
 /** "3 of 5 filled", or "Required missing" when a required field that applies is empty. */
 export function foldSummary(fields: FieldLike[]): string {
-  const shown = fields.filter(field => field.rules.get().applies);
+  const shown = fields.filter(field => field.rules.get().visible);
   if (shown.some(field => field.rules.get().required && !field.calculated && isEmpty(field.value.get()))) return 'Required missing';
   return `${shown.filter(field => !isBlank(field)).length} of ${shown.length} filled`;
 }

@@ -70,3 +70,18 @@ export function server(routes: Route[]) {
   };
   return { fetch: fetch as typeof globalThis.fetch, sent };
 }
+
+/**
+ * The recorded order schema with display rules added, as the server would compile them: remark shows only while the
+ * stage is open (visible_when), and the lines Table applies only while it is not lost (applies_when), so total and
+ * line_count read it as empty then. Plan entries are placed before what reads them, as compile_plan orders them.
+ */
+export function withTableRules(schema: any) {
+  const changed = copy(schema), order = changed.models.find((model: any) => model.name === 'order');
+  const stage = (op: string, value: string) => ({ $expr: op, args: [{ $expr: 'ref', field: 'stage', scope: 'self' }, { $expr: 'literal', type: 'text', value }] });
+  const entry = (field: string, kind: string, expression: unknown, table = false) => ({ expression, field, kind, path: [], reads: [['self', null, 'stage']],
+    result_type: 'boolean', rounding: null, scale: null, stored: true, target: `${field}:${kind}`, target_type: table ? 'table' : 'text', ...(table ? { table: true } : {}) });
+  order.fields.find((field: any) => field.name === 'remark').visible_when = stage('eq', 'open');
+  order.calculation.plan.fields.unshift(entry('lines', 'applies_when', stage('ne', 'lost'), true), entry('remark', 'visible_when', stage('eq', 'open')));
+  return changed;
+}

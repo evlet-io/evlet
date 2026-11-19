@@ -268,6 +268,11 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .prompt .prompt-table { margin-top: 12px; grid-column: 1 / -1; min-width: 0; }
 /* The fields block spans the dialog too, so a Table never pushes it into a sliver of the two-column grid. */
 .prompt .modal-b > .ev-cmp-grid { grid-column: 1 / -1; min-width: 0; }
+/* The field grid narrows with the dialog's own width, at a record page's main column steps (DOC_MAIN_STEPS). */
+.prompt .modal-b { container-type: inline-size; }
+@container (max-width: 639px) { .prompt .ev-cmp-grid .fs-g { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (max-width: 519px) { .prompt .ev-cmp-grid .fs-g { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; } }
+@container (max-width: 359px) { .prompt .ev-cmp-grid .fs-g { grid-template-columns: 1fr; } }
 .prompt .ev-error { margin-top: 8px; }
 
 /* ---------- the filter side panel, docked beside the list ---------- */

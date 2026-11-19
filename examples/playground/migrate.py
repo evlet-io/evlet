@@ -258,6 +258,38 @@ def legacy_registry():
     return Registry(Customer, Invoice, Payment)
 
 
+class ExpenseRecord(Model):
+    """Frozen creation schema of an expense claim."""
+    storage_name = 'expense'
+    title = Text(required=True, max_length=120)
+    amount = Currency(minimum='0', default='0.00')
+    payment = Select(['cash', 'card', 'split'], required=True, default='cash')
+    card_last4 = Text(max_length=4)
+    split_total = Currency()
+
+
+class ExpenseSplitRow(Model):
+    """Frozen creation schema of an expense's Split between table."""
+    storage_name = 'expense_splits'
+    evlet_owner = Link(ExpenseRecord, required=True, index=True)
+    evlet_position = Integer(required=True, default=0)
+    person = Text(required=True, max_length=80)
+    amount = Currency(minimum='0', default='0.00')
+
+
+class ExpenseReceiptRow(Model):
+    """Frozen creation schema of an expense's Receipts table."""
+    storage_name = 'expense_receipts'
+    evlet_owner = Link(ExpenseRecord, required=True, index=True)
+    evlet_position = Integer(required=True, default=0)
+    reference = Text(required=True, max_length=40)
+    note = Text(max_length=120)
+
+
+# Expense claims, whose form shows what the payment needs (visible_when, and applies_when on a Table).
+migrations.append(Migration('0022_expenses', CreateModel(ExpenseRecord), CreateModel(ExpenseSplitRow), CreateModel(ExpenseReceiptRow)))
+
+
 def configured_database():
     path = os.environ.get('EVLET_DATABASE', str(Path(__file__).parent / '.data' / 'playground.sqlite3'))
     return Database(path, registry, migrations=migrations)

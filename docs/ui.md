@@ -40,9 +40,10 @@ A field declared `column=False` (a currency source, say) starts hidden in a chil
 Columns menu and is left out of a list's default columns; the form still shows it
 ([model-engine.md](model-engine.md#more-field-types)).
 
-Values the record fills itself (`derived=True`) show while the person edits: once they pause
-for 600 ms the form asks the server for a preview (`POST /api/_draft/{model}`) and shows what
-`derive()` set, without making it an unsaved change. Formulas (`compute=`) show at once without
+Values the record fills itself (`derived=True`) show while the person edits: as soon as an edit
+is committed (a field left, Enter, an option picked; never on each keystroke) the form asks the
+server for a preview (`POST /api/_draft/{model}`) and shows what `derive()` set, without making
+it an unsaved change. There is no pause to wait for. Formulas (`compute=`) show at once without
 a request.
 
 A Table the record fills itself (`derived=True`, [model-engine.md](model-engine.md#derived-values))
@@ -340,8 +341,10 @@ class Employee(Model):
 - **A Table is never a field.** It is always its own block, `Main('lines')` or `TableSection('lines')`.
   The form of 0.4.9, `Main(fields, 'lines', ...)`, still works: it reads as `Main(fields)` followed by
   `Main('lines')` for each Table named.
-- **Nothing is lost.** Every visible field shows somewhere; `hidden=True` keeps it out and `applies_when`
-  still hides one that does not apply. Fields no block names go, in declaration order, to one last
+- **Nothing is lost.** Every visible field shows somewhere; `hidden=True` keeps it out, `applies_when`
+  still hides one that does not apply, and `visible_when` hides one while it is false (keeping its value). A
+  Table's `applies_when` and `visible_when` hide its whole block, in the primary area or as a row of more
+  information ([finite-calculations.md](finite-calculations.md#table-rules)). Fields no block names go, in declaration order, to one last
   Section labelled Other (closed, like any section). Tables no block names follow it, each as a
   `TableSection` under its own label. On a new record a row of more information that holds a required
   field starts open. A layout need not name the title, name or State, which the header shows; left

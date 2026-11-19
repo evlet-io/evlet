@@ -226,7 +226,7 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
 export function KeyValueList(items: Array<FieldLike | { label: string; field: FieldLike }>, options: { save?: Save; links?: LinkSource | null } = {}): HTMLElement {
   return html`<dl class="fields">${items.map(item => {
     const field = 'field' in item ? item.field : item, label = 'field' in item ? item.label : item.meta.label, id = uid('kv');
-    return html`<dt id=${id} hidden=${() => !field.rules.get().applies}>${label}</dt><dd hidden=${() => !field.rules.get().applies}>${InlineValue({ field, save: options.save, labelledBy: id, links: options.links })}</dd>`;
+    return html`<dt id=${id} hidden=${() => !field.rules.get().visible}>${label}</dt><dd hidden=${() => !field.rules.get().visible}>${InlineValue({ field, save: options.save, labelledBy: id, links: options.links })}</dd>`;
   })}</dl>` as HTMLElement;
 }
 
@@ -239,7 +239,7 @@ export function FieldGrid(fields: FieldLike[], options: { save?: Save; links?: L
     const drawn = scriptControl(field), tip = scriptTip(field);
     const value = html`<div class="ff-v">${drawn ?? InlineValue({ field, save: options.save, labelledBy: id, links: options.links })}</div>` as HTMLElement;
     if (tip) tooltip(value, tip);
-    return html`<div class="ff" class:full=${field.meta.wide ?? (field.meta.type === 'longtext' || field.meta.type === 'richtext')} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}
+    return html`<div class="ff" class:full=${field.meta.wide ?? (field.meta.type === 'longtext' || field.meta.type === 'richtext')} hidden=${() => !field.rules.get().visible} data-field=${field.meta.name}
       data-look=${lookOf(field)}><label id=${id}>${field.meta.label}${when(() => field.rules.get().required && !field.calculated, () => html`<span class="req" aria-hidden="true">*</span>`)}${FieldHints(field)}</label>
       ${value}</div>` as Node;
   });

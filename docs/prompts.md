@@ -63,9 +63,11 @@ A prompt has what a model has, without a table, migrations or a place in the reg
 `Child` Tables, finite-v1 formulas and field rules (`compute`, `initial`, `applies_when`, `required_when`,
 `locked_when`), the string rules, Link filters (`Ref('source.company')` reads the source), and `@validate` on
 the prompt and its rows. `Meta` takes `title` (the class name by default), `primary` (`Submit`), `layout`
-(`Main`, `Section`, `TableSection`, as on a model; [ui.md](ui.md)) and `focus`. A wrong layout or focus fails
+(`Main`, `Section`, `TableSection`, as on a model; [ui.md](ui.md)), `focus`, and `script` and `on_open` for a
+[model script](model-scripts.md#in-a-prompt) (the Playground's Plan project marks a long task with one). A wrong layout or focus fails
 when the prompt is first shown. `load(self, source)` fills it before the person sees it; read-only fields are
-filled there. A Table that `load()` fills takes no new rows.
+filled there. A Table that `load()` fills takes no new rows: the open response gives it `max_rows` at the rows it
+has, so the modal offers no Add row, Enter on its last cell adds none and Duplicate copies none.
 
 ## Shown when returned
 

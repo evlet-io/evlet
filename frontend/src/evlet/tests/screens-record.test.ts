@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { adminRoutes, byText, click, lastToast, press, recorded, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
-import { copy, id } from './server';
+import { copy, id, withTableRules } from './server';
 
 afterEach(() => { vi.useRealTimers(); stopAll(); });
 
@@ -72,6 +72,21 @@ describe('generated record view', () => {
     const recent = document.querySelector('.rec-pop .rec-item');
     expect(text(recent)).toContain('Big order');
     expect(text(recent)).toContain('just now');
+  });
+
+  it('hides a field by its visible_when and the Table block by its applies_when, as the stage says', async () => {
+    const lost = copy(recorded.detail);
+    lost.body.stage = 'lost';
+    for (const [detail, shown] of [[recorded.detail, true], [lost, false]] as const) {
+      const routes: Route[] = [['GET', /\/api\/schema$/, { ...screen.schema, body: withTableRules(screen.schema.body) }],
+        ['GET', /\/api\/order\/0000000000001$/, detail], ...orderRoutes()];
+      const { host } = start(routes, '/app/order/0000000000001');
+      await until(() => expect(host.querySelector('[data-table-block="lines"]')).not.toBeNull());
+      await until(() => expect(field(host, 'remark')!.hidden).toBe(!shown));
+      expect(host.querySelector<HTMLElement>('[data-table-block="lines"]')!.hidden).toBe(!shown);
+      expect(field(host, 'stage')!.hidden).toBe(false);
+      stopAll();
+    }
   });
 
   it('saves one field in place with the record revision and offers Undo', async () => {

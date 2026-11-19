@@ -76,7 +76,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "email",
@@ -107,7 +108,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "active",
@@ -132,7 +134,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "currency",
@@ -169,7 +172,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "notes",
@@ -200,7 +204,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "name",
@@ -231,7 +236,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "title",
@@ -262,7 +268,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "document_version": 1,
@@ -451,7 +458,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "project",
@@ -483,7 +491,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "reference",
@@ -516,7 +525,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "total",
@@ -551,6 +561,7 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null,
+          "visible_when": null,
           "currency_source": {
             "link": "customer",
             "field": "currency",
@@ -584,7 +595,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "status",
@@ -616,7 +628,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "tax_rate",
@@ -652,7 +665,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "amount_paid",
@@ -688,6 +702,7 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null,
+          "visible_when": null,
           "currency_source": {
             "link": "customer",
             "field": "currency",
@@ -729,7 +744,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "name",
@@ -760,7 +776,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "title",
@@ -791,7 +808,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "document_version": 1,
@@ -1009,7 +1027,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "reference",
@@ -1040,7 +1059,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "currency",
@@ -1077,7 +1097,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "amount",
@@ -1112,6 +1133,7 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null,
+          "visible_when": null,
           "currency_source": {
             "field": "currency"
           }
@@ -1143,7 +1165,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "name",
@@ -1174,7 +1197,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "title",
@@ -1205,7 +1229,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "permissions": {
@@ -1292,7 +1317,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "customer",
@@ -1321,7 +1347,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "posting_date",
@@ -1350,7 +1377,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "amount",
@@ -1385,6 +1413,7 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null,
+          "visible_when": null,
           "currency_source": {
             "link": "customer",
             "field": "currency",
@@ -1420,7 +1449,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "name",
@@ -1451,7 +1481,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "title",
@@ -1482,7 +1513,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "api": "read",
@@ -1650,7 +1682,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "customer",
@@ -1679,7 +1712,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "docstate",
@@ -1717,7 +1751,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "budget",
@@ -1753,6 +1788,7 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null,
+          "visible_when": null,
           "currency": "AED"
         },
         {
@@ -1788,7 +1824,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "starts_on",
@@ -1817,7 +1854,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "brief",
@@ -1843,7 +1881,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "notes",
@@ -1874,7 +1913,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "name",
@@ -1905,7 +1945,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "document_version": 1,
@@ -2232,7 +2273,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "title",
@@ -2263,7 +2305,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "done",
@@ -2288,7 +2331,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "name",
@@ -2319,7 +2363,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "permissions": {
@@ -2695,7 +2740,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "item_name",
@@ -2726,7 +2772,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "item_group",
@@ -2761,7 +2808,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "stock_uom",
@@ -2796,7 +2844,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "brand",
@@ -2827,7 +2876,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "standard_rate",
@@ -2863,7 +2913,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "weight_kg",
@@ -2898,7 +2949,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "disabled",
@@ -2923,7 +2975,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "introduced_on",
@@ -2952,7 +3005,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "default_customer",
@@ -2981,7 +3035,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "description",
@@ -3012,7 +3067,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "hs_code",
@@ -3043,7 +3099,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "country_of_origin",
@@ -3079,7 +3136,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "length_cm",
@@ -3114,7 +3172,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "width_cm",
@@ -3149,7 +3208,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "height_cm",
@@ -3184,7 +3244,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "volume_litres",
@@ -3219,7 +3280,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "shelf_life_days",
@@ -3253,7 +3315,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "warranty_months",
@@ -3287,7 +3350,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "is_stock_item",
@@ -3312,7 +3376,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "has_batch",
@@ -3337,7 +3402,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "has_serial",
@@ -3362,7 +3428,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "inspection_required",
@@ -3387,7 +3454,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "valuation_method",
@@ -3418,7 +3486,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "lead_time_days",
@@ -3452,7 +3521,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "tax_category",
@@ -3484,7 +3554,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "uae_price",
@@ -3519,7 +3590,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "uae_min_qty",
@@ -3552,7 +3624,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "uae_lead_days",
@@ -3585,7 +3658,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "uae_listed",
@@ -3610,7 +3684,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "uae_launch",
@@ -3639,7 +3714,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "uae_channel",
@@ -3672,7 +3748,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "uae_vat",
@@ -3704,7 +3781,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "uae_discount",
@@ -3739,7 +3817,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "uae_promo_price",
@@ -3774,7 +3853,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "uae_status",
@@ -3806,7 +3886,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "ksa_price",
@@ -3841,7 +3922,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "ksa_min_qty",
@@ -3874,7 +3956,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "ksa_lead_days",
@@ -3907,7 +3990,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "ksa_listed",
@@ -3932,7 +4016,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "ksa_launch",
@@ -3961,7 +4046,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "ksa_channel",
@@ -3994,7 +4080,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "ksa_vat",
@@ -4026,7 +4113,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "ksa_discount",
@@ -4061,7 +4149,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "ksa_promo_price",
@@ -4096,7 +4185,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "ksa_status",
@@ -4128,7 +4218,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "oman_price",
@@ -4163,7 +4254,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "oman_min_qty",
@@ -4196,7 +4288,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "oman_lead_days",
@@ -4229,7 +4322,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "oman_listed",
@@ -4254,7 +4348,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "oman_launch",
@@ -4283,7 +4378,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "oman_channel",
@@ -4316,7 +4412,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "oman_vat",
@@ -4348,7 +4445,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "oman_discount",
@@ -4383,7 +4481,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "oman_promo_price",
@@ -4418,7 +4517,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "oman_status",
@@ -4450,7 +4550,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "qatar_price",
@@ -4485,7 +4586,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "qatar_min_qty",
@@ -4518,7 +4620,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "qatar_lead_days",
@@ -4551,7 +4654,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "qatar_listed",
@@ -4576,7 +4680,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "qatar_launch",
@@ -4605,7 +4710,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "qatar_channel",
@@ -4638,7 +4744,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "qatar_vat",
@@ -4670,7 +4777,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "qatar_discount",
@@ -4705,7 +4813,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "qatar_promo_price",
@@ -4740,7 +4849,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "qatar_status",
@@ -4772,7 +4882,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "bahrain_price",
@@ -4807,7 +4918,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "bahrain_min_qty",
@@ -4840,7 +4952,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "bahrain_lead_days",
@@ -4873,7 +4986,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "bahrain_listed",
@@ -4898,7 +5012,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "bahrain_launch",
@@ -4927,7 +5042,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "bahrain_channel",
@@ -4960,7 +5076,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "bahrain_vat",
@@ -4992,7 +5109,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "bahrain_discount",
@@ -5027,7 +5145,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "bahrain_promo_price",
@@ -5062,7 +5181,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "bahrain_status",
@@ -5094,7 +5214,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "kuwait_price",
@@ -5129,7 +5250,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "kuwait_min_qty",
@@ -5162,7 +5284,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "kuwait_lead_days",
@@ -5195,7 +5318,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "kuwait_listed",
@@ -5220,7 +5344,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "kuwait_launch",
@@ -5249,7 +5374,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "kuwait_channel",
@@ -5282,7 +5408,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "kuwait_vat",
@@ -5314,7 +5441,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "kuwait_discount",
@@ -5349,7 +5477,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "kuwait_promo_price",
@@ -5384,7 +5513,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "kuwait_status",
@@ -5416,7 +5546,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "india_price",
@@ -5451,7 +5582,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "india_min_qty",
@@ -5484,7 +5616,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "india_lead_days",
@@ -5517,7 +5650,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "india_listed",
@@ -5542,7 +5676,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "india_launch",
@@ -5571,7 +5706,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "india_channel",
@@ -5604,7 +5740,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "india_vat",
@@ -5636,7 +5773,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "india_discount",
@@ -5671,7 +5809,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "india_promo_price",
@@ -5706,7 +5845,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "india_status",
@@ -5738,7 +5878,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "egypt_price",
@@ -5773,7 +5914,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "egypt_min_qty",
@@ -5806,7 +5948,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "egypt_lead_days",
@@ -5839,7 +5982,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "egypt_listed",
@@ -5864,7 +6008,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "egypt_launch",
@@ -5893,7 +6038,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "egypt_channel",
@@ -5926,7 +6072,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "egypt_vat",
@@ -5958,7 +6105,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "egypt_discount",
@@ -5993,7 +6141,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "egypt_promo_price",
@@ -6028,7 +6177,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "egypt_status",
@@ -6060,7 +6210,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jordan_price",
@@ -6095,7 +6246,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jordan_min_qty",
@@ -6128,7 +6280,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jordan_lead_days",
@@ -6161,7 +6314,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jordan_listed",
@@ -6186,7 +6340,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jordan_launch",
@@ -6215,7 +6370,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jordan_channel",
@@ -6248,7 +6404,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jordan_vat",
@@ -6280,7 +6437,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jordan_discount",
@@ -6315,7 +6473,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jordan_promo_price",
@@ -6350,7 +6509,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jordan_status",
@@ -6382,7 +6542,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "export_price",
@@ -6417,7 +6578,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "export_min_qty",
@@ -6450,7 +6612,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "export_lead_days",
@@ -6483,7 +6646,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "export_listed",
@@ -6508,7 +6672,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "export_launch",
@@ -6537,7 +6702,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "export_channel",
@@ -6570,7 +6736,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "export_vat",
@@ -6602,7 +6769,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "export_discount",
@@ -6637,7 +6805,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "export_promo_price",
@@ -6672,7 +6841,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "export_status",
@@ -6704,7 +6874,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "dubai_reorder_level",
@@ -6737,7 +6908,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "dubai_reorder_qty",
@@ -6770,7 +6942,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "dubai_bin",
@@ -6801,7 +6974,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "dubai_stocked",
@@ -6826,7 +7000,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "dubai_counted_on",
@@ -6855,7 +7030,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "dubai_safety_stock",
@@ -6888,7 +7064,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jebel_ali_reorder_level",
@@ -6921,7 +7098,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jebel_ali_reorder_qty",
@@ -6954,7 +7132,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jebel_ali_bin",
@@ -6985,7 +7164,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jebel_ali_stocked",
@@ -7010,7 +7190,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jebel_ali_counted_on",
@@ -7039,7 +7220,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jebel_ali_safety_stock",
@@ -7072,7 +7254,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "abu_dhabi_reorder_level",
@@ -7105,7 +7288,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "abu_dhabi_reorder_qty",
@@ -7138,7 +7322,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "abu_dhabi_bin",
@@ -7169,7 +7354,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "abu_dhabi_stocked",
@@ -7194,7 +7380,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "abu_dhabi_counted_on",
@@ -7223,7 +7410,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "abu_dhabi_safety_stock",
@@ -7256,7 +7444,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "sharjah_reorder_level",
@@ -7289,7 +7478,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "sharjah_reorder_qty",
@@ -7322,7 +7512,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "sharjah_bin",
@@ -7353,7 +7544,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "sharjah_stocked",
@@ -7378,7 +7570,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "sharjah_counted_on",
@@ -7407,7 +7600,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "sharjah_safety_stock",
@@ -7440,7 +7634,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "riyadh_reorder_level",
@@ -7473,7 +7668,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "riyadh_reorder_qty",
@@ -7506,7 +7702,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "riyadh_bin",
@@ -7537,7 +7734,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "riyadh_stocked",
@@ -7562,7 +7760,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "riyadh_counted_on",
@@ -7591,7 +7790,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "riyadh_safety_stock",
@@ -7624,7 +7824,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jeddah_reorder_level",
@@ -7657,7 +7858,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jeddah_reorder_qty",
@@ -7690,7 +7892,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jeddah_bin",
@@ -7721,7 +7924,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jeddah_stocked",
@@ -7746,7 +7950,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jeddah_counted_on",
@@ -7775,7 +7980,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "jeddah_safety_stock",
@@ -7808,7 +8014,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "muscat_reorder_level",
@@ -7841,7 +8048,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "muscat_reorder_qty",
@@ -7874,7 +8082,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "muscat_bin",
@@ -7905,7 +8114,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "muscat_stocked",
@@ -7930,7 +8140,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "muscat_counted_on",
@@ -7959,7 +8170,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "muscat_safety_stock",
@@ -7992,7 +8204,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "doha_reorder_level",
@@ -8025,7 +8238,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "doha_reorder_qty",
@@ -8058,7 +8272,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "doha_bin",
@@ -8089,7 +8304,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "doha_stocked",
@@ -8114,7 +8330,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "doha_counted_on",
@@ -8143,7 +8360,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "doha_safety_stock",
@@ -8176,7 +8394,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "colour",
@@ -8207,7 +8426,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "material",
@@ -8238,7 +8458,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "finish",
@@ -8269,7 +8490,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "grade",
@@ -8300,7 +8522,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "model_number",
@@ -8331,7 +8554,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "part_number",
@@ -8362,7 +8586,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "standard",
@@ -8393,7 +8618,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "voltage",
@@ -8424,7 +8650,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "power_rating",
@@ -8455,7 +8682,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "thread_size",
@@ -8486,7 +8714,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "pressure_rating",
@@ -8517,7 +8746,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "temperature_range",
@@ -8548,7 +8778,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "shelf_life",
@@ -8579,7 +8810,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "pack_type",
@@ -8610,7 +8842,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "certification",
@@ -8641,7 +8874,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "manufacturer",
@@ -8672,7 +8906,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "manufacturer_part",
@@ -8703,7 +8938,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "range",
@@ -8734,7 +8970,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "season",
@@ -8765,7 +9002,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "style",
@@ -8796,7 +9034,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "size_code",
@@ -8827,7 +9066,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "pattern",
@@ -8858,7 +9098,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "capacity",
@@ -8889,7 +9130,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "connector",
@@ -8920,7 +9162,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "coating",
@@ -8951,7 +9194,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "hardness",
@@ -8982,7 +9226,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "density",
@@ -9013,7 +9258,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "flavour",
@@ -9044,7 +9290,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "fragrance",
@@ -9075,7 +9322,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "gauge",
@@ -9106,7 +9354,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "photo",
@@ -9129,7 +9378,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "name",
@@ -9160,7 +9410,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "title",
@@ -9191,7 +9442,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "document_version": 1,
@@ -9819,7 +10071,7 @@
         ]
       },
       "script": {
-        "url": "/assets/scripts/8b9e896d4688e527/employee.js",
+        "url": "/assets/scripts/42d44d0353a69ee5/employee.js",
         "on_open": "opened"
       },
       "fields": [
@@ -9855,7 +10107,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "email",
@@ -9889,7 +10142,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "department",
@@ -9922,7 +10176,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "reports_to",
@@ -9951,7 +10206,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "skill_count",
@@ -9984,7 +10240,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "name",
@@ -10015,7 +10272,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "title",
@@ -10046,7 +10304,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "document_version": 1,
@@ -10203,6 +10462,657 @@
       ]
     },
     {
+      "name": "expense",
+      "layout": [
+        {
+          "label": "Expense",
+          "fields": [
+            "title",
+            "amount",
+            "payment",
+            "card_last4",
+            "split_total"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows",
+          "main": true
+        }
+      ],
+      "label": "Expense",
+      "plural": "Expenses",
+      "description": "Expense claims: the form shows what the payment needs.",
+      "title_field": "title",
+      "list_fields": [
+        "id",
+        "title",
+        "payment",
+        "amount"
+      ],
+      "search_fields": [
+        "title",
+        "payment",
+        "card_last4",
+        "name"
+      ],
+      "open_in": "page",
+      "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Expense",
+            "label": "Expense",
+            "main": true
+          },
+          {
+            "kind": "table",
+            "name": "splits",
+            "main": true
+          },
+          {
+            "kind": "table",
+            "name": "receipts",
+            "main": true
+          }
+        ]
+      },
+      "fields": [
+        {
+          "name": "title",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 120,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
+        },
+        {
+          "name": "amount",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 6,
+          "minimum": "0",
+          "maximum": null,
+          "label": "Amount",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "currency": "AED",
+          "default_kind": "static",
+          "default": "0.00",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull",
+            "in",
+            "nin"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
+        },
+        {
+          "name": "payment",
+          "type": "select",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "cash",
+            "card",
+            "split"
+          ],
+          "label": "Payment",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "cash",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
+        },
+        {
+          "name": "card_last4",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 4,
+          "label": "Card (last 4)",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": {
+            "$expr": "eq",
+            "args": [
+              {
+                "$expr": "ref",
+                "scope": "self",
+                "field": "payment"
+              },
+              {
+                "$expr": "literal",
+                "type": "text",
+                "value": "card"
+              }
+            ]
+          }
+        },
+        {
+          "name": "split_total",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 6,
+          "minimum": null,
+          "maximum": null,
+          "label": "Split total",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": true,
+          "currency": "AED",
+          "default_kind": "none",
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull",
+            "in",
+            "nin"
+          ],
+          "compute": {
+            "$expr": "aggregate",
+            "kind": "sum",
+            "table": "splits",
+            "field": "amount",
+            "where": null
+          },
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
+        }
+      ],
+      "document_version": 1,
+      "resource": "expense",
+      "behavior": {
+        "title": {},
+        "amount": {},
+        "payment": {},
+        "card_last4": {},
+        "split_total": {
+          "finite": true
+        },
+        "name": {}
+      },
+      "order": [
+        "title",
+        "amount",
+        "payment",
+        "card_last4",
+        "split_total",
+        "name",
+        "splits.person",
+        "splits.amount",
+        "receipts.reference",
+        "receipts.note"
+      ],
+      "sources": {},
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": false,
+      "children": [
+        {
+          "name": "splits",
+          "model": "expense_splits",
+          "link": "evlet_owner",
+          "label": "Split between",
+          "row_changes": true,
+          "filterable": true,
+          "min_rows": 0,
+          "max_rows": 100
+        },
+        {
+          "name": "receipts",
+          "model": "expense_receipts",
+          "link": "evlet_owner",
+          "label": "Receipts",
+          "row_changes": true,
+          "filterable": true,
+          "min_rows": 0,
+          "max_rows": 100
+        }
+      ],
+      "actions": [],
+      "attachments": false,
+      "calculation": {
+        "language": "finite-v1",
+        "numeric_profile": "finite40-hu18-v1",
+        "model_schema_hash": "sha256:9271676091b90fec4b38177e3a432a98f169ad778cad44750a8abe5a67cd70d2",
+        "capabilities": {
+          "split_total": "local_universal"
+        },
+        "plan": {
+          "plan_version": 1,
+          "language": "finite-v1",
+          "numeric_profile": "finite40-hu18-v1",
+          "expression_version": 1,
+          "compiler_version": "evlet-finite-1",
+          "root_resource": "expense",
+          "limits": {
+            "expression_nodes": 128,
+            "expression_depth": 32,
+            "table_depth": 8,
+            "collection_rows": 1000,
+            "document_rows": 5000,
+            "graph_nodes": 50000,
+            "graph_edges": 250000,
+            "evaluation_steps": 1000000,
+            "decimal_text": 128
+          },
+          "tables": {
+            "$root": {
+              "path": [],
+              "model": "expense",
+              "fields": {
+                "title": {
+                  "type": "text",
+                  "kind": "text",
+                  "stored": true,
+                  "computed": false,
+                  "required": true,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "amount": {
+                  "type": "decimal",
+                  "kind": "currency",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": 6,
+                  "minimum": "0",
+                  "maximum": null,
+                  "default": {
+                    "value": "0"
+                  }
+                },
+                "payment": {
+                  "type": "text",
+                  "kind": "select",
+                  "stored": true,
+                  "computed": false,
+                  "required": true,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": {
+                    "value": "cash"
+                  }
+                },
+                "card_last4": {
+                  "type": "text",
+                  "kind": "text",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "split_total": {
+                  "type": "decimal",
+                  "kind": "currency",
+                  "stored": true,
+                  "computed": true,
+                  "required": false,
+                  "scale": 6,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "name": {
+                  "type": "text",
+                  "kind": "text",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                }
+              },
+              "tables": [
+                "receipts",
+                "splits"
+              ]
+            },
+            "splits[*]": {
+              "path": [
+                "splits"
+              ],
+              "model": "expense_splits",
+              "fields": {
+                "person": {
+                  "type": "text",
+                  "kind": "text",
+                  "stored": true,
+                  "computed": false,
+                  "required": true,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "amount": {
+                  "type": "decimal",
+                  "kind": "currency",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": 6,
+                  "minimum": "0",
+                  "maximum": null,
+                  "default": {
+                    "value": "0"
+                  }
+                }
+              },
+              "tables": [],
+              "min_rows": 0,
+              "max_rows": 100
+            },
+            "receipts[*]": {
+              "path": [
+                "receipts"
+              ],
+              "model": "expense_receipts",
+              "fields": {
+                "reference": {
+                  "type": "text",
+                  "kind": "text",
+                  "stored": true,
+                  "computed": false,
+                  "required": true,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "note": {
+                  "type": "text",
+                  "kind": "text",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                }
+              },
+              "tables": [],
+              "min_rows": 0,
+              "max_rows": 100
+            }
+          },
+          "fields": [
+            {
+              "target": "card_last4:visible_when",
+              "path": [],
+              "field": "card_last4",
+              "kind": "visible_when",
+              "result_type": "boolean",
+              "target_type": "text",
+              "scale": null,
+              "stored": true,
+              "rounding": null,
+              "expression": {
+                "$expr": "eq",
+                "args": [
+                  {
+                    "$expr": "ref",
+                    "scope": "self",
+                    "field": "payment"
+                  },
+                  {
+                    "$expr": "literal",
+                    "type": "text",
+                    "value": "card"
+                  }
+                ]
+              },
+              "reads": [
+                [
+                  "self",
+                  null,
+                  "payment"
+                ]
+              ]
+            },
+            {
+              "target": "splits:applies_when",
+              "path": [],
+              "field": "splits",
+              "kind": "applies_when",
+              "table": true,
+              "result_type": "boolean",
+              "target_type": "table",
+              "scale": null,
+              "stored": true,
+              "rounding": null,
+              "expression": {
+                "$expr": "eq",
+                "args": [
+                  {
+                    "$expr": "ref",
+                    "scope": "self",
+                    "field": "payment"
+                  },
+                  {
+                    "$expr": "literal",
+                    "type": "text",
+                    "value": "split"
+                  }
+                ]
+              },
+              "reads": [
+                [
+                  "self",
+                  null,
+                  "payment"
+                ]
+              ]
+            },
+            {
+              "target": "split_total",
+              "path": [],
+              "field": "split_total",
+              "result_type": "decimal",
+              "target_type": "currency",
+              "scale": 6,
+              "stored": true,
+              "rounding": "half_up",
+              "expression": {
+                "$expr": "aggregate",
+                "kind": "sum",
+                "table": "splits",
+                "field": "amount",
+                "where": null
+              },
+              "reads": [
+                [
+                  "membership",
+                  "splits",
+                  null
+                ],
+                [
+                  "member",
+                  "splits",
+                  "amount"
+                ]
+              ],
+              "currency": {
+                "code": "AED"
+              }
+            },
+            {
+              "target": "receipts:visible_when",
+              "path": [],
+              "field": "receipts",
+              "kind": "visible_when",
+              "table": true,
+              "result_type": "boolean",
+              "target_type": "table",
+              "scale": null,
+              "stored": true,
+              "rounding": null,
+              "expression": {
+                "$expr": "gt",
+                "args": [
+                  {
+                    "$expr": "ref",
+                    "scope": "self",
+                    "field": "amount"
+                  },
+                  {
+                    "$expr": "literal",
+                    "type": "decimal",
+                    "value": "100"
+                  }
+                ]
+              },
+              "reads": [
+                [
+                  "self",
+                  null,
+                  "amount"
+                ]
+              ]
+            }
+          ],
+          "model_schema_hash": "sha256:5e3e344d39fd26eaa929cf34eb8c642dd83107f0b2b08e60cf56ba235ec8fcdd",
+          "source_plan_hash": "sha256:9271676091b90fec4b38177e3a432a98f169ad778cad44750a8abe5a67cd70d2"
+        }
+      }
+    },
+    {
       "name": "item_prices",
       "layout": [
         {
@@ -10281,7 +11191,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "customer",
@@ -10310,7 +11221,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "currency",
@@ -10346,7 +11258,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "rate",
@@ -10382,6 +11295,7 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null,
+          "visible_when": null,
           "currency_source": {
             "field": "currency"
           }
@@ -10418,7 +11332,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "valid_from",
@@ -10447,7 +11362,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "permissions": {
@@ -10530,7 +11446,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "barcode_type",
@@ -10563,7 +11480,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "permissions": {
@@ -10646,7 +11564,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "level",
@@ -10683,7 +11602,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "permissions": {
@@ -10766,7 +11686,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "skills",
@@ -10800,7 +11721,244 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
+        }
+      ],
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": true,
+      "children": [],
+      "actions": [],
+      "attachments": false
+    },
+    {
+      "name": "expense_splits",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "person",
+            "amount"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows",
+          "main": true
+        }
+      ],
+      "label": "Expense split",
+      "plural": "Expense splits",
+      "description": "",
+      "title_field": "person",
+      "list_fields": [
+        "id",
+        "person",
+        "amount"
+      ],
+      "search_fields": [
+        "person"
+      ],
+      "open_in": "page",
+      "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
+      "fields": [
+        {
+          "name": "person",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 80,
+          "label": "Person",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
+        },
+        {
+          "name": "amount",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 6,
+          "minimum": "0",
+          "maximum": null,
+          "label": "Amount",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "currency": "AED",
+          "default_kind": "static",
+          "default": "0.00",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull",
+            "in",
+            "nin"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
+        }
+      ],
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": true,
+      "children": [],
+      "actions": [],
+      "attachments": false
+    },
+    {
+      "name": "expense_receipts",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "reference",
+            "note"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows",
+          "main": true
+        }
+      ],
+      "label": "Expense receipt",
+      "plural": "Expense receipts",
+      "description": "",
+      "title_field": "reference",
+      "list_fields": [
+        "id",
+        "reference",
+        "note"
+      ],
+      "search_fields": [
+        "reference",
+        "note"
+      ],
+      "open_in": "page",
+      "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
+      "fields": [
+        {
+          "name": "reference",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 40,
+          "label": "Reference",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
+        },
+        {
+          "name": "note",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 120,
+          "label": "Note",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "permissions": {
