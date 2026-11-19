@@ -271,7 +271,7 @@ class ModelType(type):
         if ledger:
             pass  # Trusted code writes ledger rows through the session; nothing is declarative.
         elif recorded or states or sources or tables or 'permissions' in namespace or cls.__derives__ or cls.__hooks__ or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
-                or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
+                or any(getattr(field, key, None) is not None for key in (*RULES, 'visible_when')) for field in fields.values()):
             cls.__declaration_mode__ = True
         reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values', 'before', 'is_new', 'release'}
         if isinstance(fields.get('source'), Reference) and not tables:

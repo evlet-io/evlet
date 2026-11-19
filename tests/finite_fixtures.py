@@ -220,6 +220,24 @@ class Offer(Model):
     total = Currency(compute=lines.sum('amount'))
 
 
+class ClaimLine(Child):
+    amount = Decimal(default=0)
+
+
+class Claim(Model):
+    """visible_when on a field (display only), and applies_when / visible_when on Tables."""
+    Meta = FiniteMeta
+    kind = Select(('cash', 'card', 'split'), default='cash')
+    card_ref = Text(visible_when=F('kind') == 'card')
+    limit = Decimal()
+    memo = Text(applies_when=F('kind') != 'cash', visible_when=F('limit') > 10)
+    splits = Table(ClaimLine, applies_when=F('kind') == 'split')
+    extras = Table(ClaimLine, visible_when=F('kind') != 'cash')
+    split_total = Decimal(compute=splits.sum('amount'))
+    split_count = Integer(compute=splits.count())
+    extra_total = Decimal(compute=extras.sum('amount'))
+
+
 class CappedLine(Child):
     qty = Decimal(default=1)
 
@@ -269,7 +287,7 @@ HOSTS = {'money-places': {'decimals': {'JPY': 0, 'KWD': 3, 'XCL': 5}, 'settings'
 
 MODELS = {'invoice': Invoice, 'project': Project, 'cost': CostSheet, 'states': States,
           'rounding': Rounding, 'schedule': Schedule, 'sale': Sale, 'choice': Choice, 'moments': Moments,
-          'offer': Offer, 'capped': Capped, 'money': Money, 'helpers': Helpers}
+          'offer': Offer, 'capped': Capped, 'money': Money, 'helpers': Helpers, 'claim': Claim}
 LOOKUP_MODELS = (Region, Customer)
 
 
@@ -337,6 +355,11 @@ SCENARIOS = [
       ['set', '', 'customer', 8], ['lookup', 'customer', 8, {'credit_days': 10, 'rate': '1.25'}],
       ['set', '', 'terms', 60], ['set', '', 'customer', 8], ['set', '', 'stage', 'won'], ['set', '', 'customer', 7],
       ['add', '', 'lines', {'_key': 'n', 'qty': '1'}], ['set', 'lines.2', 'qty', '1'], ['set', '', 'stage', 'lost']]),
+    ('visible-and-table-rules', 'claim', {'kind': 'split', 'card_ref': 'R-1', 'children': {'splits': items({'amount': '4'}, {'amount': '6'}),
+                                                                                    'extras': items({'amount': '1'})}},
+     [['set', '', 'kind', 'card'], ['set', '', 'memo', 'note'], ['set', '', 'limit', '20'], ['add', '', 'splits', {'_key': 'n', 'amount': '5'}],
+      ['set', 'splits.r0', 'amount', '9'], ['set', '', 'kind', 'split'], ['set', '', 'limit', None], ['remove', 'splits.r1'],
+      ['set', '', 'kind', None], ['set', '', 'kind', 'cash'], ['set', '', 'kind', 'split']]),
     ('table-limits', 'capped', {'children': {'lines': items({'qty': '1'})}},
      [['add', '', 'lines', {'_key': 'n1', 'qty': '2'}], ['add', '', 'lines', {'_key': 'n2', 'qty': '4'}],
       ['batch', [['add', '', 'lines', {'_key': 'a'}], ['add', '', 'lines', {'_key': 'b'}]]], ['remove', 'lines.r0'],
@@ -406,12 +429,12 @@ def apply(document, command):
 
 
 def rule_map(document):
-    """Rule states of every row that declares rules, by row label."""
+    """Rule states of every row that declares rules, by row label; a Table's rules under "table:" + its name."""
     result = {}
     for handle, row in document.rows.items():
-        states = document.rule_states(handle)
+        states = {**document.rule_states(handle), **{'table:' + name: state for name, state in document.table_states(handle).items()}}
         if states:
-            result[row.label.rstrip('.') or '$root'] = states
+            result[row.label.rstrip('.') or '$root'] = dict(sorted(states.items()))
     return dict(sorted(result.items()))
 
 

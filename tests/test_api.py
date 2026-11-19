@@ -31,7 +31,7 @@ def test_complete_customer_invoice_payment_api(application):
     status, schema, _ = request(application, "GET", "/api/schema")
     # Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item with its two tables, and Employee with its
     # Skills and Skill levels.
-    assert status == 200 and len(schema["models"]) == 12
+    assert status == 200 and len(schema["models"]) == 15
     status, customer, headers = request(application, "POST", "/api/customer", {"customer_name": "Studio"})
     assert status == 201
     assert headers[b"location"] == f'/api/customer/{customer["id"]}'.encode()

@@ -53,7 +53,7 @@ export function localField(meta: Partial<FieldSchema> & { name: string; type: st
   rules: Partial<Rules> = {}): FieldLike & { value: Cell<unknown>; rules: Cell<Rules> } {
   const full: FieldSchema = { required: false, read_only: false, ...meta };
   const valueCell = cell<unknown>(value, { name: `${meta.name}` });
-  const rulesCell = cell<Rules>({ applies: true, required: full.required, locked: false, ...rules }, { name: `${meta.name} (rules)` });
+  const rulesCell = cell<Rules>({ applies: true, required: full.required, locked: false, visible: true, ...rules }, { name: `${meta.name} (rules)` });
   const calculated = full.compute !== null && full.compute !== undefined;
   return {
     meta: full, value: valueCell, rules: rulesCell, error: cell<string | null>(null), calculated,
@@ -954,7 +954,7 @@ export interface FieldProps {
 
 /**
  * The reactive core every field type wraps: label, value, required, locked and applies rules,
- * error and hint. Hidden while its applies_when rule is false. help_text reads under the input
+ * error and hint. Hidden while its applies_when or visible_when rule is false. help_text reads under the input
  * (an error takes its place) and tooltip behind a ? icon at the input's right end.
  */
 export function BaseField(props: FieldProps): HTMLElement {
@@ -970,7 +970,7 @@ export function BaseField(props: FieldProps): HTMLElement {
   if (meta.required_when) tooltip(star, `Required when ${phrase(meta.required_when, labelsOf(field))}`);
   const labelled = ['switch', 'link', 'select'].includes(kindOf(meta.type).control ?? '') || control.element.tagName !== 'DIV' || control.element.classList.contains('in-affix') || control.element.classList.contains('in-tags');
   return html`<div class="fld" class:full=${Boolean(props.full) || meta.type === 'longtext' || meta.type === 'richtext'} class:invalid=${() => Boolean(field.error.get())}
-    hidden=${() => !field.rules.get().applies} data-field=${meta.name} data-look=${look}>
+    hidden=${() => !field.rules.get().visible} data-field=${meta.name} data-look=${look}>
     <label for=${labelled ? id : null} id=${`${id}-label`}>${label}${when(() => field.rules.get().required && !field.calculated, () => star)}${FieldHints(field)}${props.hint ?? null}</label>
     ${meta.tooltip || tip ? withTip(control.element, tip ? () => tip() || meta.tooltip || '' : meta.tooltip!, meta.label) : control.element}<span class="err" id=${errorId} role="alert">${() => field.error.get() ?? ''}</span>${field.note
       ? html`<span class="fld-note" id=${noteId} role="status" hidden=${() => !note()}>${note}</span>` : null}${help

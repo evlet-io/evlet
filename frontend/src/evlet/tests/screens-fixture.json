@@ -188,7 +188,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -220,7 +221,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -252,7 +254,8 @@
        "required_when": null,
        "stored": true,
        "type": "select",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -287,7 +290,8 @@
        "scale": 4,
        "stored": true,
        "type": "decimal",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -322,7 +326,8 @@
        "scale": 4,
        "stored": true,
        "type": "decimal",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -356,7 +361,8 @@
        "scale": 4,
        "stored": true,
        "type": "decimal",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -387,7 +393,8 @@
        "required_when": null,
        "stored": true,
        "type": "longtext",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -418,7 +425,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "key_fields": [
@@ -617,7 +625,8 @@
        "stored": true,
        "target": "shipment",
        "type": "link",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -648,7 +657,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -683,7 +693,8 @@
        "scale": 4,
        "stored": true,
        "type": "decimal",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -714,7 +725,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -745,7 +757,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Parcel",
@@ -841,7 +854,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Stop",
@@ -2002,7 +2016,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -2034,7 +2049,8 @@
        "required_when": null,
        "stored": true,
        "type": "select",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -2065,7 +2081,8 @@
        "required_when": null,
        "stored": true,
        "type": "longtext",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -2096,7 +2113,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Site",
@@ -2313,7 +2331,8 @@
        "stored": true,
        "target": "site",
        "type": "link",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -2344,7 +2363,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -2376,7 +2396,8 @@
        "required_when": null,
        "stored": true,
        "type": "select",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -2408,7 +2429,8 @@
        "required_when": null,
        "stored": true,
        "type": "select",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -2443,7 +2465,8 @@
        "scale": 4,
        "stored": true,
        "type": "decimal",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -2474,7 +2497,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Job",
@@ -2595,7 +2619,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -2630,7 +2655,8 @@
        "scale": 4,
        "stored": true,
        "type": "decimal",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Visit",
@@ -3458,7 +3484,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -3489,7 +3516,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Account",
@@ -3914,7 +3942,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -3949,7 +3978,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -3983,7 +4013,8 @@
        "required_when": null,
        "stored": true,
        "type": "integer",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -4014,7 +4045,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Customer",
@@ -4393,7 +4425,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -4428,7 +4461,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -4462,7 +4496,8 @@
        "required_when": null,
        "stored": true,
        "type": "integer",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -4493,7 +4528,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Customer",
@@ -4615,7 +4651,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -4650,7 +4687,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -4681,7 +4719,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Product",
@@ -5366,7 +5405,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -5395,7 +5435,8 @@
        "stored": true,
        "target": "customer",
        "type": "link",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -5428,7 +5469,8 @@
        "required_when": null,
        "stored": true,
        "type": "select",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -5457,7 +5499,8 @@
        "required_when": null,
        "stored": true,
        "type": "date",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -5506,7 +5549,8 @@
        "required_when": null,
        "stored": true,
        "type": "date",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": {
@@ -5565,7 +5609,8 @@
        },
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -5610,7 +5655,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -5650,7 +5696,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -5689,7 +5736,8 @@
        "required_when": null,
        "stored": true,
        "type": "integer",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -5720,7 +5768,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Order",
@@ -5870,7 +5919,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -5901,7 +5951,8 @@
        "required_when": null,
        "stored": true,
        "type": "email",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -5932,7 +5983,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -5963,7 +6015,8 @@
        "required_when": null,
        "stored": true,
        "type": "longtext",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -5994,7 +6047,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Contact",
@@ -6099,7 +6153,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -6128,7 +6183,8 @@
        "stored": true,
        "target": "customer",
        "type": "link",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -6157,7 +6213,8 @@
        "required_when": null,
        "stored": true,
        "type": "date",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -6188,7 +6245,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -6219,7 +6277,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Quote",
@@ -6338,7 +6397,8 @@
        "stored": true,
        "target": "product",
        "type": "link",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -6373,7 +6433,8 @@
        "scale": 4,
        "stored": true,
        "type": "decimal",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -6417,7 +6478,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -6475,7 +6537,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Line",
@@ -6571,7 +6634,8 @@
        "scale": 4,
        "stored": true,
        "type": "decimal",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Part",
@@ -7290,7 +7354,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -7325,7 +7390,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -7359,7 +7425,8 @@
        "required_when": null,
        "stored": true,
        "type": "integer",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -7390,7 +7457,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Customer",
@@ -7512,7 +7580,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -7547,7 +7616,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -7578,7 +7648,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Product",
@@ -8243,7 +8314,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8272,7 +8344,8 @@
        "stored": true,
        "target": "customer",
        "type": "link",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8305,7 +8378,8 @@
        "required_when": null,
        "stored": true,
        "type": "select",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8334,7 +8408,8 @@
        "required_when": null,
        "stored": true,
        "type": "date",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8383,7 +8458,8 @@
        "required_when": null,
        "stored": true,
        "type": "date",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": {
@@ -8442,7 +8518,8 @@
        },
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8487,7 +8564,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8527,7 +8605,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8566,7 +8645,8 @@
        "required_when": null,
        "stored": true,
        "type": "integer",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8597,7 +8677,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Order",
@@ -8724,7 +8805,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8755,7 +8837,8 @@
        "required_when": null,
        "stored": true,
        "type": "email",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Contact",
@@ -8852,7 +8935,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8881,7 +8965,8 @@
        "stored": true,
        "target": "customer",
        "type": "link",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8910,7 +8995,8 @@
        "required_when": null,
        "stored": true,
        "type": "date",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8941,7 +9027,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8972,7 +9059,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Quote",
@@ -9091,7 +9179,8 @@
        "stored": true,
        "target": "product",
        "type": "link",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -9126,7 +9215,8 @@
        "scale": 4,
        "stored": true,
        "type": "decimal",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -9170,7 +9260,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -9228,7 +9319,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Line",
@@ -9324,7 +9416,8 @@
        "scale": 4,
        "stored": true,
        "type": "decimal",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Part",
@@ -9743,7 +9836,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -9775,7 +9869,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -9807,7 +9902,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -9839,7 +9935,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -9871,7 +9968,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -9905,7 +10003,8 @@
        "required_when": null,
        "stored": true,
        "type": "integer",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -9936,7 +10035,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -9967,7 +10067,8 @@
        "required_when": null,
        "stored": true,
        "type": "longtext",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -9998,7 +10099,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Crew",
@@ -10228,7 +10330,8 @@
        "stored": true,
        "target": "crew",
        "type": "link",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -10260,7 +10363,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -10291,7 +10395,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -10322,7 +10427,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Crew visit",
@@ -10415,7 +10521,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -10447,7 +10554,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -10479,7 +10587,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Hand",
@@ -10580,7 +10689,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Tool",
