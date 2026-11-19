@@ -32,6 +32,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Keys typed in a script control in a table cell reach it.** The grid started its own edit and swallowed the
   first key, so typing 25 gave 5. While the focus is inside a control drawn by `control=`, its keys are its own; the
   grid keeps Tab and Shift Tab ([docs/model-scripts.md](docs/model-scripts.md#control)).
+- **A prompt's fields are readable on a phone.** Its field grid stayed four columns (68 px each at 390 px wide, a
+  date showing one character), because the rules that narrow it belong to the record page. It now narrows with the
+  dialog's own width, at the same steps.
 
 ## 0.4.13 (17-11-2026)
 
