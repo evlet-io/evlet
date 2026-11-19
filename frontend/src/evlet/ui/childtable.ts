@@ -403,6 +403,13 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const row = untrack(() => rows.get()).find(item => item.key === spot.key);
     if (!row || !editable(row, spot.col)) return false;
     reveal(spot.key);
+    // A cell a model script draws is edited in its own control: the focus goes there.
+    const drawn = cellAt(spot)?.querySelector('.ev-script');
+    if (drawn) {
+      active.set(spot);
+      (drawn.shadowRoot?.querySelector<HTMLElement>('input, select, textarea, button, [tabindex]') ?? cellAt(spot))?.focus();
+      return true;
+    }
     before = untrack(() => row.field(spot.col).value.get());
     landed = null;
     batch(() => { active.set(spot); editing.set(spot); });
@@ -547,7 +554,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   /** Copies of the selected rows, without their ids, directly after the last one selected. A selected section comes
    * with its lines, and the copies then go after the lines of the section the last selected item is in. */
   const duplicate = (list: Row[], sectionKeys: string[] = []) => {
-    if (readOnly.peek() || (!list.length && !sectionKeys.length)) return;
+    // A copy is a new row: not past max_rows (a prompt Table load() filled takes none).
+    if (readOnly.peek() || (!list.length && !sectionKeys.length) || (list.length > 0 && !canAdd.peek())) return;
     const seq = sequence(), picked = new Set<Row>(list), whole = new Set(sectionKeys);
     const copied: Token[] = [];
     let current: string | null = null, last = -1;
@@ -714,7 +722,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     expanded.set(list[at].key);
   };
   const insertBelow = (row: Row) => {
-    if (readOnly.peek()) return;
+    if (!canAdd.peek()) return;
     const added = table.add();
     table.move(added, untrack(() => rows.get()).indexOf(row) + 1);
     expanded.set(added.key);
@@ -946,6 +954,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // ---------- keyboard ----------
 
   grid.addEventListener('keydown', event => {
+    // Keys typed in an input a model script draws (control=) belong to it; the grid keeps Tab and Shift Tab only.
+    if ((event.target as Element).closest?.('.ev-script') && event.key !== 'Tab') return;
     // With rows selected, Enter (outside a cell being edited and the row editor) is Delete, which asks first.
     if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && !editing.peek() && expanded.peek() === null
       && untrack(() => selection.get().size) > 0 && !readOnly.peek()) { event.preventDefault(); event.stopPropagation(); deleteSelected(); return; }
@@ -1048,6 +1058,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const td = (event.target as Element).closest?.('td[data-col]') as HTMLElement | null;
     const tr = td?.closest('tr[data-key]') as HTMLElement | null;
     if (!td || !tr || td.classList.contains('editing')) return;
+    // A click in a control a model script draws stays in it.
+    if ((event.target as Element).closest?.('.ev-script')) return;
     // The ↗ arrow of a Link cell opens its record; it does not start editing the cell.
     if ((event.target as Element).closest?.('.link-go')) return;
     const spot = { key: tr.dataset.key!, col: td.dataset.col! };

@@ -238,13 +238,14 @@ await record.save();                       // the server's answer replaces the d
   draft. `runAction()` and `move()` require a clean record. `preview()` asks the server to
   evaluate the draft for plans it does not ship.
 - A model with `derived=True` fields or Tables lists them in its schema as `derives` (only names the role can read).
-  Each change to the draft (a field set, a row added, removed or moved) restarts a 600 ms timer
-  (`PREVIEW_PAUSE_MS`); when the person pauses, `refreshDerived()` sends the draft to
-  `POST /api/_draft/{model}`, the same route and permission checks as any preview, and shows what
-  `derive()` set: derived fields, `"table.field"` values on rows (matched by id or `_key`) and the
-  rows of a derived Table. Derived fields are never editable, never an unsaved change and never sent.
-  An answer that a later change overtook is dropped, and only one answer per pause is shown. A model
-  without derived values never asks, and formulas the browser runs need no request.
+  A change to the draft (a field set, a row added, removed or moved) happens only when an edit is
+  committed, never on each keystroke, so `refreshDerived()` sends the draft to
+  `POST /api/_draft/{model}` at once (the same route and permission checks as any preview) and shows
+  what `derive()` set: derived fields, `"table.field"` values on rows (matched by id or `_key`) and the
+  rows of a derived Table. Changes in the same turn of the event loop go as one request; at most one
+  is in flight, and if the draft changed meanwhile it sends once more when that one returns. An answer
+  the draft has moved past is dropped. Derived fields are never editable, never an unsaved change and
+  never sent. A model without derived values never asks, and formulas the browser runs need no request.
 - `formatMoney('25200')` is `AED 25,200.00` (exact, half up). Money and numbers take decimal
   strings or safe integers only; a JavaScript fraction or text that is not a plain decimal
   shows `Invalid amount`. `formatDate('2026-11-01')` is `01-11-2026`; impossible dates show

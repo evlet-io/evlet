@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from evlet import Child, Currency, Date, Decimal, Link, Main, Outcome, Prompt, Select, Table, Text, ValidationError, validate
+from evlet import Child, Currency, Date, Decimal, Js, Link, Main, Outcome, Prompt, Select, Table, Text, ValidationError, validate
 from evlet.calc import F
 
 from .items import UNITS
@@ -18,13 +18,15 @@ class PlanProject(Prompt):
         primary = 'Plan project'
         layout = (Main(('starts_on', 'hourly_rate', 'hours', 'budget')), Main('tasks'))
         focus = 'starts_on'
+        # A model script works in a prompt as on a record (docs/model-scripts.md): it marks a long task here.
+        script = 'plan_project.js'
 
     starts_on = Date(required=True)
     hourly_rate = Currency(currency='AED', minimum='0', default='350.00', required=True)
 
     class Task(Child):
         title = Text(required=True, max_length=160)
-        hours = Decimal(scale=1, minimum='0', default='0')
+        hours = Decimal(scale=1, minimum='0', default='0', look=Js('hours_look'), tooltip=Js('hours_tip'))
 
     tasks = Table(Task, required=True)
     hours = Decimal(scale=1, compute=tasks.sum('hours'))

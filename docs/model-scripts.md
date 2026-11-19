@@ -38,8 +38,8 @@ export default class Quotation extends evlet.Model {
 
 - `Meta.script` names a `.js` file in the folder of the module that declares the model, or in a
   folder below it. A missing file or another extension fails at start-up, naming the model and
-  the path. Only documents take a script: a Table row's hooks call its document's script, and
-  ledger models and prompts have none.
+  the path. Documents and prompts take a script ([In a prompt](#in-a-prompt)): a Table row's hooks call
+  its document's (or prompt's) script, and ledger models have none.
 - It is plain JavaScript, as an ES module, served as it is: no TypeScript, no bundler and no Node,
   on the server or in any `evlet` command. Its default export is a class that extends
   `evlet.Model`. `evlet` is one frozen global, set before any script loads.
@@ -91,6 +91,11 @@ changes.
 `control='qty_input'` draws the field's input, in forms and in table cells. It gets an element to
 draw in, inside a shadow root (its CSS stays inside; the theme variables still reach it), and may
 return a cleanup function.
+
+In a table cell (on a document or a prompt), keys typed while the focus is inside the control
+belong to it: the grid keeps only Tab and Shift+Tab, which move to the next or previous cell. A
+click inside it stays there, and moving to the cell (Tab, Add row, Enter) focuses the control's
+first input, select, textarea or button. A script needs no `stopPropagation`.
 
 ```js
 qty_input(el, field, row) {
@@ -151,6 +156,61 @@ Hook arguments: `on_change(field, row)`, `tooltip(field, row)`, `look(field, row
   form keeps working.
 
 The Playground's Employee shows each hook (`examples/playground/employee.js`).
+
+## In a prompt
+
+A [prompt](prompts.md) takes `Meta.script` and `Meta.on_open` with the same file rules, and its
+fields and the fields of its Table rows take `on_change=`, `tooltip=Js(...)`, `look=Js(...)` and
+`control=`. A hook on a prompt without `Meta.script` fails when the class is defined, naming the
+field. The file may be one a model also names: a quantity typed as "10-6" (ten boxes and six
+pieces, saved in the base unit) is drawn by the same control on the document's lines and on the
+prompt that confirms them.
+
+```python
+class QuotationLine(Child):
+    qty = Decimal(scale=3, control='qty_input')
+
+
+class Quotation(Model):
+    lines = Table(QuotationLine)
+
+    class Meta:
+        script = 'quotation.js'
+
+
+class ConfirmQuotation(Prompt):
+    class Line(Child):
+        confirm_qty = Decimal(scale=3, control='qty_input')
+
+    lines = Table(Line)
+
+    class Meta:
+        script = 'quotation.js'          # the same file: each gets its own instance
+```
+
+```js
+// quotation.js: one control for both
+qty_input(el, field) {
+  const input = document.createElement('input');
+  const per = 12;                                       // pieces in a box
+  const shown = value => value === null ? '' : `${Math.trunc(value / per)}-${value % per}`;
+  input.value = shown(field.value === null ? null : Number(field.value));
+  input.disabled = !field.editable;
+  input.addEventListener('change', () => {
+    const [boxes, pieces = '0'] = input.value.split('-');
+    field.set(String(Number(boxes) * per + Number(pieces)));
+  });
+  el.append(input);
+}
+```
+
+In a prompt, `field()`, `table()`, rows, `set()`, `warn()`, `api` and `ui` work as on a record.
+`this.model` is the prompt's form name, `this.id` is `null`, `this.is_new` is `true` and
+`this.state` is `null`. `call()`, `move()`, `save()` and `reload()` reject: a prompt has no saved
+record, and a script cannot submit, cancel or intercept it. `on_open` runs once the values from
+`load()` are in, and closing the modal makes the script's views inert. Custom blocks
+(`Main(custom=)`, `Section(custom=)`) are not supported in a prompt. The server still checks every
+value on submit; it never runs the script.
 
 ## Extending a model from another app
 

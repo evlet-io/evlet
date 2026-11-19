@@ -1397,7 +1397,8 @@ class Document:
         self.revision, self._next = 0, 0
         self._batch, self._broken = None, None
         self.trace, self.deps = {}, {}
-        # Initial suggestions waiting to be written, and fields the host set in the current write (touched).
+        # Initial suggestions waiting to be written, and the fields the host set in its last write (touched); host
+        # inputs that arrive after a write (lookups, today) never override what it set.
         self.armed, self.touched = set(), set()
         # Lock results of the document as loaded (handle -> field -> True, False or None when undecided).
         # Saved rows keep them for the life of the document; host inputs such as lookups refine them until the first edit.
@@ -1406,7 +1407,6 @@ class Document:
         self._bind()
         created = {node for node in self.deps if self.rows[node[0]].created and node[1].endswith(':initial')}
         self._settle(set(), set(self.deps), self.touched, created)
-        self.touched = set()
         self._take_locks()
         self.revision = 1
 
@@ -1593,18 +1593,21 @@ class Document:
     def _settle(self, changed, fresh, touched=frozenset(), arm=frozenset()):
         """Visit the global order once; evaluate a node only if an input changed.
 
-        An initial is armed when its row is new or a document input it reads changed (host inputs such
-        as lookups and today() do not arm it). A field touched in this write disarms it. An armed
-        initial writes its first ready result unless the field is locked. applies_when clears its field.
+        An initial is armed when its row is new or an input it reads changed through a write: a value the
+        host set, a row added or removed, or an initial written, and what follows from those. A result that
+        is new, or moved only by a host input (a lookup, today()), does not arm it. A field touched in the
+        last write disarms it. An armed initial writes its first ready result unless the field is locked.
+        applies_when clears its field.
         """
         budget = Budget(self.budget_limit)
         changed, updated, evaluated, skipped = set(changed), set(), 0, 0
+        written = {item for item in changed if not item[0].startswith('@')}
         for node in self.order:
             row = self.rows[node[0]]
             field = self.entries[row.path, node[1]]
             kind = field.get('kind')
             if kind == 'initial':
-                if node in arm or any(item in changed and not item[0].startswith('@') for item in self.deps[node]):
+                if node in arm or self.deps[node] & written:
                     self.armed.add(node)
                 if (node[0], field['field']) in touched:
                     self.armed.discard(node)
@@ -1634,6 +1637,8 @@ class Document:
                 self.results[node] = outcome
                 changed.add(node)
                 updated.add(node)
+                if self.deps[node] & written:
+                    written.add(node)
             target, value = (node[0], field['field']), MISSING_VALUE
             if kind == 'initial' and node in self.armed and outcome.state != 'pending':
                 self.armed.discard(node)
@@ -1649,6 +1654,7 @@ class Document:
                 row.values[target[1]] = value
                 changed.add(target)
                 updated.add(target)
+                written.add(target)
         self.trace = {'evaluated': evaluated, 'skipped': skipped, 'steps': budget.steps, 'changed': sorted(row_address(self, node) for node in updated)}
         return updated
 
@@ -1856,7 +1862,10 @@ class Document:
                 self.counts.pop(node, None)
                 self.misses.pop(node, None)
             fresh = live.keys() - old.keys()
-        updated = self._settle(batch['sources'] | batch['membership'], fresh, batch['touched'],
+        # A write (a value set, a row changed) replaces the touched fields; host inputs alone keep the last write's.
+        if batch['touched'] or batch['structure'] or any(not key[0].startswith('@') for key in batch['sources']):
+            self.touched = batch['touched']
+        updated = self._settle(batch['sources'] | batch['membership'], fresh, self.touched,
                                {node for node in fresh if node[1].endswith(':initial')})
         if not (updated or batch['sources'] or batch['structure']):
             return

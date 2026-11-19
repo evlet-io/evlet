@@ -159,6 +159,15 @@ describe('model scripts', () => {
     expect(calls).toEqual([['qty_changed', 'qty', '3', 0], ['acme line', '3', 0]]);
   });
 
+  it('gives each record or prompt that names one file its own instance: they share only code', async () => {
+    const first = await open(), second = await open();
+    calls.length = 0;
+    first.store.field('customer').set('a');
+    expect(calls).toEqual([['customer_changed', 'customer', 'a', undefined]]);
+    expect(second.store.field('notes').value.peek()).toBe(null);
+    expect(first.store.field('notes').value.peek()).toBe('for a');
+  });
+
   it('loads a script once per address, after setting the evlet global', async () => {
     const load = vi.fn(async () => ({ default: Quote }));
     setScriptImporter(load);

@@ -266,6 +266,20 @@ class Money(Model):
     suggested = Currency(currency='currency', initial=F('rate') * 2)
 
 
+class Suggest(Model):
+    """Suggestions never overwrite what the host set: one that reads a calculated field (via_calc), and one that reads
+    through a Link that is itself suggested (grace through region). Only a write's changes arm them; a new result or
+    a lookup does not, and a value set in the last write stays."""
+    Meta = FiniteMeta
+    customer = Link(Customer)
+    note = Text(default='')
+    price = Decimal(scale=2, compute=coalesce(F('customer.rate'), 0))
+    direct = Decimal(scale=2, initial=F('customer.rate'))
+    via_calc = Decimal(scale=2, initial=F('price'))
+    region = Link(Region, initial=F('customer.region'))
+    grace = Integer(initial=coalesce(F('region.grace'), 1))
+
+
 class Helpers(Model):
     """Helpers that compile to existing nodes; the browser runs them without knowing they exist."""
     Meta = FiniteMeta
@@ -287,7 +301,7 @@ HOSTS = {'money-places': {'decimals': {'JPY': 0, 'KWD': 3, 'XCL': 5}, 'settings'
 
 MODELS = {'invoice': Invoice, 'project': Project, 'cost': CostSheet, 'states': States,
           'rounding': Rounding, 'schedule': Schedule, 'sale': Sale, 'choice': Choice, 'moments': Moments,
-          'offer': Offer, 'capped': Capped, 'money': Money, 'helpers': Helpers, 'claim': Claim}
+          'offer': Offer, 'capped': Capped, 'money': Money, 'helpers': Helpers, 'suggest': Suggest, 'claim': Claim}
 LOOKUP_MODELS = (Region, Customer)
 
 
@@ -370,6 +384,12 @@ SCENARIOS = [
       ['set', '', 'currency', 'XCL'], ['set', '', 'rate', '0.0000033'], ['set', '', 'currency', ''], ['set', '', 'currency', 'AED'],
       ['set', '', 'rate', '-1.3335'], ['lookup', 'customer', 7, {'currency': 'JPY'}], ['set', '', 'customer', None],
       ['set', '', 'currency', 'KWD'], ['set', '', 'rate', '2.0005'], ['set', '', 'qty', '-1']]),
+    ('suggest-saved', 'suggest', {'id': 6, 'customer': 7, 'direct': '35', 'via_calc': '35', 'region': 3, 'grace': 2},
+     [['lookup', 'customer', 7, {'rate': '36', 'region': 3}], ['lookup', 'region', 3, {'grace': 5}], ['set', '', 'note', 'later'],
+      ['set', '', 'customer', 8], ['lookup', 'customer', 8, {'rate': '40', 'region': 4}], ['lookup', 'region', 4, {'grace': 6}]]),
+    ('suggest-created', 'suggest', {'customer': 7, 'direct': '30', 'via_calc': '30', 'grace': 9},
+     [['lookup', 'customer', 7, {'rate': '36', 'region': 3}], ['lookup', 'region', 3, {'grace': 5}], ['set', '', 'note', 'x'],
+      ['set', '', 'region', None], ['lookup', 'region', 3, {'grace': 7}]]),
     ('helpers', 'helpers', {},
      [['set', '', 'stage', 'won'], ['set', '', 'a', '3'], ['set', '', 'b', '-7.5'], ['set', '', 'stage', 'lost'], ['set', '', 'a', '9'],
       ['set', '', 'stage', 'lead'], ['set', '', 'b', '12'], ['set', '', 'stage', None], ['set', '', 'a', None]]),
