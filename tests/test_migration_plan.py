@@ -774,6 +774,38 @@ def test_drop_index_is_done_on_an_instance_created_after_the_index_left_the_mode
         Database(fresh, target).migrate([*migrations, Migration('0004', DropIndex('party', ('kind', 'title')))])
 
 
+def test_finance_v1_0009_drop_index_runs_on_an_instance_created_at_0008(tmp_path):
+    """finance_v1's shipped 0009, unchanged: DropIndex("party", ("kind", "record_id"), unique=True). An
+    instance created at 0008 from models without that index migrates, as does one that ran 0001."""
+    from evlet import AddField, DropIndex
+
+    def finance_party(indexed):
+        attributes = {'__module__': __name__, 'title': Text(max_length=120), 'kind': Text(max_length=20),
+                      'record_id': Integer()}
+        if indexed:
+            attributes['Meta'] = type('Meta', (), {'indexes': [(('kind', 'record_id'), {'unique': True})]})
+        return type('Party', (Model,), attributes)
+
+    first = Migration('0001_initial', CreateModel(finance_party(True)))
+    middle = [Migration(f'{number:04d}_step', AddField('party', f'note_{number}', Text())) for number in range(2, 9)]
+    upto_0008 = [first, *middle]
+    attributes = {'__module__': __name__, 'title': Text(max_length=120), 'kind': Text(max_length=20), 'record_id': Integer(),
+                  **{f'note_{number}': Text() for number in range(2, 9)}}
+    target = Registry(type('Party', (Model,), attributes))
+    shipped = [*upto_0008, Migration('0009_seed_and_index', DropIndex('party', ('kind', 'record_id'), unique=True))]
+    created_at_0008 = tmp_path / 'created-0008.sqlite3'
+    Database(created_at_0008, target, migrations=upto_0008).migrate(upto_0008)
+    assert Database(created_at_0008, target).migrate(shipped) == ['0009_seed_and_index']
+    ran_0001 = tmp_path / 'ran-0001.sqlite3'
+    Database(ran_0001, Registry(finance_party(True)), migrations=[first]).migrate([first])
+    assert index_shape(Database(ran_0001, Registry(finance_party(True))), 'party') == [(('kind', 'record_id'), True)]
+    assert Database(ran_0001, target).migrate(shipped) == [migration.name for migration in shipped[1:]]
+    for path in (created_at_0008, ran_0001):
+        database = Database(path, target, migrations=shipped)
+        database.initialize()
+        assert index_shape(database, 'party') == []
+
+
 def test_drop_field_takes_its_composite_index_out_of_the_plan(tmp_path):
     from evlet import DropField, RetireField
     path = tmp_path / 'drop.sqlite3'
