@@ -3,7 +3,7 @@
 The installed Python package contains the CLI, browser UI, Playground, templates
 and documentation. Python 3.12 or later is required. Ordinary app development and
 serving of Python-only apps need no Node.js, Vite, separate frontend server or
-framework checkout. Native app extensions require Node 24 at build time.
+framework checkout. Native app extensions require Node 24.15+ or 22.22.2+ (the 22 LTS line) at build time.
 
 For a step-by-step walkthrough, read [Your first site](getting-started.md).
 See [What you can customize](customizing.md) and [App upgrades](app-upgrades.md) next.

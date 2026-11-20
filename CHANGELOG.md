@@ -29,6 +29,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **The frontend installs and builds on the Node 22 LTS.** `frontend/package.json` asked for Node 24.15+ and `.npmrc`
+  enforces it, so `npm ci` refused Node 22. The range is `^22.22.2 || ^24.15.0` now (22.22.2 is the lowest version
+  jsdom, the test environment, accepts); CI installs, tests and builds on Node 22.22.2 as well, and a frontend test
+  checks that every locked package admits both floors ([CONTRIBUTING.md](CONTRIBUTING.md#install-for-development)).
 - **A `DropIndex` after a `RenameField` drops the database index.** After a rename the index stayed on the renamed
   column, so a `DropIndex` naming the old fields cleared Evlet's schema but left the index in the database, and an
   instance could not migrate past the rename while a `Meta.indexes` entry named the field ("Meta.indexes differ").
