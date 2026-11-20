@@ -13,6 +13,12 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   picker leaves those records out, and the server refuses one on every save and every move with a field error.
   Before, a filter only compared for equality, so an app needed a derived flag on the target and a check when the
   document posted ([docs/business-capabilities.md](docs/business-capabilities.md#link-filters)).
+- **A table code can append to on a released document.** `Table(Arrival, append_when_released=True)` is a log of
+  what follows the release: trusted code (an action, a hook, a job, `context`) may add rows at its end while the
+  record is locked, the saved rows stay as they are, and no request may add one. Its rows are not released content.
+  finance_v1 showed a Stock Transfer's arrivals as a separate model in a Related block instead
+  ([docs/states-actions.md](docs/states-actions.md)).
+- **A Related block lists up to 12 fields** as columns, instead of 6 ([docs/ui.md](docs/ui.md)).
 
 ### Fixed
 

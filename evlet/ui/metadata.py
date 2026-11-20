@@ -579,7 +579,8 @@ def list_tabs_for(model, meta, fields=None):
 # Filter operators that may compare with a field of the record (Ref('field')).
 REF_OPERATORS = ('eq', 'ne', 'gt', 'gte', 'lt', 'lte')
 # Columns a Related block shows at most, and the rows it shows a page by default and at most.
-RELATED_FIELDS = 6
+# The most fields a Related block lists as columns: as many as the app names, up to this.
+RELATED_FIELDS = 12
 RELATED_ROWS, RELATED_MAX = 5, 20
 
 

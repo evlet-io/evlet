@@ -461,6 +461,11 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
 * A field declared `versioned=False` stays editable by ordinary writes, on the record and on its
   rows: it says where the document is in its process, not what it says. Its own `locked_when`
   still applies. Calculated fields cannot be `versioned=False`.
+* A Table declared `append_when_released=True` is a log of what follows the release, such as
+  the arrivals on a sent stock transfer. Trusted code (an action, a hook, a job, a script through
+  `context`) may append rows at its end while the record is locked; the saved rows stay as they
+  are, and no request (browser, API, MCP, Eva) may add a row. Its rows are not part of the
+  released content, so appending one makes no new version.
 * A locked record keeps its saved results. An ordinary write changes only the `versioned=False`
   fields; every calculated value, at every depth, keeps the value it had when the record was
   locked, even if a linked record or today's date changed since. Moves and actions settle

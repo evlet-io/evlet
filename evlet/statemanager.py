@@ -238,9 +238,12 @@ def check_state_lock(context, draft, before):
     Fields declared versioned=False may still change. Adding, removing or reordering rows at any depth is
     a change. Values are compared as the caller submitted them, before calculations."""
     from .models import ValidationError
+    from .permissions import CALLER
     state_name = locked_state(draft._definition, before._values)
     if state_name is None:
         return
+    # Trusted code (never a request) may append rows at the end of a Table declared append_when_released=True.
+    appendable = set() if CALLER.get() else {name for name, table in draft._definition.__tables__.items() if table.append_when_released}
     message = f'This record is {state_name}, so it is locked' if state_shown(context, draft._definition) else 'This record is locked'
     errors = {}
 
@@ -259,7 +262,10 @@ def check_state_lock(context, draft, before):
                 errors[prefix + name] = message
         for table, rows in item._rows.items():
             saved = old._rows.get(table, [])
-            if [row.id for row in rows] != [row.id for row in saved] or \
+            ids, kept = [row.id for row in rows], [row.id for row in saved]
+            # Saved rows in place (their values are compared below), and on an appendable Table new rows at the end only.
+            appended = item is draft and table in appendable and ids[:len(kept)] == kept and all(row_id is None for row_id in ids[len(kept):])
+            if (ids != kept and not appended) or \
                     [(s.id, s.label, s.at) for s in item._sections.get(table, [])] != [(s.id, s.label, s.at) for s in old._sections.get(table, [])]:
                 errors[prefix + table] = message
             by_id = {row.id: row for row in saved}
@@ -740,7 +746,9 @@ def tree(item, clean=False):
 
 def versioned(model, data, registry):
     """The content of a document tree: versioned fields only (not the State, not versioned=False, not excluded)."""
-    tables = {child.name: child.model for child in registry.children if child.parent is model}
+    # A Table declared append_when_released=True is a log of what followed the release, not released content.
+    tables = {child.name: child.model for child in registry.children if child.parent is model
+              and not getattr(model.__tables__.get(child.name), 'append_when_released', False)}
     result = {key: value for key, value in data.items() if key in ('id', 'children') or (
         key in model.__fields__ and model.__fields__[key].versioned and model.__fields__[key].tracking != 'exclude' and key != model.__state__)}
     result['children'] = {name: [versioned(tables[name], row, registry) for row in rows]

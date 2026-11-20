@@ -334,7 +334,7 @@ class Employee(Model):
 | `Main('table_name')` | main | One Table, with its title bar (title, row count, Add, Focus, Columns), total line and totals: the inferred ones, or the fields its `totals=` declares. |
 | `Section(title, fields, *, collapsible=True, collapsed=True, flow='rows', panel=True, description=None)` | more information | Fields. `collapsed` is `True` (closed, the default), `False` (open) or `'empty'` (closed while every field is empty). `('Title', fields)` is a section that can't collapse, so it starts open. |
 | `TableSection('table_name', *, collapsible=True, collapsed=True, panel=True)` | more information | One Table, with the same title bar. `'empty'` is closed while the table has no rows. A Table name on its own is `TableSection(name)`. |
-| `Related(model, link=None, *, label, filters, fields, limit, order)` | more information | Records of `model` whose Link `link` points to this record, `limit` a page (default 5, at most 20), with a pager and **View all**. |
+| `Related(model, link=None, *, label, filters, fields, limit, order)` | more information | Records of `model` whose Link `link` points to this record, `limit` a page (default 5, at most 20), with a pager and **View all**. `fields` are its columns, as many as it names up to 12. |
 | `Html(content)` | more information | Text from the app. `{field}` shows that field of the record. |
 | `Chart(type, x=None, y=..., *, model, link=None, filters, label)` | more information | Declared measures of `model` over the records that point to this one: `'stat'` numbers, or `'bar'` or `'line'` grouped by `x` (`'status'`, `'due:month'`). |
 
