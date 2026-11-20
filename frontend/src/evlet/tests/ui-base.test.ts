@@ -34,6 +34,13 @@ describe('Button and friends', () => {
     expect(button.type).toBe('button');
   });
 
+  it('keeps the name of a button whose label is hidden on phones', () => {
+    const button = render(() => Button({ label: 'New invoice', icon: 'plus', hideLabelOnPhone: true })).querySelector('button')!;
+    expect(button.querySelector('.hide-sm')!.textContent).toBe('New invoice');
+    expect(button.getAttribute('aria-label')).toBe('New invoice');
+    expect(render(() => Button({ label: 'Save' })).querySelector('button')!.hasAttribute('aria-label')).toBe(false);
+  });
+
   it('gives icon-only buttons an accessible label and a tooltip', () => {
     const host = render(() => Button({ icon: 'ellipsis', tip: 'More actions' }));
     const button = host.querySelector('button')!;
@@ -206,6 +213,24 @@ describe('Modal, Drawer and Toast', () => {
     expect(document.querySelector('.drawer.show')).not.toBeNull();
     document.querySelector<HTMLElement>('.scrim')!.click();
     expect(document.querySelector('.drawer')).toBeNull();
+  });
+
+  it('shows an error toast in red, as an alert, for 8 s', () => {
+    vi.useFakeTimers();
+    try {
+      toast('Saved');
+      toast('Not saved. Check the highlighted values.', { tone: 'error' });
+      const [ok, error] = [...document.querySelectorAll<HTMLElement>('.toast')];
+      expect(ok.getAttribute('role')).toBeNull();
+      expect(ok.querySelector('svg')!.classList.contains('ok')).toBe(true);
+      expect(error.getAttribute('role')).toBe('alert');
+      expect(error.querySelector('svg')!.classList.contains('err')).toBe(true);
+      expect(error.querySelector('svg')!.classList.contains('ok')).toBe(false);
+      vi.advanceTimersByTime(3200);
+      expect([...document.querySelectorAll('.toast')]).toEqual([error]);
+      vi.advanceTimersByTime(5000);
+      expect(document.querySelectorAll('.toast')).toHaveLength(0);
+    } finally { vi.useRealTimers(); }
   });
 
   it('shows a toast for 2.8 s, 5 s with Undo, in a polite live region', () => {

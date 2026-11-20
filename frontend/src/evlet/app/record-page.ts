@@ -302,7 +302,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   const saved = (ok: boolean, created: boolean) => {
     if (!ok) {
-      toast(store.conflict.peek() ? 'Not saved: this record changed since you opened it.' : 'Not saved. Check the highlighted values.', { icon: 'info' });
+      toast(store.conflict.peek() ? 'Not saved: this record changed since you opened it.' : 'Not saved. Check the highlighted values.', { tone: 'error' });
       showErrors();
       return;
     }
@@ -326,11 +326,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const save = async () => {
     if (store.saving.peek()) return false;
     // What is typed in the focused field could not be read: say so, and leave the focus there to fix it.
-    if (!commitTyped()) { toast('Not saved. Check the highlighted values.', { icon: 'info' }); return false; }
+    if (!commitTyped()) { toast('Not saved. Check the highlighted values.', { tone: 'error' }); return false; }
     if (!isNew && !store.dirty.peek()) return true;
     const created = isNew;
     let ok = false;
-    try { ok = await store.save(); } catch (error) { toast((error as Error).message, { icon: 'info' }); return false; }
+    try { ok = await store.save(); } catch (error) { toast((error as Error).message, { tone: 'error' }); return false; }
     const live = saveViews.get(store);
     if (live) live(ok, created);
     else if (ok) {
@@ -339,7 +339,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       // acknowledges the server result without changing the page the person chose to visit meanwhile.
       if (created && store.lastCreatedKey) ctx.unsaved.remove(name, store.lastCreatedKey);
       toast(created ? `${model.label} created (${store.lastSavedId}). ${store.createReplayed ? `${store.createReplayed} ` : ''}Open ${model.plural.toLowerCase()} to view it.` : `${model.label} saved`, { duration: store.createReplayed ? 12000 : 8000 });
-    } else toast(`${model.label} was not saved. ${store.formError.peek() ?? 'Reopen the draft to retry.'}`, { icon: 'info', duration: 8000 });
+    } else toast(`${model.label} was not saved. ${store.formError.peek() ?? 'Reopen the draft to retry.'}`, { tone: 'error' });
     return ok;
   };
 
@@ -461,12 +461,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const askEvaNow = () => openEvaPanel(ctx, ctx.eva, { name, label: model.label }, store.id!, titleText.peek());
   /** Outline buttons in the title row: two on the page, one in a side panel; the rest join More. */
   const OUTLINE_BUTTONS = panel ? 1 : 2;
-  // A new record's title row carries Cancel and Create where a saved record keeps its moves; the save bar below repeats them.
+  // A new record's title row carries Cancel and Create where a saved record keeps its moves. In a side panel only the
+  // sticky create bar carries them, so the narrow panel shows one pair.
   const newActions = (): Child => [Button({ label: 'Cancel', onClick: () => void discardNew() }),
     canWrite ? withSaveKeys(Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check',
       disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save(), tip: withShortcut(`Create ${model.label.toLowerCase()}`, SCREEN_KEYS.save) })) : null];
   const headerActions = (): Child => {
-    if (isNew) return newActions();
+    if (isNew) return panel ? null : newActions();
     const moves = moveEntries();
     // Ask Eva, when Eva is on for this person: a chat about this record, in a side panel.
     const eva: HeaderEntry | null = ctx.eva.get() ? { label: 'Ask Eva', icon: 'sparkles', allowed: true, blocked: () => null, run: askEvaNow } : null;
