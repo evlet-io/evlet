@@ -4,7 +4,17 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.17 (20-11-2026)
+
+### Upgrading to 0.4.17
+
+- **Nothing to change.** No migrations and no public API removed; every addition is a new keyword argument
+  (`Table(append_when_released=...)`, `Decimal(display_scale=...)`) or a filter key that was refused before.
+- **Turning `append_when_released` on for a table that already holds rows on released documents** takes that table
+  out of their released content, so the release hash no longer matches: the next write keeps the release's snapshot
+  marked drifted (with a warning in the log) and the next release takes a new number. A new table declared with the
+  option, as finance_v1's arrivals would be, does not change any hash.
+- **The frontend accepts Node 22.22.2+ as well as 24.15+.** Nothing to change on Node 24.
 
 ### Added
 
