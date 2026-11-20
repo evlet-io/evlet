@@ -101,7 +101,7 @@ def test_every_record_model_has_name_and_title_and_rows_do_not():
 def test_an_application_refuses_a_model_that_declares_its_own_name(tmp_path):
     class Supplier(Model):
         name = Text(required=True)
-    with pytest.raises(ValueError, match=r'Supplier.name: "name" is the standard record name.*RenameField'):
+    with pytest.raises(ValueError, match=r'Supplier.name: "name" is reserved for the standard record name.*needs nothing else.*RenameField'):
         Application(Database(tmp_path / 'x.sqlite3', Registry(Supplier)))
 
 

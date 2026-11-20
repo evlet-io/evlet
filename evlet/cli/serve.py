@@ -15,10 +15,22 @@ from .project import child, instance_guard
 
 
 class ManagedRuntime:
-    def __init__(self, factory, guard=None, *, jobs=False, debug=False):
+    """The instance application behind ASGI lifespan: opens it at startup, closes it at shutdown.
+
+    With development=True (evlet dev only) a failed start does not end the server: every page answers 503 with the
+    error and the commands that fix it, and the start is tried again once `retry_key()` changes (evlet migrate
+    rewrote the database, for instance). Source edits restart the whole process through the reloader."""
+
+    def __init__(self, factory, guard=None, *, jobs=False, debug=False, development=False, retry_key=None):
         self.factory, self.guard, self.jobs, self.debug = factory, guard, jobs, debug
+        self.development, self.retry_key = development, retry_key
         self.app = None
         self.stopped = None
+        self.failure = None
+        self.resources = None
+        self.worker = None
+        self._failed_key = None
+        self._opening = None
 
     def stop(self):
         if self.stopped is not None:
@@ -29,52 +41,115 @@ class ManagedRuntime:
         if self.app is not None:
             self.app.stop()
 
+    async def open(self):
+        """Take the instance lock, load and initialize the application. On failure everything is released."""
+        from contextlib import ExitStack
+        from ..instances import activate_generation
+        stack = ExitStack()
+        try:
+            if self.guard:
+                stack.enter_context(self.guard())
+            app = self.factory()
+            stack.callback(app.database.close)
+            stack.enter_context(activate_generation(app))
+            await asyncio.to_thread(app.initialize)
+        except BaseException:
+            try:
+                stack.close()
+            except Exception:
+                # Keep the start failure as the reported error; a failed log flush is logged beside it.
+                logging.getLogger(__name__).exception('Closing the database after a failed start')
+            raise
+        self.app, self.resources, self.failure = app, stack, None
+        if self.jobs and self.stopped is not None and self.app.business.jobs:
+            self.worker = asyncio.create_task(self.work(self.stopped))
+
+    def report(self, exc):
+        logger = logging.getLogger(__name__)
+        if self.debug or not isinstance(exc, (ValueError, OSError)):
+            logger.exception('Instance lifecycle failed')
+        else:
+            logger.error('%s', exc)
+
+    def fail(self, exc):
+        """evlet dev: keep serving an error page instead of ending the server."""
+        import traceback
+        self.report(exc)
+        from ..builds import source_path_text
+        detail = ''.join(traceback.format_exception(exc)) if self.debug or not isinstance(exc, (ValueError, OSError)) else ''
+        detail = source_path_text(detail)
+        message = f'{type(exc).__name__}: {exc}' if not isinstance(exc, (ValueError, OSError)) else str(exc)
+        self.failure = (source_path_text(message), detail)
+        self._failed_key = self.retry_key() if self.retry_key else None
+        logging.getLogger(__name__).warning('evlet dev keeps running and shows this error in the browser. Fix the source to reload, '
+                                            'or run the command above; the page retries by itself.')
+
+    async def retry(self):
+        """Start again after a failure when what the start depends on outside the source changed."""
+        if self._opening is None:
+            self._opening = asyncio.Lock()
+        async with self._opening:
+            if self.app is not None or self.retry_key is None or self.retry_key() == self._failed_key:
+                return
+            try:
+                await self.open()
+            except Exception as exc:
+                self.fail(exc)
+            else:
+                logging.getLogger(__name__).warning('Instance started after the earlier error')
+
+    async def error_page(self, scope, send):
+        import html
+        message, detail = self.failure
+        if scope['type'] != 'http':
+            await send({'type': 'websocket.close', 'code': 1011})
+            return
+        accept = dict(scope.get('headers') or ()).get(b'accept', b'')
+        if b'text/html' in accept:
+            body = (ERROR_PAGE.format(message=html.escape(message), detail=f'<pre>{html.escape(detail)}</pre>' if detail else '')).encode()
+            kind = b'text/html; charset=utf-8'
+        else:
+            import json
+            body = json.dumps({'error': message}).encode()
+            kind = b'application/json'
+        await send({'type': 'http.response.start', 'status': 503,
+                    'headers': [(b'content-type', kind), (b'cache-control', b'no-store'), (b'content-length', str(len(body)).encode())]})
+        await send({'type': 'http.response.body', 'body': body})
+
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'lifespan':
+            if self.app is None and self.failure is not None:
+                await self.retry()
             if self.app is None:
+                if self.failure is not None:
+                    await self.error_page(scope, send)
+                    return
                 raise RuntimeError('Run the instance server with ASGI lifespan enabled')
             await self.app(scope, receive, send)
             return
-        from contextlib import nullcontext
         await receive()
         started = False
         try:
-            with self.guard() if self.guard else nullcontext():
-                self.app = self.factory()
-                from ..instances import activate_generation
-                generation = activate_generation(self.app)
-                generation.__enter__()
-                try:
-                    await asyncio.to_thread(self.app.initialize)
-                except Exception:
-                    generation.__exit__(None, None, None)
-                    try:
-                        self.app.database.close()
-                    except Exception:
-                        # Keep the start failure as the reported error; a failed log flush is logged beside it.
-                        logging.getLogger(__name__).exception('Closing the database after a failed start')
+            self.stopped = asyncio.Event()
+            try:
+                await self.open()
+            except Exception as exc:
+                if not self.development:
                     raise
-                self.stopped = asyncio.Event()
-                worker = asyncio.create_task(self.work(self.stopped)) if self.jobs and self.app.business.jobs else None
-                try:
-                    started = True
-                    await send({'type': 'lifespan.startup.complete'})
-                    await receive()
-                finally:
-                    self.stop()
-                    if worker:
-                        await worker
-                    try:
-                        self.app.database.close()
-                    finally:
-                        generation.__exit__(None, None, None)
-                await send({'type': 'lifespan.shutdown.complete'})
+                self.fail(exc)
+            try:
+                started = True
+                await send({'type': 'lifespan.startup.complete'})
+                await receive()
+            finally:
+                self.stop()
+                if self.worker:
+                    await self.worker
+                if self.resources is not None:
+                    self.resources.close()
+            await send({'type': 'lifespan.shutdown.complete'})
         except Exception as exc:
-            logger = logging.getLogger(__name__)
-            if self.debug or not isinstance(exc, (ValueError, OSError)):
-                logger.exception('Instance lifecycle failed')
-            else:
-                logger.error('%s', exc)
+            self.report(exc)
             await send({'type': 'lifespan.shutdown.failed' if started else 'lifespan.startup.failed', 'message': str(exc)})
 
     async def work(self, stopped):
@@ -86,6 +161,16 @@ class ManagedRuntime:
             # Half a second between passes, or less: a committed transaction that queued a job wakes it
             # (Context.enqueue), and so does stopping.
             await asyncio.to_thread(self.app.business.jobs.wait, 0.5)
+
+
+ERROR_PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8"><meta http-equiv="refresh" content="2">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>Evlet dev: start failed</title>
+<style>body{{font:15px/1.5 system-ui,sans-serif;margin:2rem auto;max-width:60rem;padding:0 1rem;color:#222;background:#fff}}
+pre{{white-space:pre-wrap;background:#f4f4f4;padding:1rem;border-radius:6px;overflow:auto}}
+@media (prefers-color-scheme:dark){{body{{color:#eee;background:#161616}}pre{{background:#262626}}}}</style></head>
+<body><h1>The instance did not start</h1><pre>{message}</pre>{detail}
+<p>evlet dev is still running. Save a fix in your app and this page reloads, or run the command named above in
+another terminal; the page checks again every two seconds.</p></body></html>"""
 
 
 class InstanceServer(Server):
@@ -147,10 +232,40 @@ def development_factory():
     name = os.environ['EVLET_CLI_INSTANCE']
     port = int(os.environ['EVLET_CLI_PORT'])
     from ..devlink import DevSignIn
+    path = child(root, 'instances', name)
+    show_source_paths()
     runtime = ManagedRuntime(lambda: load_runtime(root, name, port=port, development=True),
-                             lambda: instance_guard(child(root, 'instances', name), serving=True), jobs=True, debug=os.environ.get('EVLET_CLI_DEBUG') == '1')
+                             lambda: instance_guard(path, serving=True), jobs=True, debug=os.environ.get('EVLET_CLI_DEBUG') == '1',
+                             development=True, retry_key=lambda: data_state(path))
     # Development only: one-time sign-in links at /_dev/signin. serve() below never adds them.
     return DevSignIn(runtime, announce=os.environ.get('EVLET_CLI_LINK') == '1', user=os.environ.get('EVLET_CLI_LINK_USER') or None)
+
+
+def data_state(path):
+    """What changes when evlet migrate, restore or install rewrites the instance's database, for retrying a failed start."""
+    result = []
+    for name in ('data/database.sqlite3', 'data/database.sqlite3-wal', 'apps.lock', '.install-journal.json'):
+        try:
+            stat = (path / name).stat()
+            result.append((name, stat.st_ino, stat.st_mtime_ns, stat.st_size))
+        except OSError:
+            result.append((name, None))
+    return tuple(result)
+
+
+def show_source_paths():
+    """evlet dev: tracebacks name the app's own files, not the build generation copies the server imports."""
+    from ..builds import SOURCES, source_path_text
+    previous = logging.getLogRecordFactory()
+    if getattr(previous, 'evlet_source_paths', False):
+        return
+    def factory(*args, **kwargs):
+        record = previous(*args, **kwargs)
+        if record.exc_info and record.exc_info[0] is not None and SOURCES:
+            record.exc_text = source_path_text(logging.Formatter().formatException(record.exc_info))
+        return record
+    factory.evlet_source_paths = True
+    logging.setLogRecordFactory(factory)
 
 
 def framework_source():
@@ -232,18 +347,37 @@ def administrator_hint(path, name):
     return f'The built-in Administrator has no password yet. Set one with: evlet users set-password {name} admin'
 
 
-def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=False, debug=False, link=True, user=None):
+LOOPBACK = ('127.0.0.1', 'localhost', '::1')
+
+
+def plain_http_warning(host, port, domain):
+    """The warning evlet serve prints when it listens beyond loopback over plain HTTP."""
+    return (f'WARNING: evlet serve listens on {host}:{port} over plain HTTP. Passwords, session cookies and two-step secrets '
+            f'cross the network unencrypted unless an HTTPS proxy in front is the only way in. Prefer --host 127.0.0.1 behind '
+            f'the Caddy site evlet setup --host {domain or "HOSTNAME"} writes, or pass --ssl-certfile and --ssl-keyfile.')
+
+
+def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=False, debug=False, link=True, user=None,
+          ssl_certfile=None, ssl_keyfile=None):
     from ..instances import read_instance
     path = child(root, 'instances', name)
     config = read_instance(path)
     if not development and (warning := proxy_warning(root, name, config.domain, port)):
         logging.getLogger(__name__).warning('%s', warning)
     primary = declares_primary(path)
-    if development and (host not in ('127.0.0.1', 'localhost') or config.domain or primary):
+    if development and (host not in LOOPBACK or config.domain or primary):
         raise ValueError('Development serving requires a local instance and loopback host')
-    public = host not in ('127.0.0.1', 'localhost')
+    if bool(ssl_certfile) != bool(ssl_keyfile):
+        raise ValueError('Pass both --ssl-certfile and --ssl-keyfile, or neither')
+    if development and ssl_certfile:
+        raise ValueError('evlet dev serves loopback over plain HTTP; --ssl-certfile is for evlet serve')
+    public = host not in LOOPBACK
     if public and not config.domain and not primary:
         raise ValueError('Configure an HTTPS domain before binding an instance beyond loopback')
+    if public and not ssl_certfile:
+        import sys
+        print(plain_http_warning(host, port, config.domain), file=sys.stderr, flush=True)
+        logging.getLogger(__name__).warning('Serving beyond loopback over plain HTTP; see the warning above')
     if development:
         values = {'EVLET_CLI_PROJECT': str(root), 'EVLET_CLI_INSTANCE': name, 'EVLET_CLI_PORT': str(port), 'EVLET_CLI_DEBUG': '1' if debug else '0',
                   'EVLET_CLI_LINK': '1' if link else '0', 'EVLET_CLI_LINK_USER': user or ''}
@@ -263,4 +397,5 @@ def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=Fa
             print(hint, flush=True)
         application = ManagedRuntime(lambda: load_runtime(root, name, port=port, public=public),
                                      lambda: instance_guard(path, serving=True), jobs=jobs, debug=debug)
-        run_server(application, host=host, port=port, lifespan='on', proxy_headers=False)
+        tls = {'ssl_certfile': str(ssl_certfile), 'ssl_keyfile': str(ssl_keyfile)} if ssl_certfile else {}
+        run_server(application, host=host, port=port, lifespan='on', proxy_headers=False, **tls)
