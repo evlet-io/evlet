@@ -4,9 +4,9 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.15 (20-11-2026)
 
-### Upgrading
+### Upgrading to 0.4.15
 
 - **No migrations and no public API removed.** `RunData` gains `seed=False` and `evlet` exports `DropIndex`.
 - **Seed steps run on new instances.** `RunData(..., seed=True)` now also runs on a new database and on a
@@ -35,7 +35,6 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   now give `stored=False` fields their calculated value, computed on the first read of one, instead of `None`.
   Tests that called `business.virtual_values` to read them can read the attribute. A row read through a record
   now gives `None`, not `AttributeError`, for a declared field the detail left out.
-
 - **Model scripts are served from the app package.** A script's address is now
   `/assets/scripts/<hash>/<path in the app>` (`purchase/purchase_order.js`), and the hash covers every `.js` file
   of the app. `Meta.script` may use `..` inside the app; a path out of it fails at start-up with "leaves the app
@@ -57,13 +56,21 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `AddIndex` ([docs/model-engine.md](docs/model-engine.md#explicit-migrations)).
 - **Seed data steps.** `RunData(function, seed=True)` creates starting records on every instance, new ones
   included ([docs/app-upgrades.md](docs/app-upgrades.md#seed-data-on-new-instances)).
-
 - **Abstract models.** `Meta.abstract = True` declares a shared base with fields, Tables and `derive()` that
   has no table, schema entry or migration of its own ([docs/model-engine.md](docs/model-engine.md#abstract-models)).
 - **One script root per app.** A model, prompt or `Extend` script may import any `.js` file of its app
   across folders ([docs/model-scripts.md](docs/model-scripts.md#the-script-file)).
 - **`record.model`**, the model class of a bound record, as on a draft ([docs/prompts.md](docs/prompts.md)).
 - **Model names in `Outcome`:** `Outcome(new=("deliveryorder", values))` and `Outcome(open=("invoice", id))`.
+
+### Changed
+
+- `initial=` suggestions that read nothing `derive()` sets now fill before `derive()` on every path, and values
+  code sets on a new draft or prompt are no longer replaced by them.
+- `@validate` and `Extend` checks run once per save, before `@release`.
+- Model scripts are served from the app package at `/assets/scripts/<hash>/<path in the app>`.
+- `documents.add_outcome` takes the registry, and `Outcome` resolves model names when answered.
+- The migration plan writes `DropIndex` for an index the models no longer declare.
 
 ### Fixed
 
