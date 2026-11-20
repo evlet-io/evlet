@@ -31,6 +31,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   A `RenameField` now renames the field in the entries that cover it, and a `DropIndex` by the old or the new names
   drops the index on the columns they have now. finance_v1's 0009 data step that drops the index by name is no
   longer needed ([docs/model-engine.md](docs/model-engine.md)).
+- **A zero reads as a value in a collapsed section's summary.** A stored 0.00 (a paid invoice's `outstanding`), a zero
+  quantity at its default and No showed as "Not set" on the closed "More information" row. Only an empty value (null or
+  '') does now; the row's "3 of 5 filled" count is unchanged.
 - **A schema change of an append-only (ledger) table migrates without `SetAppendOnly` around it.** An `AlterField`
   (finance_v1 gave `posting.kind` a new Select choice), a `RenameField` or a `RetireField` failed unless the migration
   turned append only off and on again, which `makemigration` does not write. `migrate` now lifts the append-only
