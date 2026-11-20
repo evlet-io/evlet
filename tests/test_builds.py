@@ -75,7 +75,7 @@ def test_reference_app_full_public_flow(project):
     create_instance(project, 'acme')
     result = install(project, 'acme', app_name='amendment', trust=True)
     assert result['apps'] == ['amendment']
-    app = load_runtime(project, 'acme')
+    app = load_runtime(project, 'acme', development=True)
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     c = client(app)
@@ -461,3 +461,14 @@ def test_discovery_skips_child_rows_declared_in_models(project, monkeypatch, tmp
         app.database.close()
     for name in [name for name in sys.modules if name == 'notes' or name.startswith('notes.')]:
         del sys.modules[name]
+
+
+def test_first_admin_setup_over_http_is_development_only(project):
+    """Under evlet serve the Administrator is created with evlet users set-password, never by the first local caller."""
+    source = Path(__file__).resolve().parents[1] / 'examples/amendment'
+    shutil.copytree(source, project / 'apps/amendment', ignore=shutil.ignore_patterns('__pycache__', '*.egg-info', 'build', 'dist'))
+    create_instance(project, 'acme')
+    install(project, 'acme', app_name='amendment', trust=True)
+    served = load_runtime(project, 'acme')
+    served.initialize()
+    assert http(served, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 403
