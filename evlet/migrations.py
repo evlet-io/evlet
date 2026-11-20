@@ -1272,8 +1272,12 @@ def _planned_definition(saved, pending, steps=None, applied=()):
                 raise SchemaError(f'Unknown migration table: {operation.table}')
             fields = {field['name']: field for field in models[operation.table]['fields']}
             ledger = models[operation.table].get('ledger')
-            if ledger is not None and ledger['append_only'] and isinstance(operation, (RenameField, RetireField, DropField, AlterField)):
-                raise SchemaError(f'{operation.table} is append only, so {type(operation).__name__} cannot change its stored '
+            # migrate() lifts the append-only guard around a schema change of the table (LIFTED) and puts it back at
+            # once; a step that would change or delete what the rows recorded stays refused.
+            if ledger is not None and ledger['append_only'] and (isinstance(operation, DropField)
+                                                                 or isinstance(operation, AlterField) and operation.fill is not None):
+                raise SchemaError(f'{operation.table} is append only, so {type(operation).__name__}'
+                                  f'{" with fill=" if isinstance(operation, AlterField) else ""} cannot change its stored '
                                   'rows; turn it off first with SetAppendOnly in an earlier migration')
             if isinstance(operation, SetAppendOnly):
                 if ledger is None:
@@ -1444,6 +1448,11 @@ def destructive(migrations, allow_destructive):
                           '(evlet migrate --allow-destructive keeps a backup)')
 
 
+# Schema operations migrate() runs on an append-only table with its guard lifted (DropField and an AlterField with
+# fill= change what the rows recorded, so they stay refused).
+LIFTED = (RenameField, RetireField, AlterField)
+
+
 def step_arguments(operation, steps):
     """What _planned_definition worked out for applying an operation: AlterField's factor and whether the field
     was required, RetireField's field."""
@@ -1536,7 +1545,14 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
             for position, migration in enumerate(pending, len(history) + 1):
                 if not fresh and not baseline:
                     for operation in migration.operations:
+                        # A schema change of an append-only table runs with its guard lifted, in this transaction only.
+                        lifted = isinstance(operation, LIFTED) and connection.table_exists(operation.table) \
+                            and ledgers.has_triggers(connection, operation.table)
+                        if lifted:
+                            ledgers.drop_triggers(connection, operation.table)
                         operation.apply(connection, *step_arguments(operation, steps))
+                        if lifted:
+                            ledgers.add_triggers(connection, operation.table)
                         if isinstance(operation, RenameField):
                             renamed = database.registry.models.get(operation.table)
                             rename_in_overrides(connection, operation.table, renamed.__name__ if renamed is not None else None,
