@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDate, formatDateTime, formatMoney, formatNumber, parseDate, plainNumber, setRegion, todayGst } from '../model/format';
+import { formatDate, formatDateTime, formatMoney, formatNumber, formatTrimmed, parseDate, plainNumber, setRegion, todayGst } from '../model/format';
 import { kindOf, parseDateTime } from '../ui/kinds';
 
 describe('formatting', () => {
@@ -29,6 +29,28 @@ describe('formatting', () => {
     expect(parseDate('2026-11-01')).toBe('2026-11-01');
     expect(parseDate('31-02-2026')).toBeNull();
     expect(parseDate('soon')).toBeNull();
+  });
+
+  it('shows a Decimal(display_scale=) with at most that many places and no trailing zeros, never changing its value', () => {
+    const counter = { name: 'credited_qty', type: 'decimal', label: 'Credited', required: false, read_only: false, scale: 6, display_scale: 6 };
+    expect(formatTrimmed('0.000000', 6)).toBe('0');
+    expect(formatTrimmed('1.500000', 6)).toBe('1.5');
+    expect(formatTrimmed('1234.250000', 6)).toBe('1,234.25');
+    expect(formatTrimmed('-0.000001', 2)).toBe('0');
+    expect(formatTrimmed('2.345', 2)).toBe('2.35');
+    expect(kindOf('decimal').format('0.000000', counter)).toBe('0');
+    expect(kindOf('decimal').format('1.500000', counter)).toBe('1.5');
+    expect(kindOf('decimal').format('1.123456', { ...counter, display_scale: 2 })).toBe('1.12');
+    // The input shows every place the value holds, without the trailing zeros; what it parses is stored at scale 6.
+    expect(kindOf('decimal').edit!('1.500000', counter)).toBe('1.5');
+    expect(kindOf('decimal').parse!('1.5', counter)).toBe('1.500000');
+    // Without display_scale the value shows at its scale, as before.
+    expect(kindOf('decimal').format('0.000000', { ...counter, display_scale: undefined })).toBe('0.000000');
+    try {
+      setRegion({ number: '1.234,56' });
+      expect(formatTrimmed('1234.500000', 6)).toBe('1.234,5');
+      expect(formatTrimmed('1000', 6)).toBe('1.000');
+    } finally { setRegion({}); }
   });
 
   it("follows the person's region for dates, numbers and the time zone", () => {

@@ -437,7 +437,7 @@ class Decimal(Field):
     sql_type = "INTEGER"
     default_rounding = "half_even"
 
-    def __init__(self, *, scale=4, minimum=None, maximum=None, rounding=None, **kwargs):
+    def __init__(self, *, scale=4, minimum=None, maximum=None, rounding=None, display_scale=None, **kwargs):
         super().__init__(**kwargs)
         self.rounding = rounding_mode(rounding, self.default_rounding)
         from .calc import Expr
@@ -446,6 +446,12 @@ class Decimal(Field):
         if scale is not None and (type(scale) is not int or not 0 <= scale <= 9):
             raise ValueError("scale must be an integer between 0 and 9")
         self.scale = scale
+        # Display only: shown with at most this many decimal places and no trailing zeros (0.000000 as 0, 1.500000 as
+        # 1.5); stored and validated at `scale`. Not on Currency, whose places come from its currency.
+        if display_scale is not None and (type(display_scale) is not int or not 0 <= display_scale <= (9 if scale is None else scale)
+                                          or self.kind == 'currency'):
+            raise ValueError("display_scale is a whole number from 0 to the field's scale, on a Decimal or Percent")
+        self.display_scale = display_scale
         self.minimum = DecimalValue(str(minimum)) if minimum is not None else None
         self.maximum = DecimalValue(str(maximum)) if maximum is not None else None
         if any(bound is not None and not bound.is_finite() for bound in (self.minimum, self.maximum)):

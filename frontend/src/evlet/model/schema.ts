@@ -30,6 +30,8 @@ export interface FieldSchema {
   suffix?: string;
   /** Integer(grouping=False): shown without thousands separators, such as a year. */
   grouping?: boolean;
+  /** Decimal(display_scale=2): shown with at most this many places and no trailing zeros (display only). */
+  display_scale?: number;
   scale?: number | null;
   /** A Currency field's code when it is fixed (on the field, or an app setting read by the server). */
   currency?: string;

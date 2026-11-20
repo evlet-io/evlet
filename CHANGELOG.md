@@ -19,6 +19,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   finance_v1 showed a Stock Transfer's arrivals as a separate model in a Related block instead
   ([docs/states-actions.md](docs/states-actions.md)).
 - **A Related block lists up to 12 fields** as columns, instead of 6 ([docs/ui.md](docs/ui.md)).
+- **Display precision for a Decimal.** `Decimal(scale=6, display_scale=2)` shows at most two places without trailing
+  zeros (`0.000000` as `0`, `1.500000` as `1.5`) on forms, grids and lists; storage, validation, calculations and
+  migrations are unchanged ([docs/model-engine.md](docs/model-engine.md)).
 
 ### Fixed
 

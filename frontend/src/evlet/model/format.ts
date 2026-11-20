@@ -69,6 +69,16 @@ export function formatNumber(value: string | number | null | undefined, scale = 
   return (negative && !zero ? '-' : '') + group(whole) + (fraction ? separators()[1] + fraction : '');
 }
 
+/**
+ * A decimal shown with at most `places` decimal places and no trailing zeros, for Decimal(display_scale=):
+ * '0.000000' is '0' and '1.500000' is '1.5'. The stored value keeps its scale; only the text changes.
+ */
+export function formatTrimmed(value: string | number | null | undefined, places: number): string {
+  const shown = formatNumber(value, places), mark = separators()[1];
+  if (!shown.includes(mark) || shown === INVALID_AMOUNT) return shown;
+  return shown.replace(/0+$/, '').replace(new RegExp(`\\${mark}$`), '');
+}
+
 // ---------- currency display ----------
 // How each currency code is shown on this site (Controls, Currencies; /api/schema currency_display): a text
 // symbol or a small image, before or after the amount, with or without a space. Codes the site has not
