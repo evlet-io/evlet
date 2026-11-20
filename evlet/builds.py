@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 
-from .models import Model, Registry
+from .models import Child, Model, Registry
 from .permissions import Policy, Rule
 
 VERSION = 1
@@ -76,6 +76,7 @@ def discover(package, modules=None):
                     continue
                 if getattr(value, '__transient__', False): continue
                 if getattr(value, '__abstract__', False): continue  # A shared base: no table, schema entry or migration.
+                if issubclass(value, Child): continue  # A row model, reached through a document's Table(...).
                 if name == package.name or name.startswith(package.name + '.models.') or name == package.name + '.models':
                     value.__resource_id__ = resource_identity(package, value)
                     value.__declaration_mode__ = True

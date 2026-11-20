@@ -739,6 +739,41 @@ def test_drop_index_refuses_an_index_the_plan_does_not_have(tmp_path):
         Migration('0002', DropIndex('party', ('code', 'code'))).checksum()
 
 
+def test_drop_index_is_done_on_an_instance_created_after_the_index_left_the_models(tmp_path):
+    """0001 made a unique (kind, code) index; the models dropped it without a migration, and an instance
+    created from those models never had it. A later DropIndex migrates that instance and the one that ran 0001."""
+    from evlet import AddField, DropIndex
+    indexed = party([(('kind', 'code'), {'unique': True})], code={'index': True})
+    first = [Migration('0001_initial', CreateModel(indexed)), Migration('0002_note', AddField('party', 'note', Text()))]
+    attributes = {'__module__': __name__, 'code': Text(required=True, max_length=20), 'title': Text(max_length=120),
+                  'kind': Text(max_length=20), 'note': Text()}
+    target = Registry(type('Party', (Model,), attributes))
+    migrations = [*first, Migration('0003_drop', DropIndex('party', ('kind', 'code'), unique=True),
+                                    DropIndex('party', 'code'))]
+    # The old instance ran 0001 with the index and 0002 later.
+    old = tmp_path / 'old.sqlite3'
+    Database(old, Registry(indexed), migrations=first[:1]).migrate(first[:1])
+    with pytest.raises(SchemaError, match='Meta.indexes differ'):
+        Database(old, target).migrate(first)
+    assert Database(old, target).plan(migrations).text().endswith('The migrations produce the current models.')
+    assert Database(old, target).migrate(migrations) == ['0002_note', '0003_drop']
+    # The fresh instance was created from the models at 0002, which no longer have either index.
+    fresh = tmp_path / 'fresh.sqlite3'
+    Database(fresh, target, migrations=first).migrate(first)
+    assert index_shape(Database(fresh, target), 'party') == []
+    assert Database(fresh, target).plan(migrations).text().endswith('The migrations produce the current models.')
+    assert Database(fresh, target).migrate(migrations) == ['0003_drop']
+    for path in (old, fresh):
+        database = Database(path, target, migrations=migrations)
+        database.initialize()
+        assert index_shape(database, 'party') == []
+        database.create(target.models['party'], code='A', kind='x')
+        database.create(target.models['party'], code='A', kind='x')
+    # An index no applied migration ever made is still refused.
+    with pytest.raises(SchemaError, match=r"party: there is no index \('kind', 'title'\) to drop"):
+        Database(fresh, target).migrate([*migrations, Migration('0004', DropIndex('party', ('kind', 'title')))])
+
+
 def test_drop_field_takes_its_composite_index_out_of_the_plan(tmp_path):
     from evlet import DropField, RetireField
     path = tmp_path / 'drop.sqlite3'

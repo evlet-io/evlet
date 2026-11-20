@@ -399,3 +399,65 @@ def test_abstract_models_are_bases_without_tables(project, monkeypatch, tmp_path
                 abstract = True
             x_field = Text()
 
+
+
+SHARED_LINE = '''from evlet import Child, Decimal, Text
+
+
+class LineBase(Child):
+    """A shared row base in models/: not a model of its own, and not marked abstract."""
+    qty = Decimal(scale=2, default=1)
+    rate = Decimal(scale=2, default=0)
+
+
+class PurchaseLine(LineBase):
+    """A concrete row that two documents' Tables use."""
+    item = Text(max_length=80)
+'''
+
+LINE_DOCUMENTS = '''from evlet import Model, Rule, Table, Text
+
+from .lines import PurchaseLine
+
+
+class PurchaseOrder(Model):
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
+    supplier = Text()
+    lines = Table(PurchaseLine)
+
+
+class PurchaseReturn(Model):
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
+    supplier = Text()
+    lines = Table(PurchaseLine)
+'''
+
+
+def test_discovery_skips_child_rows_declared_in_models(project, monkeypatch, tmp_path):
+    from evlet import Database, Registry
+    from evlet.builds import discover
+    from test_rules_types import start
+    for name in [name for name in sys.modules if name == 'notes' or name.startswith('notes.')]:
+        monkeypatch.delitem(sys.modules, name)
+    package = read_package(create_app(project, 'notes'))
+    shutil.rmtree(package.path / 'models')
+    (package.path / 'models').mkdir()
+    (package.path / 'models/__init__.py').write_text('')
+    (package.path / 'models/lines.py').write_text(SHARED_LINE)
+    (package.path / 'models/documents.py').write_text(LINE_DOCUMENTS)
+    monkeypatch.syspath_prepend(str(package.path.parent))
+    definition = discover(package)
+    assert [model.__name__ for model in definition.models] == ['PurchaseOrder', 'PurchaseReturn']
+    registry = Registry(*definition.models)
+    documents = sys.modules['notes.models.documents']
+    app = start(Database(tmp_path / 'lines.sqlite3', registry))
+    try:
+        with app.business.context(User(1, 'admin', 'admin')) as context:
+            for model in (documents.PurchaseOrder, documents.PurchaseReturn):
+                record = context.create(model, supplier='Gulf', children={'lines': [{'item': 'Bolt', 'qty': '3', 'rate': '2'}]})
+                rows = context.get(model, record.id).lines
+                assert [(row.item, str(row.qty), str(row.rate)) for row in rows] == [('Bolt', '3.00', '2.00')]
+    finally:
+        app.database.close()
+    for name in [name for name in sys.modules if name == 'notes' or name.startswith('notes.')]:
+        del sys.modules[name]

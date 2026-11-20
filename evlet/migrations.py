@@ -1195,9 +1195,34 @@ def _stable(value):
     return value
 
 
-def _planned_definition(saved, pending, steps=None):
+def _declared_earlier(applied, operation):
+    """Whether an applied migration made the index a DropIndex removes: an AddIndex, or a CreateModel or
+    AddTable whose model declared it. An instance created from later models never had that index, though
+    its history records the migration that made it, so the drop has nothing to do there."""
+    for migration in applied:
+        for earlier in migration.operations:
+            if isinstance(earlier, AddIndex):
+                if (earlier.table, earlier.field, earlier.unique) == (operation.table, operation.field, operation.unique):
+                    return True
+            elif isinstance(earlier, (CreateModel, AddTable)):
+                model = earlier.model() if isinstance(earlier, AddTable) else earlier.model
+                if storage_name(model) != operation.table:
+                    continue
+                if operation.composite():
+                    if (operation.field, operation.unique) in getattr(model, '__indexes__', ()):
+                        return True
+                else:
+                    field = model.__fields__.get(operation.field)
+                    if field is not None and field.metadata().get('unique' if operation.unique else 'index'):
+                        return True
+    return False
+
+
+def _planned_definition(saved, pending, steps=None, applied=()):
     """The schema the pending migrations produce from a saved definition. `steps`, a dict when given, gets
-    what applying needs per operation: AlterField's value factor and RetireField's old field metadata."""
+    what applying needs per operation: AlterField's value factor and RetireField's old field metadata.
+    `applied` are the migrations the instance already ran, which a DropIndex of an index the saved
+    definition lacks is checked against (_declared_earlier)."""
     schema = copy.deepcopy(json.loads(saved))
     models = {model['name']: model for model in schema['models']}
     steps = {} if steps is None else steps
@@ -1247,7 +1272,7 @@ def _planned_definition(saved, pending, steps=None):
             if isinstance(operation, DropIndex) and operation.composite():
                 entries = model_indexes.saved(models[operation.table])
                 kept = [item for item in entries if (tuple(item['fields']), item['unique']) != (operation.field, operation.unique)]
-                if len(kept) == len(entries):
+                if len(kept) == len(entries) and not _declared_earlier(applied, operation):
                     raise SchemaError(f'{operation.table}: there is no {"unique " if operation.unique else ""}index '
                                       f'{operation.field} to drop')
                 entries[:] = kept
@@ -1295,10 +1320,11 @@ def _planned_definition(saved, pending, steps=None):
                 fields[operation.field]['unique' if operation.unique else 'index'] = True
             elif isinstance(operation, DropIndex):
                 flag = 'unique' if operation.unique else 'index'
-                if not fields.get(operation.field, {}).get(flag):
+                if not fields.get(operation.field, {}).get(flag) and not _declared_earlier(applied, operation):
                     raise SchemaError(f'{operation.table}.{operation.field}: there is no {"unique " if operation.unique else ""}'
                                       'index to drop')
-                fields[operation.field][flag] = False
+                if operation.field in fields:
+                    fields[operation.field][flag] = False
             elif isinstance(operation, Recompute):
                 if set(operation.fields) - set(fields):
                     raise SchemaError('Recompute names a field that does not exist')
@@ -1455,7 +1481,7 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
             if saved:
                 ledger_switch(saved[0], database.registry)
             if saved and (history or not _same(saved[0], database.registry)):
-                planned = _planned_definition(saved[0], pending, steps)
+                planned = _planned_definition(saved[0], pending, steps, migrations[:len(history)])
                 if _comparable(planned) != _comparable(database.registry.schema()):
                     raise mismatch(planned, database.registry.schema())
                 destructive(pending, allow_destructive)
@@ -1761,7 +1787,7 @@ def plan_from(saved, history, migrations, registry, *, tables=True):
         return MigrationPlan('fresh', pending, (), '')
     if not history and _same(saved, registry):
         return MigrationPlan('baseline', pending, (), '')
-    planned = _planned_definition(saved, pending)
+    planned = _planned_definition(saved, pending, applied=migrations[:len(history)])
     found = tuple(differences(planned, registry.schema()))
     if not found and not pending and not _same(saved, registry):
         found = (('', None, 'Changed model definitions require a new migration'),)
