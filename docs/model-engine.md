@@ -107,13 +107,24 @@ class Invoice(Model):
   calculations run in dependency order around it:
 
   ```
-  formulas that read nothing derive() sets → derive() → formulas that do → @validate
+  formulas and suggestions that read nothing derive() sets → derive() → everything else → @validate
   ```
 
   A formula reads a derived value when it reads a derived field, a derived Table or a derived
-  row field, directly or through another formula. So above, `derive()` sees each line's
+  row field, directly or through another formula, rule or suggestion. So above, `derive()` sees each line's
   `amount` and the `subtotal` of this write, and `tax_total` and `total` read what it built. A
-  model without `derive()` calculates in one pass. Both the finite-v1 plan and legacy string
+  model without `derive()` calculates in one pass.
+* **Suggestions it reads.** An `initial=` suggestion that reads nothing `derive()` sets fills its
+  field before `derive()` runs, on a document created from Python, the API or a prompt as in the
+  browser, and on an update that changes one of its inputs. A value the caller set is never
+  replaced. The suggestion stays a suggestion: after `derive()`, the full pass decides it exactly
+  as on a model without `derive()`, so the next change of its input fires it again. A suggestion
+  that reads a derived value runs after `derive()`.
+* **Rules that wait on it.** `derive()` sees the caller's value of a field whose rule or suggestion
+  waits on `derive()`; the rule applies after it. So with `typed_rate = Decimal(applies_when=parent.pricing_basis
+  == "manual")` and a derived `pricing_basis`, `derive()` reads `line.typed_rate` as the caller sent
+  it, and a save under another basis then stores it empty. A formula that reads such a field still
+  waits on `derive()`, since its result changes once the rule clears the field. Both the finite-v1 plan and legacy string
   formulas run this way. A locked or released record keeps its derived values on the writes
   that keep its saved results, so `derive()` does not run there
   ([finite-calculations.md](finite-calculations.md#server-writes)).

@@ -5,7 +5,7 @@ from datetime import date
 
 import pytest
 
-from evlet import Database, Date, Decimal, Model, Registry, State, Text, release, state
+from evlet import Database, Date, Decimal, Link, Model, Registry, State, Text, ValidationError, release, state, validate
 from evlet.calc import F
 from evlet.periods import set_lock
 from evlet.auth import User
@@ -193,3 +193,71 @@ def test_recompute_keeps_released_records_without_any_effect(tmp_path):
     assert applied == ['0001_recompute'] and applied.skipped == 1
     with db._connection() as connection:
         assert [row[0] for row in connection.execute('SELECT double FROM bill ORDER BY id')] == [990000, 40000]
+
+
+# ---------- @validate runs once per save, before @release (docs/states-actions.md) ----------
+
+class Invoice(Model):
+    permissions = ALL
+    total = Decimal(scale=2, default=0)
+    paid = Decimal(scale=2, default=0)
+
+
+class Payment(Model):
+    """Its check reads what the invoice still owes; posting it settles that amount on the invoice."""
+    permissions = ALL
+    invoice = Link(Invoice, required=True)
+    amount = Decimal(scale=2, required=True)
+    reference = Text(required=True)
+    docstate = State(State.Step('draft'), State.Step('posted', release=True, lock=True),
+                     rules=(State.Rule('draft', 'posted', 'Post', key='post'),))
+
+    @validate
+    def within_outstanding(self):
+        CALLS.append(('validate', self.docstate))
+        invoice = self.context.get(Invoice, self.invoice)
+        if self.amount > invoice.total - invoice.paid:
+            raise ValidationError({'amount': 'The amount is more than the outstanding'})
+
+    @release
+    def settle_invoice(self):
+        invoice = self.context.get(Invoice, self.invoice)
+        invoice.paid = invoice.paid + self.amount
+        invoice.save()
+        if self.reference == 'clear me':
+            self.reference = None
+
+
+@pytest.fixture
+def payments(tmp_path):
+    CALLS.clear()
+    app = start(Database(tmp_path / 'payments.sqlite3', Registry(Invoice, Payment)))
+    with app.business.context(ADMIN) as context:
+        app.invoice = context.create(Invoice, total='100.00').id
+    yield app
+    app.database.close()
+
+
+def pay(app, amount, reference='bank'):
+    with app.business.context(ADMIN) as context:
+        payment = context.create(Payment, invoice=app.invoice, amount=amount, reference=reference)
+        CALLS.clear()
+        payment.move('post')
+        return context.get(Invoice, app.invoice).paid
+
+
+def test_validate_runs_once_before_release(payments):
+    assert pay(payments, '100.00') == Decimal().validate('100.00')
+    assert CALLS == [('validate', 'posted')]
+    # A second payment over what is left is refused by the same check.
+    with pytest.raises(ValidationError) as error:
+        pay(payments, '1.00')
+    assert error.value.errors == {'amount': 'The amount is more than the outstanding'}
+
+
+def test_field_checks_still_run_after_release(payments):
+    with pytest.raises(ValidationError) as error:
+        pay(payments, '40.00', reference='clear me')
+    assert error.value.errors == {'reference': 'This field is required'}
+    with payments.business.context(ADMIN, readonly=True) as context:
+        assert context.get(Invoice, payments.invoice).paid == Decimal().validate('0')

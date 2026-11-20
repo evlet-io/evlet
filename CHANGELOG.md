@@ -4,6 +4,39 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Upgrading
+
+- **`derive()` sees suggestions.** An `initial=` suggestion that reads nothing `derive()` sets now fills its field
+  before `derive()` runs, on a document created from Python, the API or a prompt (only the browser did before).
+  `derive()` code that treated such a field as empty on those paths now reads the suggested value.
+- **A field whose `applies_when` or `initial` waits on `derive()` is readable in `derive()`.** It reads the
+  caller's value, and the rule applies after it. Only formulas (`compute=`) over a derived value still raise
+  `derive() read ..., which depends on ... that derive() sets`; `Registry.derive_split()` now maps only those.
+- **`@validate` runs once per save, before `@release`.** A move into the released set no longer runs `@validate`
+  (and `Extend` checks) a second time after `@release`; calculations and field checks (required, locks, Links,
+  `min_rows`) still run again. A check that relied on seeing what `@release` posted must move into `@release`.
+- **Values code sets on a new draft are caller values.** An attribute set on a prompt or a new document's draft,
+  a value set in a prompt's `load()`, starting values (`Prompt(field=...)`) and the rows code assigns to a Table
+  are no longer replaced by `initial=` on `submit()` or save. Code that relied on the suggestion winning should
+  stop setting the field.
+- **A `Record` reads its virtual values.** `context.get(...)` and `context.list(...)` records (and their Table rows)
+  now give `stored=False` fields their calculated value, computed on the first read of one, instead of `None`.
+  Tests that called `business.virtual_values` to read them can read the attribute. A row read through a record
+  now gives `None`, not `AttributeError`, for a declared field the detail left out.
+
+### Fixed
+
+- `initial=` suggestions ran after `derive()` outside the browser
+  ([docs/model-engine.md](docs/model-engine.md#derived-values)).
+- A rule over a derived field made the field unreadable in `derive()`.
+- A payment check that read the invoice's outstanding refused every payment, since `@validate` ran again after
+  `@release` posted ([docs/states-actions.md](docs/states-actions.md)).
+- `initial=` overwrote values set on a new prompt or draft by code, `load()` or starting values
+  ([docs/prompts.md](docs/prompts.md)).
+- A `Record` from `context.get`/`context.list` read virtual fields as `None`, while one refreshed after a write had them.
+
 ## 0.4.14 (19-11-2026)
 
 ### Upgrading to 0.4.14

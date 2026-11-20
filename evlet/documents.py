@@ -43,23 +43,63 @@ def freeze(value):
 UNBOUND = 'Get the record through a context to run its actions'
 
 
+class Row(Snapshot):
+    """A Table row of a Record. Its virtual values (stored=False) are calculated with the record's, on the first read."""
+    def __init__(self, record, model, values):
+        values = {key: freeze(value) for key, value in values.items()}
+        object.__setattr__(self, '_values', values)
+        object.__setattr__(self, '_data', MappingProxyType(values))
+        object.__setattr__(self, '_record', record)
+        object.__setattr__(self, '_row_model', model)
+
+    def __getattr__(self, name):
+        if name not in self._data:
+            field = self._row_model.__declared_fields__.get(name)
+            if field is None:
+                raise AttributeError(name)
+            if not field.stored:
+                self._record._virtuals()
+            return self._data.get(name)
+        return self._data[name]
+
+
 class Record:
     """A record read through a Context (get, create, list): field values as attributes, Table rows as lists of
     read-only rows, and its @action methods and state rules (by key) as methods, run with every check of
     context.action and context.move. Bound to the context that read it and to that revision."""
     def __init__(self, context, model, detail):
+        object.__setattr__(self, '_context', context)
+        object.__setattr__(self, '_model', model)
+        self._load(detail)
+        object.__setattr__(self, '_changes', {})
+
+    def _load(self, detail):
         # What only the write reports (row ids, an action's outcome, a queued job) is not part of the record.
         detail = {key: value for key, value in detail.items() if key not in ('_row_ids', '_outcome', '_job')}
         children = detail.get('children') if isinstance(detail.get('children'), dict) else {}
-        object.__setattr__(self, '_context', context)
-        object.__setattr__(self, '_model', model)
-        owned = context._business.children
+        model, owned = self._model, self._context._business.children
         object.__setattr__(self, '_data', {**python_values(model, {key: value for key, value in detail.items()
                                                                     if not key.startswith('_') and key != 'children'}),
-                                           **{name: tuple(Snapshot(python_values(owned[model, name].model, row)) for row in rows)
+                                           **{name: tuple(Row(self, owned[model, name].model, python_values(owned[model, name].model, row))
+                                                          for row in rows)
                                               if (model, name) in owned else freeze(rows) for name, rows in children.items()}})
         object.__setattr__(self, '_detail', detail)
-        object.__setattr__(self, '_changes', {})
+        # Virtual values are calculated on the first read of one, once per revision read (Business.virtual_values).
+        object.__setattr__(self, '_virtual', False)
+
+    def _virtuals(self):
+        """Merge the record's virtual values, and its rows', into what it reads; a full settle, so only on demand."""
+        if self._virtual:
+            return
+        object.__setattr__(self, '_virtual', True)
+        business, model = self._context._business, self._model
+        values = business.virtual_values(self._context, model, self.id)
+        self._data.update(python_values(model, values.get((model, self._data.get('id')), {})))
+        for (parent, name), child in business.children.items():
+            if parent is model:
+                for row in self._data.get(name) or ():
+                    if isinstance(row, Row):
+                        row._values.update(python_values(child.model, values.get((child.model, row._data.get('id')), {})))
 
     def __repr__(self):
         return f'<{self._model.__name__} {self.id}>'
@@ -88,6 +128,9 @@ class Record:
         if inspect.isfunction(method):
             return MethodType(method, self)
         if name in self._model.__declared_fields__:
+            if not self._model.__declared_fields__[name].stored and not self._virtual:
+                self._virtuals()
+                return self._data.get(name)
             return None
         raise AttributeError(name)
 
@@ -156,9 +199,7 @@ class Record:
             raise ConflictError('This record changed since it was read. Reload it before saving.')
 
     def _refresh(self, detail):
-        fresh = Record(self._context, self._model, detail)
-        for name in ('_data', '_detail'):
-            object.__setattr__(self, name, getattr(fresh, name))
+        self._load(detail)
         self._changes.clear()
 
 
@@ -198,6 +239,8 @@ class Draft:
         object.__setattr__(self, 'key', str(record_id) if record_id else uuid4().hex)
         object.__setattr__(self, '_readonly', False)
         object.__setattr__(self, '_submitted', frozenset())
+        # Fields code assigned on this draft (load(), starting values, a hook): caller values a suggestion keeps.
+        object.__setattr__(self, '_assigned', set())
         # Whether the caller placed this row (a full row list, or `order` in a change set).
         object.__setattr__(self, '_placed', False)
         # Field rule states from the last settlement, and source values as the caller left them (lock checks).
@@ -246,6 +289,7 @@ class Draft:
                 from .sequences import ASSIGNED_BY_ENGINE
                 raise ValidationError({name: ASSIGNED_BY_ENGINE})
             self._values[name] = value
+            self._assigned.add(name)
         elif name in self._definition.__tables__:
             limit = self._definition.__tables__[name].max_rows
             sectioned = sections.enabled(self._definition, name)
@@ -258,7 +302,7 @@ class Draft:
             owned = self.context._business.children.get((self._definition, name)) if self.context is not None else None
             child = owned.model if owned is not None else self._definition.__tables__[name].child
             old_rows = list(self._rows.get(name, []))
-            items = [item if flag else item if isinstance(item, Draft) else Draft(child, item, context=self.context, parent=self, source=self.source)
+            items = [item if flag else item if isinstance(item, Draft) else self._assigned_row(child, item)
                      for item, flag in zip(value, marked)]
             if any(marked):
                 if not sectioned:
@@ -280,6 +324,12 @@ class Draft:
             self._rows[name] = rows
         else:
             raise AttributeError('Unknown draft field: ' + name)
+
+    def _assigned_row(self, child, values):
+        """A row code built from a dict: the values it names are assigned, like attributes set on it."""
+        row = Draft(child, values, context=self.context, parent=self, source=self.source)
+        row._assigned.update(name for name in values if name in child.__declared_fields__)
+        return row
 
     def _section_item(self, name, item):
         """A SectionRow from {"section": label} (a new one) or {"id": ..., "section": label} (one this Table holds)."""
@@ -1176,11 +1226,12 @@ def path_label(item, path):
     return None
 
 
-def settle(context, draft, *, complete, previous=None, kept=False, checks=True):
+def settle(context, draft, *, complete, previous=None, kept=False, checks=True, hooks=True):
     """Bring a document tree to a consistent state: inputs, fetches, calculations, then checks.
 
     `checks=False` stops after the calculations, for reading a saved document's virtual results
-    (Business.add_virtual_values): its Link and field checks are a save's, not a read's.
+    (Business.add_virtual_values): its Link and field checks are a save's, not a read's. `hooks=False` keeps
+    every field check but skips @validate and the Extend checks, which a save runs once, before @release.
 
     A preview (complete=False) returns errors and field states; a save (complete=True) also runs
     the full validation and raises ValidationError on any error. With `kept` (an ordinary write on a
@@ -1207,10 +1258,13 @@ def settle(context, draft, *, complete, previous=None, kept=False, checks=True):
     if getattr(draft._definition, '__derives__', ()) and draft.parent is None and not kept:
         before, after = registry.derive_split(draft._definition)
         if isinstance(before, dict):
-            finite_settle(context, before, draft, {}, {}, False)
+            # On an update a suggestion re-fires here when one of its inputs changed, as in the full pass.
+            finite_settle(context, before, draft, {}, {}, False, previous)
         else:
             compute_legacy(context, draft, all_drafts, {}, {}, False, only=before)
         all_drafts = derive(context, draft, internal, errors, targets, after)
+        if isinstance(before, dict):
+            unsuggest(draft, before)
     plan = registry.plan_for(draft._definition)
     if plan is not None:
         if kept:
@@ -1225,10 +1279,31 @@ def settle(context, draft, *, complete, previous=None, kept=False, checks=True):
     # Every Link target is read once, in batches, before the per-field checks.
     targets.prefetch(link_values([item for _, item in all_drafts]))
     if complete:
-        validate_tree(context, all_drafts, internal, prior, errors, targets)
+        validate_tree(context, all_drafts, internal, prior, errors, targets, hooks=hooks)
     else:
         check_preview(context, all_drafts, internal, errors, states, targets)
     return errors, states
+
+
+def unsuggest(draft, plan):
+    """Put back the caller's value of every field the plan before derive() filled by suggestion, so the full
+    pass decides suggestions exactly as without derive(): a value written here is not the caller's."""
+    names = {}
+    for field in plan['fields']:
+        if field.get('kind') == 'initial':
+            names.setdefault(tuple(field['path']), set()).add(field['field'])
+
+    def restore(item, path):
+        for name in names.get(path, ()):
+            if name in item._caller:
+                item._values[name] = item._caller[name]
+            else:
+                item._values.pop(name, None)
+        for table, rows in item._rows.items():
+            for row in rows:
+                if isinstance(row, Draft):
+                    restore(row, path + (table,))
+    restore(draft, ())
 
 
 def derive(context, draft, internal, errors, targets, after):
@@ -1476,8 +1551,9 @@ def check_preview(context, all_drafts, internal, errors, states, targets=None):
             except (ValueError, TypeError, ArithmeticError) as exc: errors[prefix + name] = str(exc)
 
 
-def validate_tree(context, all_drafts, internal, prior, errors, targets=None):
-    """Full save validation, children before parents; raises ValidationError on any error."""
+def validate_tree(context, all_drafts, internal, prior, errors, targets=None, *, hooks=True):
+    """Full save validation, children before parents; raises ValidationError on any error. `hooks=False`
+    skips @validate and the Extend checks (check_item) and keeps every field check."""
     for prefix, item in reversed(all_drafts):
         old = prior(item)
         for name, field in item._definition.__declared_fields__.items():
@@ -1510,7 +1586,7 @@ def validate_tree(context, all_drafts, internal, prior, errors, targets=None):
         for name, table in item._definition.__tables__.items():
             if len(item._rows.get(name, ())) < table.min_rows:
                 errors[prefix + name] = 'Add at least one row' if table.min_rows == 1 else f'Add at least {table.min_rows} rows'
-        if not errors:
+        if hooks and not errors:
             from .statemanager import check_item
             # The model's own @validate checks, then those apps added with evlet.Extend, in install order.
             extra = [check for extension, _ in context._business.registry.extensions.get(item._definition, ()) for check in extension.checks()]
@@ -1604,12 +1680,12 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None,
     from_saved = any(field.get('kind') in ('initial', 'locked_when') for field in plan['fields'])
 
     def data(item, path=()):
-        # A new row leaves out initial fields the caller did not supply, so their suggestions apply.
+        # A new row leaves out initial fields the caller did not supply or code did not set, so their suggestions apply.
         # Instance fields (x_) are plain values no formula can read, so the plan never sees them.
         values = {name: item._values.get(name) for name, field in item._definition.__declared_fields__.items()
                   if (not is_finite(field) or kept and field.stored) and name not in getattr(item._definition, '__internal_fields__', ())
                   and not name.startswith('x_')
-                  and not (item.id is None and (path, name) in initials and name not in item._submitted)}
+                  and not (item.id is None and (path, name) in initials and name not in item._submitted and name not in item._assigned)}
         # Engine keys are internal: saved rows by ID and new rows by draft, so a client _key never meets a saved ID.
         values['_key'], values['id'] = ('s' + str(item.id)) if item.id else 'n' + str(id(item)), item.id
         if item._rows:
@@ -1945,12 +2021,12 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     if sequences.name_due(rules, draft._values, created=before is None, move=rule):
         draft._values[rules.field] = sequences.issue(tx.connection, business.registry, model, rules, draft._values, host_today(business),
                                                      user.username, record=draft, context=context, record_id=draft.id)
-    # Every move into the released set runs @release, then calculations and @validate again. It records a new
-    # version only when the versioned content changed since the last one.
+    # Every move into the released set runs @release, then calculations and field checks again; @validate ran
+    # once above, before @release. It records a new version only when the versioned content changed since the last one.
     released = None
     if entering:
         last = statemanager.prepare_release(context, model, draft)
-        settle(context, draft, complete=True, previous=before, kept=kept)
+        settle(context, draft, complete=True, previous=before, kept=kept, hooks=False)
         if last is None or statemanager.digest(model, statemanager.tree(draft), business.registry) != last['hash']:
             released = 0 if last is None else last['number'] + 1
     if not inside:

@@ -888,9 +888,13 @@ def template_reads(field):
 
 
 def derive_split(plan, derives):
-    """Split a finite plan around derive(): (a plan of the formulas that read nothing derive() sets, {value: the
-    derived name it reads, directly or through another formula}). Keys are "field" or "table.field"; a derived
-    name may also be "table", a derived Table (docs/model-engine.md#derived-values)."""
+    """Split a finite plan around derive(): (a plan of what runs before it, {formula: the derived name it reads}).
+
+    The plan before derive() holds the formulas and the suggestions (initial=) that read nothing derive() sets,
+    directly or through another entry, with the locks of those suggestions. The map names the formulas that
+    do, which derive() may not read. A field whose only link to a derived value is its own applies_when or
+    initial is not in it: derive() reads the caller's value, and the rule applies after it. Keys are "field" or
+    "table.field"; a derived name may also be "table", a derived Table (docs/model-engine.md#derived-values)."""
     def keys(field):
         path = list(field['path'])
         for scope, table, name in field['reads']:
@@ -898,11 +902,23 @@ def derive_split(plan, derives):
             elif scope == 'parent': yield '.'.join(path[:-1] + [name])
             elif scope == 'member': yield '.'.join(path + [table, name])
             elif scope == 'membership': yield '.'.join(path + [table])
-    entries = [('.'.join(list(field['path']) + [field['field']]), keys(field), field) for field in plan['fields']
+    def key_of(field):
+        return '.'.join(list(field['path']) + [field['field']])
+    entries = [(key_of(field), set(keys(field)), field) for field in plan['fields']
                if field.get('kind') in (None, 'initial', 'applies_when')]
-    after = derived_after(derives, entries)
-    before = [field for key, _, field in entries if not field.get('kind') and key not in after]
-    return {**plan, 'fields': before}, after
+    # Everything that waits on derive(), rules and suggestions included, so what reads them waits as well.
+    waits = derived_after(derives, entries)
+    blocked = {key: name for key, name in waits.items() if any(not field.get('kind') and found == key for found, _, field in entries)}
+
+    def waiting(reads):
+        return any(read in derives or read.split('.')[0] in derives or read in waits for read in reads)
+    # A suggestion waits for its field's lock, so a lock that waits on derive() keeps the suggestion after it too.
+    locks = {key_of(field): field for field in plan['fields'] if field.get('kind') == 'locked_when' and not field.get('table')}
+    early = {key for key, reads, field in entries if field.get('kind') == 'initial' and key not in waits
+             and not (key in locks and waiting(set(keys(locks[key]))))}
+    before = [field for field in plan['fields'] if not field.get('kind') and key_of(field) not in waits
+              or field.get('kind') in ('initial', 'locked_when') and not field.get('table') and key_of(field) in early]
+    return {**plan, 'fields': before}, blocked
 
 
 def derived_after(derives, entries):
