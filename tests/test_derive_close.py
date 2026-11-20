@@ -380,7 +380,7 @@ def test_declarations_are_checked_when_the_model_is_defined():
             total = Decimal(scale=2, stored=False, derived=True)
             def derive(self): pass
     # Meta.derives was removed: an unknown Meta option.
-    with pytest.raises(ValueError, match='Meta supports'):
+    with pytest.raises(ValueError, match='Old.Meta.derives is not a Meta option'):
         class Old(Model):
             class Meta:
                 derives = ('count',)
