@@ -91,6 +91,14 @@ def test_generated_caddy_and_nginx_pass_exactly_the_public_routes():
     assert caddy.index('servers :443 {\n\t\tstrict_sni_host on\n\t}') < caddy.index('erp.acme.com {')
     assert 'strict_sni_host' not in proxy.caddy(table, global_options=False)
     assert proxy.nginx(table).count('if ($ssl_server_name != $host) { return 421; }') == 2
+    # Every HTTPS site sends HSTS; nginx's plain-HTTP redirect block does not.
+    assert caddy.count('\theader Strict-Transport-Security "max-age=31536000"\n\treverse_proxy') == 2
+    https, plain = proxy.nginx(table).count('listen 443 ssl;'), proxy.nginx(table).split('server {')[1]
+    assert proxy.nginx(table).count('add_header Strict-Transport-Security "max-age=31536000" always;') == https == 2
+    assert 'Strict-Transport-Security' not in plain and 'return 301 https://' in plain
+    # Both OAuth callbacks carry a code in their query: nginx keeps them out of its access log.
+    for path in ('/_/oidc/callback', '/_/mail/callback'):
+        assert proxy.nginx(table).split(f'location = {path} {{\n', 1)[1].startswith('        access_log off;\n')
     nginx = proxy.nginx(table, port=8010)
     assert nginx.count('location = /_/mcp {') == 2 and nginx.count('location ^~ /_/ { return 404; }') == 2
     assert nginx.index('location = /_/mail/continue.js {') < nginx.index('location ^~ /_/ { return 404; }')

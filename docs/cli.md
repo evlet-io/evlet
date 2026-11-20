@@ -697,10 +697,19 @@ WorkingDirectory=/srv/evlet
 ExecStart=/srv/evlet/.venv/bin/python -P -m evlet serve acme --jobs --project /srv/evlet --host 127.0.0.1 --port 8000
 Restart=on-failure
 UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/srv/evlet/instances/acme
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+The unit that `evlet setup --host` and `evlet proxy` write carries the same sandboxing
+(`ProtectHome` only when the project is outside `/home`), and their Caddy and nginx sites
+send `Strict-Transport-Security: max-age=31536000`.
 
 `--jobs` runs the short-task queue inside this one process. Run
 only one process per instance. Add this site to `/etc/caddy/Caddyfile`:
