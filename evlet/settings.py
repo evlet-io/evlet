@@ -555,6 +555,8 @@ class Settings:
             raise ValidationError({'photo': 'Use a PNG, JPG or WebP image.'})
         if len(content) > PHOTO_LIMIT:
             raise ValidationError({'photo': 'That photo is over 2 MB. Choose a smaller one.'})
+        from .images import check_dimensions
+        check_dimensions(content, 'photo')
         with self.database.transaction() as tx:
             old = self.profile(tx.connection, user.id)['photo_file']
             file = self.business.storage.add(tx, 'evlet_user_photo', user.id, 'photo' + {'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp'}[kind], content)
