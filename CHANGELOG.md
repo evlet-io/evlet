@@ -4,6 +4,16 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Added
+
+- **Link filters on the linked record's own fields, with an operator.** A Link's `filters=` key may name an operator
+  of the list route: `Link(Location, filters={"kind__ne": "transit"})`, `{"direction__in": ["out", "both"]}`. The
+  picker leaves those records out, and the server refuses one on every save and every move with a field error.
+  Before, a filter only compared for equality, so an app needed a derived flag on the target and a check when the
+  document posted ([docs/business-capabilities.md](docs/business-capabilities.md#link-filters)).
+
 ## 0.4.16 (20-11-2026)
 
 ### Upgrading to 0.4.16

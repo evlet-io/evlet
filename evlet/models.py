@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from .fields import ACTIVE, Field, Image, Link, MISSING, RULES, Reference, active_layer, check_help_references, help_references
-from .declarations import STATE_FIELD, Table, ReactiveQuery, DEFAULT_TABLE_ROWS
+from .declarations import STATE_FIELD, Table, ReactiveQuery, DEFAULT_TABLE_ROWS, Ref
 from .identity import RecordId
 from .naming import standard
 from .audit import COLUMNS as AUDIT
@@ -744,8 +744,11 @@ def resolve_sources(registry, definition):
     for field in definition.__declared_fields__.values():
         if isinstance(field, Link):
             field.target = registry.resolve(field.target)
-            for name in field.filters:
-                if name not in field.target.__fields__: raise ValueError('Link filters must name stored target fields')
+            for name, value in field.filters.items():
+                # "field" or "field__op" (the list route's operators): a stored field of the target, compared with a
+                # literal or with a value of this form (Ref).
+                if name.split('__', 1)[0] not in field.target.__fields__: raise ValueError('Link filters must name stored target fields')
+                if '__' in name: SqlQuery(registry, field.target).where({name: None if isinstance(value, Ref) else value})
             if field.option is not None:
                 check_option(registry, field.target, field.option, f'{definition.__name__}.{field.name}: option')
         elif field.filters: raise ValueError('Selection filters require a Link field')
