@@ -195,6 +195,9 @@ class PriceList(Model):
   script. Only the `by` check is left out. Everything else applies: update permission and row
   scope of the context's user, the guard, the hooks, calculations, validation, a closed period,
   the Activity's `moved` entry and the one transaction.
+* Code may give it a remark, `context.move(Delivery, id, "undo", remark="Receipt entered twice")`,
+  whether or not the rule declares one; the `moved` entry keeps it as it keeps a person's. A
+  rule with `remark="required"` refuses the move without one, as it does for a person.
 
 The [Background Playground](jobs-realtime.md#background-playground) declares these rules.
 

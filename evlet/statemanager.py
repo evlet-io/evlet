@@ -369,7 +369,8 @@ def checked_move(context, model, draft, before, key, remark):
         raise AccessError(403, f'{rule.label} is made by the application only' if rule.system else f'Your role cannot use {rule.label}')
     check_guard(context, guards, guards_of(context, model).get('rule:' + rule.key), rule.label, 'move')
     remark = clean_remark(remark)
-    if remark is not None and rule.remark is None:
+    # Only application code makes a system move (by=()), so it may give one a remark whether or not the rule asks.
+    if remark is not None and rule.remark is None and not rule.system:
         raise ValidationError({'remark': f'{rule.label} takes no remark'})
     if remark is None and remark_required(context, guards, model, rule):
         raise ValidationError({'remark': f'{rule.label} needs a remark'})

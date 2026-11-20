@@ -22,6 +22,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Display precision for a Decimal.** `Decimal(scale=6, display_scale=2)` shows at most two places without trailing
   zeros (`0.000000` as `0`, `1.500000` as `1.5`) on forms, grids and lists; storage, validation, calculations and
   migrations are unchanged ([docs/model-engine.md](docs/model-engine.md)).
+- **A remark on a system move.** `context.move(Model, id, key, remark=...)` on a rule with `by=()` was refused with
+  "takes no remark" unless the rule declared one. Code may give any system move a remark now, and the Activity's
+  `moved` entry keeps it like a person's; `remark="required"` refuses the move without one
+  ([docs/states-actions.md](docs/states-actions.md#system-moves)).
 
 ### Fixed
 
