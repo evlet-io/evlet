@@ -1321,6 +1321,8 @@ no longer declared the index records that history without the index. A `DropInde
 applied migration made is still refused. A `RenameField` renames the field in the `Meta.indexes` entries
 that cover it, as the database renames the column inside the index, and a later `DropIndex` may name
 the fields by their old or their new names: it drops the database index on the columns they have now.
+When a later `AddField` reused an old name, a `DropIndex` by the names the index had when it was made
+still drops it, unless an index now covers the new field under those names.
 Keep historical field
 and model definitions in migration files unchanged. Do not point an old
 `CreateModel` operation at a model definition that will keep changing.
