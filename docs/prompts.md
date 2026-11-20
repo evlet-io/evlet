@@ -66,7 +66,8 @@ the prompt and its rows. `Meta` takes `title` (the class name by default), `prim
 (`Main`, `Section`, `TableSection`, as on a model; [ui.md](ui.md)), `focus`, and `script` and `on_open` for a
 [model script](model-scripts.md#in-a-prompt) (the Playground's Plan project marks a long task with one). A wrong layout or focus fails
 when the prompt is first shown. `load(self, source)` fills it before the person sees it; read-only fields are
-filled there. A Table that `load()` fills takes no new rows: the open response gives it `max_rows` at the rows it
+filled there. A value `load()`, the starting values or code (`prompt.order_date = ...`) sets is the caller's:
+an `initial=` suggestion fills only the fields nobody set, as on a new document a hook fills. A Table that `load()` fills takes no new rows: the open response gives it `max_rows` at the rows it
 has, so the modal offers no Add row, Enter on its last cell adds none and Duplicate copies none.
 
 ## Shown when returned
@@ -166,7 +167,9 @@ customer.delete()
 
 `context.get`, `context.create` and each row of `context.list(...)['rows']` return a bound record: field values
 as attributes (Python values: `Decimal`, `date`, `RecordId`), Table rows as tuples of read-only rows, bound to
-the context that read it and to its revision. `record['field']` and `record.get('field')` give the value as the
+the context that read it and to its revision. Virtual fields (`stored=False`) read as the HTTP detail shows them,
+on the record and on its rows; they are calculated on the first read of one (a full settle of that record), so a
+`context.list` calculates none up front. `record['field']` and `record.get('field')` give the value as the
 record's JSON detail carries it, like a report row.
 
 * **Actions are methods.** `record.<action>(values=None, **values)` runs `context.action(...)` with every check.

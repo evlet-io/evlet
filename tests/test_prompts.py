@@ -1,5 +1,7 @@
 """Prompts (one transient form) and bound records, shown with a Quotation that confirms into Customer Orders."""
 
+from datetime import date
+
 import pytest
 
 from evlet import (Application, Child, Currency, Database, Date, Decimal, Link, LocalAuth, Main, Model, Outcome, Prompt,
@@ -52,6 +54,10 @@ class Quotation(Model):
                State.Rule(('submitted', 'partial'), 'confirmed', key='full', by=()),
                State.Rule('confirmed', 'partial', key='reopen_part', by=()),
                State.Rule(('partial', 'confirmed'), 'submitted', key='reopen_all', by=())))
+
+    @action('Reschedule')
+    def reschedule(self):
+        return Reschedule(from_start='2026-02-02')
 
     @action('Confirm', available_when=(F('docstate') == 'submitted') | (F('docstate') == 'partial'))
     def confirm(self):
@@ -154,6 +160,20 @@ class QuickNote(Prompt):
 
     def submit(self):
         return Outcome('Noted', data={'customer': self.customer, 'text': self.text})
+
+
+class Reschedule(Prompt):
+    """Four dates that suggest today: load() sets one, the starting values another, code a third."""
+    from_load = Date(initial=today())
+    from_start = Date(initial=today())
+    from_code = Date(initial=today())
+    untouched = Date(initial=today())
+
+    def load(self, quotation):
+        self.from_load = quotation.quote_date
+
+    def submit(self):
+        return Outcome(data={name: str(getattr(self, name)) for name in ('from_load', 'from_start', 'from_code', 'untouched')})
 
 
 def quick_note(context):
@@ -443,3 +463,37 @@ def test_action_inputs_open_as_a_prompt_over_http(app):
     assert c('GET', url)[1]['customer_name'] == 'Acme LLC'
     # Values sent with the action run it at once, as before.
     assert c('POST', f'{url}/actions/rename', {'new_name': 'Acme'}, headers={b'if-match': c('GET', url)[2][b'etag']})[1]['customer_name'] == 'Acme'
+
+
+# ---------- values code sets on a new prompt are the caller's ----------
+
+def test_values_set_by_code_keep_through_submit(app):
+    quotation_id = quotation(app, '2')
+    with app.business.context(ADMIN) as context:
+        prompt = context.get(Quotation, quotation_id).reschedule()
+        prompt.from_code = '2026-03-03'
+        outcome = prompt.submit()
+    assert outcome['data'] == {'from_load': '2026-11-16', 'from_start': '2026-02-02', 'from_code': '2026-03-03',
+                               'untouched': str(date.today())}
+
+
+def test_an_attribute_set_on_a_loaded_prompt_keeps_through_submit(app):
+    quotation_id = quotation(app, '2')
+    with app.business.context(ADMIN) as context:
+        prompt = context.get(Quotation, quotation_id).confirm()
+        prompt.order_date = '2026-12-01'
+        order = prompt.submit()['open']['id']
+    assert str(read(app, CustomerOrder, order).order_date) == '2026-12-01'
+
+
+def test_values_set_by_code_keep_through_a_ticket(app):
+    quotation_id = quotation(app, '2')
+    c = client(app)
+    etag = c('GET', f'/api/quotation/{quotation_id}')[2][b'etag']
+    status, result, _ = c('POST', f'/api/quotation/{quotation_id}/actions/reschedule', {}, headers={b'if-match': etag})
+    assert status == 200, result
+    ticket = result['_outcome']['prompt']['ticket']
+    status, outcome, _ = c('POST', f'/api/_prompts/{ticket}/submit', {'values': {'from_code': '2026-03-03'}})
+    assert status == 200, outcome
+    assert outcome['data'] == {'from_load': '2026-11-16', 'from_start': '2026-02-02', 'from_code': '2026-03-03',
+                               'untouched': str(date.today())}

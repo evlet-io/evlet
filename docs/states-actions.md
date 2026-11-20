@@ -272,7 +272,7 @@ replaces a base's hook by defining a method of the same name. Each is a method t
 
 | Hook | Runs | `self` |
 | --- | --- | --- |
-| `@validate` | every save (create, update, move) and every draft preview, on documents, `Table` rows and forms (Prompt, Report filters) | read only; assigning raises |
+| `@validate` | every save (create, update, move), once per save, before `@release`, and every draft preview, on documents, `Table` rows and forms (Prompt, Report filters) | read only; assigning raises |
 | `@state("a", "b")` | when a move enters one of the states | the draft; `self.context.session` is open |
 | `@state.exit("a")` | when a move leaves one of the states | the draft; `self.context.session` is open |
 | `@release` | on every move into the released set: from a step that is not `release=True` to one that is ([Releases](#releases-and-versions)) | the draft, with `self.release.number` and `self.release.previous`; the session is open |
@@ -282,7 +282,9 @@ replaces a base's hook by defining a method of the same name. Each is a method t
   saved, read only (`None` on create). `self.context` is the operation's context.
 * `@validate` checks; it does not change values. Raise `ValidationError({"field": "message"})`;
   a plain `ValueError` becomes a `_form` error. A row's errors are keyed under its row. It runs
-  last in the settle, after calculations, so it sees the final values. A record built outside
+  last in the settle, after calculations, so it sees the final values. It runs once per save,
+  before `@release`, so a check that reads what `@release` posts (an invoice's outstanding before a
+  payment settles it) sees the state before the posting. A record built outside
   the document pipeline (a `Session` write) runs its `@validate` checks too.
 * `@state` and `@state.exit` are trusted code, like an action: they change the record through
   `self` and may write other rows through `self.context.session`
@@ -337,7 +339,8 @@ The order of a move:
    saved results instead, and is refused if it changed versioned content
    ([Moves within the release](#moves-within-the-release)).
 8. Document numbers due in the new state are assigned.
-9. On entering the released set: `@release` runs, then calculations and `@validate` again. A
+9. On entering the released set: `@release` runs, then calculations and field checks again
+    (required, locks, Links, `min_rows`; not `@validate`, which already passed). A
     new version is stored when the versioned content changed since the last one.
 10. A closed period is checked, unless the move stays within the release.
 11. The record is written, and the Activity gets its `moved`
