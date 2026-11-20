@@ -460,6 +460,9 @@ class Decimal(Field):
     def validate(self, value):
         if isinstance(value, bool) or not isinstance(value, (str, int, DecimalValue)):
             raise ValueError("Use a decimal string, e.g. '12.50'")
+        # The grammar of evlet.calc.NUMBER and the browser: no underscores, exponents, spaces or non-ASCII digits.
+        if isinstance(value, str) and not DECIMAL_TEXT.fullmatch(value):
+            raise ValueError("Use a decimal string, e.g. '12.50'")
         try:
             with localcontext(Context(prec=40)) as context:
                 context.prec = 40
@@ -513,6 +516,9 @@ def _tidy(value):
     places = max(2, -exponent if isinstance(exponent, int) else 0)
     return value.quantize(DecimalValue(1).scaleb(-places))
 
+
+# Decimal text a write accepts: the same grammar as evlet.calc.NUMBER (ASCII digits only).
+DECIMAL_TEXT = re.compile(r'-?(0|[1-9][0-9]*)(\.[0-9]+)?', re.ASCII)
 
 CURRENCY_SOURCE = re.compile(r"[A-Z]{3}|[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)?|settings\.[a-z][a-z0-9_]{0,62}\.[a-z][a-z0-9_]{0,40}")
 

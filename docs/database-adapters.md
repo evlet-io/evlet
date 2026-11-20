@@ -140,9 +140,11 @@ values or server details in a message. A busy database raises `writes.Busy`.
 A new database is two classes and a compiler:
 
 1. **A `Database` subclass** that overrides how connections are opened and transactions run:
-   `__init__`, `_connection()`, `transaction(store=None)`, `schema_transaction()`,
+   `__init__`, `_connection()`, `transaction(store=None)`, `read_transaction()`, `schema_transaction()`,
    `read_only()`, `owns(session)`, `upgrade_storage()`, `backup()`, `files()` and `close()`.
-   Their contracts are in the docstrings of `evlet/database.py`. Writers must not interleave:
+   Their contracts are in the docstrings of `evlet/database.py`. `read_transaction()` must not
+   take the write turn or a write lock and must refuse writes: read-only contexts (reports,
+   exports, previews, prints) run in it while saves go on. Writers must not interleave:
    Evlet relies on one write transaction at a time per database for sequences, ledgers and
    the job queue.
 2. **A connection class** that implements `evlet.adapter.Connection`, with `run(statement)`

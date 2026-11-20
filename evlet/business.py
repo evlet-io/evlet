@@ -292,7 +292,10 @@ class Business:
     @contextmanager
     def context(self, user, *, readonly=False, source=None, correlation_id=None):
         from .documents import Context
-        with self.gate.shared(), self.database.transaction() as tx:
+        # A read-only context reads one snapshot without the write turn, so reports, exports, previews and
+        # prints never hold up a save (docs/performance.md).
+        opened = self.database.read_transaction() if readonly else self.database.transaction()
+        with self.gate.shared(), opened as tx:
             yield Context(self, tx, user, readonly=readonly, source=source, correlation_id=correlation_id)
 
     def event_page(self, scope):
