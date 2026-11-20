@@ -245,6 +245,11 @@ actions. Legacy `ChildTable` rows do not run finite rules or calculations, so re
   display only, **not a permission boundary**: the value still travels with the record in the
   API and in the browser. To keep a value from a role, leave it out of the role's
   `read_fields` or `write_fields` ([permissions.md](permissions.md)).
+* **In a Table's grid**, a row field whose `applies_when` or `visible_when` is false on every row has no
+  column, as it has no line in the row editor. That is the case for a rule that reads only the owning
+  record, such as `typed_rate = Decimal(applies_when=parent.pricing_basis == "manual")`. The column
+  comes back as soon as one row shows the field; a table without rows keeps its columns. The
+  Playground's Expense receipts show their Note column only on claims over 500.
 * **locked_when** true: a changed value is the field error `This field is locked and cannot be
   changed now`. Only the caller's changes count (request body, `Context` values, action
   handlers); values the engine writes do not, with one exception: a write whose change makes a

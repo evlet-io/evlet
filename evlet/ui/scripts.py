@@ -1,8 +1,9 @@
 """Model scripts: one JavaScript file per document, wired from the Python model (docs/model-scripts.md).
 
-Meta.script names a .js file in the folder of the module that declares the model, or a folder below it. The
-browser loads it from /assets/scripts/<hash>/<path>, where the hash covers every .js file of that folder, so a
-script may import the others by relative path. The server never runs it and never depends on it.
+Meta.script names a .js file relative to the folder of the module that declares the model; it may go up with ..
+as long as the file stays inside the app package. The browser loads it from /assets/scripts/<hash>/<path>, where
+<path> is relative to the app package and the hash covers every .js file of the app, so one script may import any
+other of the app by relative path (../trade.js). The server never runs it and never depends on it.
 """
 
 from hashlib import sha256
@@ -80,7 +81,8 @@ def compile_extensions(registry, extensions):
     return {model: tuple(items) for model, items in result.items()}
 
 
-# Script folders of prompts, which are not in a registry: a prompt names its script when its class is defined.
+# Script folders of prompts, which are not in a registry: a prompt names its script when its class is defined. Its
+# module's packages are imported by then, so its app root is known.
 PROMPT_ROOTS = {}
 
 
@@ -92,21 +94,46 @@ def prompt_script(prompt, script, on_open):
     return {'url': f'{PREFIX}{digest}/{path}', **({'on_open': on_open} if on_open else {})}
 
 
+def app_root(owner):
+    """The folder of the app package that declares `owner`: the outermost package of its module (an app's
+    package.source_root), or the module's own folder when it is in no package."""
+    module = sys.modules.get(owner.__module__)
+    file = getattr(module, '__file__', None)
+    if not file:
+        return None
+    folder = Path(file).resolve().parent
+    parts = owner.__module__.split('.')
+    for _ in range(max(len(parts) - (1 if hasattr(module, '__path__') else 2), 0)):
+        folder = folder.parent
+    return folder
+
+
 def located(model, script):
-    """(folder, path) of a model's Meta.script; raises ValueError naming the model and the path."""
+    """(app folder, path in it) of a model's, prompt's or extension's Meta.script; raises ValueError naming the
+    model and the path. The path is relative to the module's folder and may not leave the app package."""
     where = f'{model.__name__}.Meta.script'
     path = PurePosixPath(script) if type(script) is str else None
-    if path is None or path.suffix != '.js' or path.is_absolute() or any(part in ('..', '') or part.startswith('.') for part in path.parts):
-        raise ValueError(f'{where}: name a .js file in the folder of {model.__module__}, such as "quotation.js", not {script!r}')
+    if path is None or path.suffix != '.js' or path.is_absolute() or any(part == '' or part != '..' and part.startswith('.') for part in path.parts):
+        raise ValueError(f'{where}: name a .js file relative to the folder of {model.__module__}, such as "quotation.js" '
+                         f'or "../trade.js", not {script!r}')
     module = sys.modules.get(model.__module__)
     folder = Path(module.__file__).resolve().parent if getattr(module, '__file__', None) else None
-    if folder is None or not (folder / path).is_file():
-        raise ValueError(f'{where}: {script} is not a file' + (f' in {folder}' if folder else ''))
-    return folder, str(path)
+    root = app_root(model)
+    if folder is None or root is None:
+        raise ValueError(f'{where}: {script} is not a file')
+    target = (folder / path).resolve()
+    if not target.is_relative_to(root):
+        raise ValueError(f'{where}: {script} leaves the app package {root}; a script lives inside its app')
+    relative = target.relative_to(root)
+    if any(part.startswith('.') for part in relative.parts):
+        raise ValueError(f'{where}: {script} is in a hidden folder, which is not served')
+    if not target.is_file():
+        raise ValueError(f'{where}: {script} is not a file in {folder}')
+    return root, relative.as_posix()
 
 
 def fingerprint(folder):
-    """A short hash of every .js file in the folder and below, so a changed script gets a new address."""
+    """A short hash of every .js file of the app folder and below (dot-folders skipped), so a changed script gets a new address."""
     digest = sha256()
     for file in sorted(folder.rglob('*.js')):
         relative = file.relative_to(folder)
@@ -116,7 +143,8 @@ def fingerprint(folder):
 
 
 def script_response(registry, path):
-    """GET /assets/scripts/<hash>/<path>: a .js file of a script folder, or None (404)."""
+    """GET /assets/scripts/<hash>/<path>: a .js file of an app's script folder, or None (404). <path> is relative
+    to the app package; .., dot-folders and links that leave the app are refused."""
     from .serving import TYPES, _file, page
     digest, _, rest = path.removeprefix(PREFIX).partition('/')
     folder = getattr(registry, 'script_roots', {}).get(digest) or PROMPT_ROOTS.get(digest)

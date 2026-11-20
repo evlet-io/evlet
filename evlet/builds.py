@@ -75,6 +75,7 @@ def discover(package, modules=None):
                     reports.append(value)
                     continue
                 if getattr(value, '__transient__', False): continue
+                if getattr(value, '__abstract__', False): continue  # A shared base: no table, schema entry or migration.
                 if name == package.name or name.startswith(package.name + '.models.') or name == package.name + '.models':
                     value.__resource_id__ = resource_identity(package, value)
                     value.__declaration_mode__ = True

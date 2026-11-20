@@ -36,6 +36,19 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   Tests that called `business.virtual_values` to read them can read the attribute. A row read through a record
   now gives `None`, not `AttributeError`, for a declared field the detail left out.
 
+- **Model scripts are served from the app package.** A script's address is now
+  `/assets/scripts/<hash>/<path in the app>` (`purchase/purchase_order.js`), and the hash covers every `.js` file
+  of the app. `Meta.script` may use `..` inside the app; a path out of it fails at start-up with "leaves the app
+  package" instead of "name a .js file". Tests that pinned a script URL or matched the old message need updating.
+  Copies of a shared script kept beside each model can go: import it by relative path (`../trade.js`).
+- **`Meta.abstract` is a Meta option.** A base class that declares it gets no table; a model inheriting such a
+  base's `Meta` stays concrete. Registering, linking to or resolving an abstract class fails naming it.
+- **`Outcome(new=..., open=...)` accept a model name.** A name is resolved, and its values serialized, when the
+  outcome is answered; `Outcome` gains `resolve(registry)`, and `documents.add_outcome` takes the registry.
+- **A Table column its rule hides on every row is not shown.** In the grid (editable or locked), a field whose
+  `applies_when` or `visible_when` is false on every row has no column until a row shows it. A frontend test that
+  counted columns under such a rule needs updating.
+
 ### Added
 
 - **`DropIndex(table, field, unique=False)`**, the counterpart of `AddIndex`: a field name clears the field's
@@ -44,6 +57,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `AddIndex` ([docs/model-engine.md](docs/model-engine.md#explicit-migrations)).
 - **Seed data steps.** `RunData(function, seed=True)` creates starting records on every instance, new ones
   included ([docs/app-upgrades.md](docs/app-upgrades.md#seed-data-on-new-instances)).
+
+- **Abstract models.** `Meta.abstract = True` declares a shared base with fields, Tables and `derive()` that
+  has no table, schema entry or migration of its own ([docs/model-engine.md](docs/model-engine.md#abstract-models)).
+- **One script root per app.** A model, prompt or `Extend` script may import any `.js` file of its app
+  across folders ([docs/model-scripts.md](docs/model-scripts.md#the-script-file)).
+- **`record.model`**, the model class of a bound record, as on a draft ([docs/prompts.md](docs/prompts.md)).
+- **Model names in `Outcome`:** `Outcome(new=("deliveryorder", values))` and `Outcome(open=("invoice", id))`.
 
 ### Fixed
 
@@ -55,6 +75,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - `initial=` overwrote values set on a new prompt or draft by code, `load()` or starting values
   ([docs/prompts.md](docs/prompts.md)).
 - A `Record` from `context.get`/`context.list` read virtual fields as `None`, while one refreshed after a write had them.
+- A grid column stayed, empty, while its field's rule hid the field on every row (a Rate under standard pricing).
 
 ## 0.4.14 (19-11-2026)
 

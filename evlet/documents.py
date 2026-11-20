@@ -120,6 +120,9 @@ class Record:
             return self._changes[name]
         if name in self._data:
             return self._data[name]
+        if name == 'model' and name not in self._model.__declared_fields__ and name not in self._model.__tables__:
+            # The model class, as on a Draft; a field named `model` wins.
+            return self._model
         method = getattr(self._model, name, None)
         if hasattr(method, '__action__'):
             return lambda values=None, **more: self._action(name, {**(values or {}), **more})
@@ -1816,14 +1819,15 @@ def handler_context(context, draft):
                 object.__setattr__(part, 'context', previous)
 
 
-def add_outcome(result, outcome):
+def add_outcome(result, outcome, registry):
     """What a run method or action returned, on its detail: a queued job as `_job` ({id, state}), anything
-    else (an Outcome, a Prompt) as `_outcome`."""
+    else (an Outcome, a Prompt) as `_outcome`. An Outcome that names a model by name resolves it here."""
     from .jobs import JobReceipt
+    from .prompts import Outcome
     if isinstance(outcome, JobReceipt):
         result['_job'] = outcome.public()
     elif outcome is not None:
-        result['_outcome'] = outcome
+        result['_outcome'] = outcome.resolve(registry) if isinstance(outcome, Outcome) else outcome
 
 
 @contextmanager
@@ -1984,7 +1988,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         if is_prompt(outcome):
             # An action that returns a prompt is checked and writes nothing: the prompt's submit() writes.
             result = business.detail(tx, user, tx.get(model, record_id), row_limit=None)
-            add_outcome(result, outcome)
+            add_outcome(result, outcome, business.registry)
             return result
     elif before is not None:
         statemanager.check_state_lock(context, draft, before)
@@ -2038,7 +2042,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
             record_plan(tx, business.registry.name_for(model), record_id, version)
         # Every readable row: the HTTP route derives its ETag from this and embeds the first page.
         result = business.detail(tx, user, tx.get(model, record_id), row_limit=None)
-        add_outcome(result, outcome)
+        add_outcome(result, outcome, business.registry)
         return result
     # A closed period (Meta.period) refuses the write whether the saved or the new date is in it.
     from . import periods
@@ -2066,7 +2070,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     business.changed(tx, model, record.id)
     result = business.detail(tx, user, tx.get(model, record.id), row_limit=None)
     if keys: result['_row_ids'] = keys
-    add_outcome(result, outcome)
+    add_outcome(result, outcome, business.registry)
     return result
 
 

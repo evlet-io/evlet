@@ -5412,7 +5412,7 @@
         ]
       },
       "script": {
-        "url": "/assets/scripts/42d44d0353a69ee5/employee.js",
+        "url": "/assets/scripts/1ee022acfce2b824/playground/employee.js",
         "on_open": "opened"
       },
       "fields": [
@@ -6474,7 +6474,17 @@
           "default_kind": "static",
           "default": 0
         }
-      ]
+      ],
+      "document_version": 1,
+      "resource": "Expense.receipts",
+      "behavior": {
+        "reference": {},
+        "note": {},
+        "evlet_owner": {},
+        "evlet_position": {}
+      },
+      "order": [],
+      "sources": {}
     }
   ]
 }

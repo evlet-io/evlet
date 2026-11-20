@@ -5,7 +5,7 @@ from datetime import date
 from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Js, Link, LongText, Main, Model, Naming,
                    Activity, Option, Ref, Registry, Related, RichText, Rule, Section, Select, Series, State, Sum, Table, TableSection, Text,
                    ValidationError, action, state)
-from evlet.calc import F
+from evlet.calc import F, parent
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
 # KWD has 3 decimal places (ISO 4217); XCR is a client's own credit unit the demo gives 5 in Controls, Currencies.
@@ -390,7 +390,8 @@ class ExpenseSplit(Child):
 
 class ExpenseReceipt(Child):
     reference = Text(required=True, max_length=40)
-    note = Text(max_length=120)
+    # A rule over the claim, not the row: below 500 every receipt hides it, so the grid drops the Note column.
+    note = Text(max_length=120, visible_when=parent.amount > 500)
 
 
 class Expense(Model):
