@@ -4,7 +4,15 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.16 (20-11-2026)
+
+### Upgrading to 0.4.16
+
+- **Nothing to change.** No migrations and no public API removed. A `DropIndex` of an index an instance
+  already lacks, which one of its earlier applied migrations made, now passes and leaves that instance's
+  schema and database unchanged.
+
+### Fixed
 
 - **`DropIndex` migrates an instance that never had the index.** An instance created from models that no
   longer declared an index records the migration that made it, but not the index. A later `DropIndex` of
