@@ -101,7 +101,7 @@ production ready, but the rules below hold from 0.3 on.
 - **Ledger models and transaction locks.** The `Meta` options `ledger`, `append_only`, `timestamps`
   (`None`, `"created"`, `"modified"` or `"both"`) and `indexes`, the `created_at` and `modified_at`
   fields that timestamps add, integer ledger row ids, `Session.insert_many(model, rows)`,
-  `Session.lock(*keys, timeout=None)` with `LockTimeout`, the `SetAppendOnly` migration, `AddIndex`
+  `Session.lock(*keys, timeout=None)` with `LockTimeout`, the `SetAppendOnly` migration, `AddIndex` and `DropIndex`
   with a tuple of fields, and `evlet ledger list`. A key's lock number (BLAKE2b of its canonical
   JSON) never changes between releases ([ledger.md](ledger.md)).
 

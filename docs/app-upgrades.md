@@ -58,6 +58,21 @@ the old source and run `evlet restore` with the backup `evlet migrate` printed. 
 `migrate`, with the same apps and the same Evlet version, validates the current
 instance without making another full backup.
 
+### Seed data on new instances
+
+An instance created after an app has shipped migrations starts from the current models: its
+tables are made directly and the migration history is recorded without being replayed. Data steps
+written for older model shapes do not run there. Starting records the app needs (units, tax
+profiles, default settings rows) belong in `RunData(function, seed=True)`
+([model-engine.md](model-engine.md#seed-data)). On a new or baseline database, through `evlet
+migrate` or at startup, every seed step runs in migration order after the tables are created; on
+an existing instance it runs once, in sequence, when its migration is applied.
+
+Because a seed step runs on today's schema on a new instance, it must work against the current
+models: when a model changes, check that the seed steps that create its records still do. Make
+seed steps idempotent, creating a record only when it is missing, so an instance that already
+has some of the records keeps them unchanged.
+
 ## Upgrade Evlet
 
 Evlet's own tables (accounts, sessions, jobs, the activity and the rest) have a
