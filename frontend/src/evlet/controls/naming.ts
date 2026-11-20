@@ -43,12 +43,12 @@ function Series(ctx: ControlsContext, model: ModelInfo): HTMLElement {
       const body = { values: values.peek(), ...(ctx.drafts.dirty(id) || ctx.drafts.overridden(id) ? { series: list() } : {}) };
       const next = await ctx.api.tryName(model.name, body);
       if (alive) result.set(next);
-    } catch (failure) { if (alive) toast(message(failure), { icon: 'info' }); }
+    } catch (failure) { if (alive) toast(message(failure), { tone: 'error' }); }
   };
   const later = () => { clearTimeout(timer); timer = setTimeout(() => void check(), 200); };
   effect(() => { list(); values.get(); later(); });
   const loadCounters = async () => {
-    try { const page = await ctx.api.counters(model.name); if (alive) counters.set(page.items); } catch (failure) { if (alive) toast(message(failure), { icon: 'info' }); }
+    try { const page = await ctx.api.counters(model.name); if (alive) counters.set(page.items); } catch (failure) { if (alive) toast(message(failure), { tone: 'error' }); }
   };
   void loadCounters();
   const problem = (index: number) => () => {

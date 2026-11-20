@@ -75,7 +75,7 @@ export async function follow(ctx: AppContext, outcome: Outcome | null | undefine
 export async function openService(name: string) {
   if (!context) throw new Error('openService needs the running app');
   try { await follow(context, await context.api.service<Outcome>(name)); }
-  catch (error) { toast(error instanceof ApiError ? error.message : 'This could not be opened', { icon: 'info' }); }
+  catch (error) { toast(error instanceof ApiError ? error.message : 'This could not be opened', { tone: 'error' }); }
 }
 
 /** The values a submit sends: what people can fill in, and each row under its key. */

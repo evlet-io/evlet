@@ -255,7 +255,7 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
       const file = await api.reportFile(name, 'export.csv', { filters: executed.peek() ?? {}, sort: sortText() });
       save(file, `${report.label}.csv`);
       toast(`Exported ${report.label}`, { icon: 'download' });
-    } catch (error) { toast(error instanceof ApiError ? error.message : 'The export failed.', { icon: 'info' }); }
+    } catch (error) { toast(error instanceof ApiError ? error.message : 'The export failed.', { tone: 'error' }); }
   };
   const header = PageHeader({ icon: REPORT_ICON, tint: 'rose', title: report.label, count: () => result.get()?.total ?? null, actions: [
     Button({ label: 'Copy link', icon: 'link', hideLabelOnPhone: true, disabled: () => !executed.get(), onClick: share }),

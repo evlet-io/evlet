@@ -15,15 +15,17 @@ const DECIMAL = /^-?\d+(\.\d+)?$/;
 
 export type DateFormat = 'dd-MM-yyyy' | 'd MMM yyyy' | 'yyyy-MM-dd' | 'MM/dd/yyyy';
 export type NumberFormat = '1,234.56' | '1.234,56' | '1 234.56';
-export interface Region { date: DateFormat; number: NumberFormat; zone: string }
-export const DEFAULT_REGION: Region = { date: 'dd-MM-yyyy', number: '1,234.56', zone: 'Asia/Dubai' };
+export type WeekStart = 'mon' | 'sun' | 'sat';
+export interface Region { date: DateFormat; number: NumberFormat; zone: string; week: WeekStart }
+export const DEFAULT_REGION: Region = { date: 'dd-MM-yyyy', number: '1,234.56', zone: 'Asia/Dubai', week: 'mon' };
 let region: Region = { ...DEFAULT_REGION };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** Use a person's region for every formatted value from now on. Missing or unknown parts keep the defaults. */
 export function setRegion(next: Partial<Region>) {
   const zone = next.zone && validZone(next.zone) ? next.zone : DEFAULT_REGION.zone;
-  region = { date: next.date ?? DEFAULT_REGION.date, number: next.number ?? DEFAULT_REGION.number, zone };
+  const week = next.week === 'sun' || next.week === 'sat' || next.week === 'mon' ? next.week : DEFAULT_REGION.week;
+  region = { date: next.date ?? DEFAULT_REGION.date, number: next.number ?? DEFAULT_REGION.number, zone, week };
 }
 export const currentRegion = (): Region => ({ ...region });
 
@@ -245,8 +247,15 @@ export function formatDateTime(value: string | Date | null | undefined): string 
   return parts ? `${dayText(parts)} ${pad(parts.hour)}:${pad(parts.minute)}` : INVALID_DATE;
 }
 
-/** Today's date in GST as YYYY-MM-DD, the value today() uses in calculations. */
-export function todayGst(now: Date = new Date()): string {
-  const local = new Date(now.getTime() + GST_OFFSET_MINUTES * 60000);
+/** Today's date in a time zone as YYYY-MM-DD: todayIn('UTC'), todayIn('America/New_York'). */
+export function todayIn(zone: string, now: Date = new Date()): string {
+  const local = new Date(now.getTime() + zoneOffset(now.getTime(), zone) * 60000);
   return `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}`;
 }
+
+/** Today's date in the person's time zone (Settings, Appearance & region; GST by default): the day
+ * date pickers, typed relative dates and the browser preview of today() use. */
+export function todayDate(now: Date = new Date()): string { return todayIn(region.zone, now); }
+
+/** Today's date in GST as YYYY-MM-DD, whatever the person's time zone. */
+export function todayGst(now: Date = new Date()): string { return todayIn('Asia/Dubai', now); }

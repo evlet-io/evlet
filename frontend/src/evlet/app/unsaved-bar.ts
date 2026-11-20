@@ -76,7 +76,7 @@ export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordSto
       const removed = ctx.unsaved.remove(model.name, current.createAttempt?.key ?? null);
       const remaining = ctx.unsaved.get(model.name, unsavedInfo(ctx).limits);
       bar.set(remaining ? { kind: 'local', ...remaining } : null);
-      if (!removed) toast('The kept draft changed or could not be discarded. Review the current copy.', { icon: 'info' });
+      if (!removed) toast('The kept draft changed or could not be discarded. Review the current copy.', { tone: 'error' });
       if (!remaining) options.onSettled?.();
       return;
     }
@@ -86,7 +86,7 @@ export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordSto
         acceptDraftVersion(store, await ctx.api.discardUnsaved(model.name, id, current.etag));
         toast('Unsaved changes discarded');
       }
-      catch { toast('Unsaved changes could not be discarded. Try again.', { icon: 'info' }); bar.set(current); }
+      catch { toast('Unsaved changes could not be discarded. Try again.', { tone: 'error' }); bar.set(current); }
     }
   };
 

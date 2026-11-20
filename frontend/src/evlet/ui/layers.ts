@@ -291,13 +291,15 @@ export function mountToasts(): HTMLElement {
 
 export interface ToastOptions {
   icon?: string; undo?: () => void; duration?: number;
-  /** 'error': a red icon, announced at once (role=alert) and kept 8 s, for something that did not happen. */
-  tone?: 'ok' | 'error';
+  /** 'error': a red icon, announced at once (role=alert) and kept 8 s, for something that did not happen.
+   * 'info': a neutral info icon, for why something cannot be done yet ("Type an option first"). */
+  tone?: 'ok' | 'info' | 'error';
 }
 
 /**
  * A short dark confirmation at the bottom of the screen: 2.8 s, or 5 s with Undo. Messages say
- * what happened in the past tense ("Moved to Discovery"). Returns dismiss.
+ * what happened in the past tense ("Moved to Discovery"). The timer pauses while the pointer is over
+ * the toast or focus is in it (WCAG 2.2.1), and restarts when it leaves. Returns dismiss.
  */
 export function toast(text: string, options: ToastOptions = {}): () => void {
   let done = false, timer: ReturnType<typeof setTimeout>;
@@ -308,12 +310,20 @@ export function toast(text: string, options: ToastOptions = {}): () => void {
     element.classList.add('out');
     setTimeout(() => { view.dispose(); element.remove(); }, 180);
   };
-  const error = options.tone === 'error';
-  const view = layer(() => html`<div class="toast" role=${error ? 'alert' : null}>${Icon(options.icon ?? (error ? 'info' : 'check'), { size: 'sm', className: error ? 'err' : 'ok' })}<span style="flex:1">${text}</span>${options.undo
+  const tone = options.tone ?? 'ok', error = tone === 'error';
+  const view = layer(() => html`<div class="toast" role=${error ? 'alert' : null}>${Icon(options.icon ?? (tone === 'ok' ? 'check' : 'info'), { size: 'sm', className: error ? 'err' : tone === 'info' ? 'note' : 'ok' })}<span style="flex:1">${text}</span>${options.undo
     ? html`<button type="button" on:click=${() => { options.undo!(); dismiss(); }}>Undo</button>` : null}</div>`);
   const element = view.node as HTMLElement;
   mountToasts().append(element);
-  timer = setTimeout(dismiss, options.duration ?? (error ? 8000 : options.undo ? 5000 : 2800));
+  const duration = options.duration ?? (error ? 8000 : options.undo ? 5000 : 2800);
+  let hovered = false, focused = false;
+  const start = () => { clearTimeout(timer); if (!done && !hovered && !focused) timer = setTimeout(dismiss, duration); };
+  const pause = () => clearTimeout(timer);
+  element.addEventListener('mouseenter', () => { hovered = true; pause(); });
+  element.addEventListener('mouseleave', () => { hovered = false; start(); });
+  element.addEventListener('focusin', () => { focused = true; pause(); });
+  element.addEventListener('focusout', event => { if (!element.contains(event.relatedTarget as Node | null)) { focused = false; start(); } });
+  start();
   return dismiss;
 }
 

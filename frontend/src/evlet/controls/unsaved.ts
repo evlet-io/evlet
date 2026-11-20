@@ -27,7 +27,7 @@ export function UnsavedSection(ctx: ControlsContext): HTMLElement {
   const summary = cell<UnsavedSummary | null>(null);
   const days = cell(30);
   const id = (key: string) => idOf('setting', key);
-  const load = () => void ctx.api.unsaved().then(value => summary.set(value), failure => toast(message(failure), { icon: 'info' }));
+  const load = () => void ctx.api.unsaved().then(value => summary.set(value), failure => toast(message(failure), { tone: 'error' }));
   load();
   const limit = ([key, label, help, unit, low, high]: (typeof LIMITS)[number]) => html`<div class="ctl-setrow"><div class="grow"><strong>${label}</strong><p>${help} ${low} to ${high} ${unit}.</p>
     ${when(() => drafts.errors.get().has(id(key)), () => html`<span class="ctl-err">${() => drafts.errors.get().get(id(key))}</span>`)}</div>
@@ -44,7 +44,7 @@ export function UnsavedSection(ctx: ControlsContext): HTMLElement {
       footer: close => DialogFooter({ cancel: close, submit: { label: 'Clear', variant: 'danger', onClick: async () => {
         close();
         try { const result = await ctx.api.clearUnsaved(older); summary.set(result); toast(`Cleared ${result.cleared} ${result.cleared === 1 ? 'entry' : 'entries'}`); }
-        catch (failure) { toast(message(failure), { icon: 'info' }); }
+        catch (failure) { toast(message(failure), { tone: 'error' }); }
       } } }) });
   };
   return html`<section class="ctl-card ctl-gap ctl-unsaved"><div class="ctl-card-head"><div><h2>Unsaved changes</h2>

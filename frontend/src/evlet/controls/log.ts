@@ -19,7 +19,7 @@ export function ToolLogPage(ctx: ControlsContext): HTMLElement {
       const page = await ctx.api.toolCalls({ origin: origin.peek() || undefined, outcome: outcome.peek() || undefined, q: query.peek() || undefined, before: more ? next.peek() ?? undefined : undefined });
       items.set(more ? [...items.peek(), ...page.items] : page.items);
       next.set(page.next);
-    } catch (failure) { toast(message(failure), { icon: 'info' }); }
+    } catch (failure) { toast(message(failure), { tone: 'error' }); }
     loaded.set(true);
   };
   void load();

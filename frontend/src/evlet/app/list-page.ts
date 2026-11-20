@@ -318,7 +318,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   filterButton.append(CountBadge({ count: () => filters.active.get().length, tone: 'filled', label: 'Active filters' }));
   effect(() => { filterButton.classList.toggle('has-filters', filters.active.get().length > 0); });
 
-  const header = PageHeader({ icon, tint, title: model.plural, count: () => total.get(), actions: [
+  // With list tabs each tab carries its own count (the active one at least), so the title has none: a number there
+  // read as the total while it counted the open tab.
+  const header = PageHeader({ icon, tint, title: model.plural, count: tabSpec ? undefined : () => total.get(), actions: [
     boarded ? SegmentedControl({ options: [{ value: 'list', label: 'List', icon: 'list' }, { value: 'board', label: 'Board', icon: 'kanban' }], value: view, label: 'View',
       onChange: next => batch(() => { view.set(next); selection.set(new Set()); }) }) : null,
     filters.fields.length ? filterButton : null,
@@ -477,7 +479,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
       totalsTick.set(totalsTick.peek() + 1);
       return true;
     } catch (error) {
-      toast(error instanceof ApiError ? error.message : 'The move failed.', { icon: 'info' });
+      toast(error instanceof ApiError ? error.message : 'The move failed.', { tone: 'error' });
       return false;
     }
   };

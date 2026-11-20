@@ -175,11 +175,11 @@ async function saveDrafts(ctx: ControlsContext, confirmed = false) {
       toast(`${plural(count, 'change')} saved`);
       ctx.state.set(await ctx.api.state());
     } else if (ctx.drafts.errors.peek().size) {
-      toast('Some changes could not be saved', { icon: 'info' });
+      toast('Some changes could not be saved', { tone: 'error' });
       openReview(ctx);
     }
   } catch (failure) {
-    toast(failure instanceof ApiError ? failure.message : 'Saving failed. Try again.', { icon: 'info' });
+    toast(failure instanceof ApiError ? failure.message : 'Saving failed. Try again.', { tone: 'error' });
   }
 }
 

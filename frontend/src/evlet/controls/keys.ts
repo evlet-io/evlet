@@ -45,7 +45,7 @@ export function KeysPage(options: KeysOptions): HTMLElement {
       if (!alive || mine !== request) return false;
       rows.set(page.items); total.set(page.total ?? page.items.length); next.set(page.next_before ?? null); before.set(cursor);
       return true;
-    } catch (failure) { if (alive && mine === request) { toast(message(failure), { icon: 'info' }); rows.set([]); } return false; }
+    } catch (failure) { if (alive && mine === request) { toast(message(failure), { tone: 'error' }); rows.set([]); } return false; }
     finally { if (alive && mine === request) loading.set(false); }
   };
   const reload = async () => { clearTimeout(timer); history.set([]); before.set(undefined); await load(); };
@@ -57,7 +57,7 @@ export function KeysPage(options: KeysOptions): HTMLElement {
   const now = () => Math.floor(Date.now() / 1000);
   const revoke = (row: ApiKeyRow) => ask(`Revoke ${row.name}?`, 'Anything using this key gets a 401 from now on.', 'Revoke key', async () => {
     try { await options.api.revokeKey(row.id); toast('Key revoked'); await reload(); }
-    catch (failure) { toast(message(failure), { icon: 'info' }); }
+    catch (failure) { toast(message(failure), { tone: 'error' }); }
   }, true);
   const columns = controls ? 7 : 5;
   return html`<div>

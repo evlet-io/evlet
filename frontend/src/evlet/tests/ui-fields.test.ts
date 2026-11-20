@@ -257,7 +257,7 @@ describe('fields bound to the record store', () => {
 });
 
 describe('hint and tooltip', () => {
-  it('shows help text under the input, linked to it, and the error in its place', () => {
+  it('shows help text under the input, linked to it, and keeps it under an error that is not an alert', () => {
     const field = localField({ name: 'reference', type: 'text', label: 'Reference', help_text: 'The number on the customer’s order', required: true });
     const host = render(() => BaseField({ field }));
     const input = host.querySelector('input')!, help = host.querySelector<HTMLElement>('.fld-help')!;
@@ -266,8 +266,10 @@ describe('hint and tooltip', () => {
     expect(help.hidden).toBe(false);
     change(input, '');
     expect(field.error.peek()).toBe('Reference is required');
-    expect(help.hidden).toBe(true);
+    expect(help.hidden).toBe(false);
     expect(host.querySelector('.err')!.textContent).toBe('Reference is required');
+    expect(host.querySelector('.err')!.getAttribute('role')).toBeNull();
+    expect(input.getAttribute('aria-describedby')!.split(' ')).toEqual(expect.arrayContaining([host.querySelector('.err')!.id, help.id]));
     change(input, 'PO-7');
     expect(help.hidden).toBe(false);
     expect(render(() => BaseField({ field: localField({ name: 'x', type: 'text', label: 'X' }) })).querySelector('.fld-help')).toBeNull();

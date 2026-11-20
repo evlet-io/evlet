@@ -131,16 +131,16 @@ function Editor(ctx: ControlsContext, data: PrintListing, item: PrintItem | null
   later();
 
   const save = async () => {
-    if (!/^[A-Z][A-Za-z0-9]{0,63}$/.test(name.peek())) { toast('Name the design with letters and digits, starting with a capital, such as StatementPrint', { icon: 'info' }); return; }
+    if (!/^[A-Z][A-Za-z0-9]{0,63}$/.test(name.peek())) { toast('Name the design with letters and digits, starting with a capital, such as StatementPrint', { tone: 'info' }); return; }
     try {
       const result = await ctx.api.savePrint(name.peek(), sendable());
       toast(`${result.definition.title || result.name} saved`);
       saved(result.name);
-    } catch (failure) { toast(failure instanceof ApiError ? failure.fields.definition ?? failure.fields.name ?? failure.message : message(failure), { icon: 'info' }); }
+    } catch (failure) { toast(failure instanceof ApiError ? failure.fields.definition ?? failure.fields.name ?? failure.message : message(failure), { tone: 'error' }); }
   };
   const remove = async () => {
     try { await ctx.api.removePrint(item!.name); toast(`${item!.name} removed`, { icon: 'trash-2' }); removed(); }
-    catch (failure) { toast(message(failure), { icon: 'info' }); }
+    catch (failure) { toast(message(failure), { tone: 'error' }); }
   };
   const copyDesign = () => copied({ name: `${item!.name}Copy`, source: 'stored',
     definition: { ...structuredClone(item!.definition), default: false, title: `${item!.definition.title || item!.name} (copy)` } });
@@ -308,7 +308,7 @@ function summary(block: PrintBlock): string {
 function readImage(event: Event, done: (src: string) => void) {
   const input = event.target as HTMLInputElement, file = input.files?.[0];
   if (!file) return;
-  if (file.size > 150_000) { toast('Use an image up to 150 KB', { icon: 'info' }); input.value = ''; return; }
+  if (file.size > 150_000) { toast('Use an image up to 150 KB', { tone: 'info' }); input.value = ''; return; }
   const reader = new FileReader();
   reader.onload = () => done(String(reader.result));
   reader.readAsDataURL(file);

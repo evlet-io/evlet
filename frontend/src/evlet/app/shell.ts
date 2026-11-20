@@ -107,6 +107,9 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     const id = `ev-nav-${sectionId(workspace, entry).replace(/[^a-z0-9_-]/gi, '-')}`;
     // The section holding the page's shortcut is drawn in blue, open or closed. Its title counts its shortcuts.
     const holdsPage = () => here.get()?.section.key === entry.key && here.get()?.workspace.key === workspace.key && current.get()?.key === workspace.key;
+    // A section whose one shortcut has its own name ("Customers" holding Customers) is that shortcut: one row, not two.
+    const [only] = entry.items;
+    if (entry.items.length === 1 && only.label.trim().toLowerCase() === entry.label.trim().toLowerCase()) return shortcut(only);
     return html`<div class="nav-sec" class:open=${() => isOpen(workspace, entry)} class:on=${holdsPage}>
       <button type="button" class="nav-sec-h" aria-expanded=${() => String(isOpen(workspace, entry))} aria-controls=${id} on:click=${() => toggleSection(workspace, entry)}>
         ${Icon(entry.icon, { size: 'sm', className: 'nav-sec-ic' })}<span class="lbl">${entry.label}</span>
@@ -244,6 +247,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
 
   const shell = html`<div class="app" class:collapsed=${collapsed} class:mobile-open=${mobileOpen} class:compact=${() => (ctx.me.get()?.prefs.density ?? prefs.density.get()) === 'compact'}
     class:large=${() => ctx.me.get()?.prefs.text === 'large'}>
+    <a class="skip-link" href="#ev-view" on:click=${(event: Event) => { event.preventDefault(); document.getElementById('ev-view')?.focus(); }}>Skip to content</a>
     ${topbar}${sidebar}${edge}<div class="main"><main class="view" id="ev-view" tabindex="-1">${view}</main></div>
     <div class="scrim ev-side-scrim" class:show=${mobileOpen} on:click=${() => mobileOpen.set(false)}></div></div>` as HTMLElement;
   const menuButton = topbar.querySelector<HTMLButtonElement>('.nav-menu-btn button');

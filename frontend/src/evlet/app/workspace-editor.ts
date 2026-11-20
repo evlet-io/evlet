@@ -159,7 +159,7 @@ const UNSAVED = 'Your changes to this workspace are not saved.';
 export async function openWorkspaceEditor(ctx: AppContext, key: string | null): Promise<void> {
   let listing: Listing;
   try { listing = (await ctx.api.request<Listing>('GET', ROUTE)).data; }
-  catch (error) { toast(error instanceof ApiError ? error.message : 'The workspaces could not be loaded.'); return; }
+  catch (error) { toast(error instanceof ApiError ? error.message : 'The workspaces could not be loaded.', { tone: 'error' }); return; }
   WorkspaceEditor(ctx, listing, key);
 }
 
