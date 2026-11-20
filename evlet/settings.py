@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from . import qb, secrets as vault
 from .adapter import Column, TableDefinition
-from .auth import (ADMINISTRATOR, ADMINISTRATOR_NAME, AccessError, User, _encode, _scrypt, client_network, hashing_slot, is_administrator,
+from .auth import (ADMINISTRATOR, ADMINISTRATOR_NAME, AccessError, User, _encode, _scrypt, hashing_slot, is_administrator,
                    password_hash)
 from .fields import MISSING, Email, Field
 from .models import ValidationError, checked_body
@@ -1146,9 +1146,9 @@ class Settings:
                         wrong = 'That code is not right. Try again.'
                 else:
                     tx.connection.run(qb.delete('evlet_two_step_tickets').where(token_hash=row['token_hash']))
-                    address = client_network(auth.client_address(scope))
-                    pair = hashlib.sha256(('account:' + address + ':' + account['username']).encode()).hexdigest()
-                    tx.connection.run(qb.delete('evlet_login_limits').where(qb.in_('client', (pair, limit))))
+                    # The sign-in is complete: its password attempt no longer counts against the network or the account.
+                    tx.connection.run(qb.delete('evlet_login_limits').where(client=limit))
+                    auth.signed_in(tx.connection, scope, account['username'])
                     payload, headers = auth.start_session(tx, scope, account, realm, verified=True)
                     if codes:
                         payload['backup_codes'] = codes
