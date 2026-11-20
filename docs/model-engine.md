@@ -1312,7 +1312,10 @@ uniqueness. A changed index, such as one that becomes unique or covers other fie
 never had is done without a change, when one of the migrations it already ran made that index (an
 `AddIndex`, or a `CreateModel` or `AddTable` whose model declared it): an instance created from models that
 no longer declared the index records that history without the index. A `DropIndex` of an index that no
-applied migration made is still refused. Keep historical field
+applied migration made is still refused. A `RenameField` renames the field in the `Meta.indexes` entries
+that cover it, as the database renames the column inside the index, and a later `DropIndex` may name
+the fields by their old or their new names: it drops the database index on the columns they have now.
+Keep historical field
 and model definitions in migration files unchanged. Do not point an old
 `CreateModel` operation at a model definition that will keep changing.
 Migrations compare stored fields only, so a frozen class may have any Python name:

@@ -14,6 +14,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   Before, a filter only compared for equality, so an app needed a derived flag on the target and a check when the
   document posted ([docs/business-capabilities.md](docs/business-capabilities.md#link-filters)).
 
+### Fixed
+
+- **A `DropIndex` after a `RenameField` drops the database index.** After a rename the index stayed on the renamed
+  column, so a `DropIndex` naming the old fields cleared Evlet's schema but left the index in the database, and an
+  instance could not migrate past the rename while a `Meta.indexes` entry named the field ("Meta.indexes differ").
+  A `RenameField` now renames the field in the entries that cover it, and a `DropIndex` by the old or the new names
+  drops the index on the columns they have now. finance_v1's 0009 data step that drops the index by name is no
+  longer needed ([docs/model-engine.md](docs/model-engine.md)).
+
 ## 0.4.16 (20-11-2026)
 
 ### Upgrading to 0.4.16

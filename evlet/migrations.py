@@ -573,12 +573,14 @@ class DropIndex:
         return {'operation': 'drop_index', 'table': self.table, 'field': list(self.field) if self.composite() else self.field,
                 'unique': self.unique}
 
-    def apply(self, connection, columns=None):
+    def apply(self, connection, columns=None, current=None):
         """Drop the index AddIndex made (or a table's creation): the one over the same columns with the same
-        uniqueness, found by its shape rather than its name, which a renamed field or a taken name changes."""
+        uniqueness, found by its shape rather than its name, which a renamed field or a taken name changes.
+        `current` is the field (or fields) under the names they have now, when a RenameField renamed one since."""
         if columns is None:
             columns = set(connection.columns(self.table))
-        covered = self.field if self.composite() else stored_columns(columns, self.field)
+        field = self.field if current is None else current
+        covered = field if self.composite() else stored_columns(columns, field)
         for found in connection.inspect(self.table).indexes:
             if tuple(found.columns) == tuple(covered) and bool(found.unique) == self.unique and not found.partial:
                 connection.drop_index(found.name)
@@ -1226,6 +1228,23 @@ def _planned_definition(saved, pending, steps=None, applied=()):
     schema = copy.deepcopy(json.loads(saved))
     models = {model['name']: model for model in schema['models']}
     steps = {} if steps is None else steps
+    # {table: {old name: current name}} from every RenameField so far, applied migrations first: a DropIndex that
+    # names a field by an old name finds the database index on the column it has now.
+    renames = {}
+
+    def renamed(operation):
+        table = renames.setdefault(operation.table, {})
+        if isinstance(operation, RenameField):
+            for old, current in list(table.items()):
+                if current == operation.old_name:
+                    table[old] = operation.new_name
+            table[operation.old_name] = operation.new_name
+        elif isinstance(operation, AddField):
+            table.pop(operation.name, None)  # A field added under an old name is that field, not the renamed one.
+    for migration in applied:
+        for operation in migration.operations:
+            if isinstance(operation, (RenameField, AddField)):
+                renamed(operation)
     for migration in pending:
         retired = set()  # Fields this migration retires; a later one may drop them after its data steps ran.
         for operation in migration.operations:
@@ -1269,9 +1288,18 @@ def _planned_definition(saved, pending, steps=None, applied=()):
                     raise SchemaError(f'{operation.table}: the index {operation.field} already exists')
                 entries.append({'fields': list(operation.field), 'unique': operation.unique})
                 continue
+            if isinstance(operation, (RenameField, AddField)):
+                renamed(operation)
+            if isinstance(operation, DropIndex):
+                current = renames.get(operation.table, {})
+                steps[id(operation)] = tuple(current.get(name, name) for name in operation.field) if operation.composite() \
+                    else current.get(operation.field, operation.field)
             if isinstance(operation, DropIndex) and operation.composite():
                 entries = model_indexes.saved(models[operation.table])
-                kept = [item for item in entries if (tuple(item['fields']), item['unique']) != (operation.field, operation.unique)]
+                # By the names it gives or the names they have now (a saved schema from before RenameField renamed
+                # index entries may still hold the old ones).
+                names = {operation.field, steps[id(operation)]}
+                kept = [item for item in entries if not (tuple(item['fields']) in names and item['unique'] == operation.unique)]
                 if len(kept) == len(entries) and not _declared_earlier(applied, operation):
                     raise SchemaError(f'{operation.table}: there is no {"unique " if operation.unique else ""}index '
                                       f'{operation.field} to drop')
@@ -1287,6 +1315,9 @@ def _planned_definition(saved, pending, steps=None, applied=()):
                 fields = {operation.new_name if key == operation.old_name else key:
                           {**field, 'name': operation.new_name} if key == operation.old_name else field
                           for key, field in fields.items()}
+                # The database renames the column inside its indexes; Meta.indexes entries follow it.
+                for entry in model_indexes.saved(models[operation.table]):
+                    entry['fields'] = [operation.new_name if name == operation.old_name else name for name in entry['fields']]
                 # A Sequence's scope names fields; its counters key the scope by values, not names.
                 for field in fields.values():
                     if 'scope' in field:
@@ -1418,6 +1449,8 @@ def step_arguments(operation, steps):
     was required, RetireField's field."""
     if isinstance(operation, AlterField):
         return steps[id(operation)]
+    if isinstance(operation, DropIndex):
+        return None, steps[id(operation)]
     return (steps[id(operation)],) if isinstance(operation, RetireField) else ()
 
 

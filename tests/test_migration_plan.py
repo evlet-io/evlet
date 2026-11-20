@@ -806,6 +806,44 @@ def test_finance_v1_0009_drop_index_runs_on_an_instance_created_at_0008(tmp_path
         assert index_shape(database, 'party') == []
 
 
+def test_drop_index_by_old_names_after_a_rename_drops_the_database_index(tmp_path):
+    """0001 made a unique (kind, record_id) index; 0002 renamed kind to role_kind (SQLite renames the column inside the
+    index, which keeps its old name). A later DropIndex naming the old columns drops the database index too, whether
+    the instance ran 0002 earlier or runs them together, and the plan reports no drift."""
+    import sqlite3
+    from evlet import DropIndex, RenameField
+
+    def finance_party(indexed, kind):
+        attributes = {'__module__': __name__, 'title': Text(max_length=120), kind: Text(max_length=20), 'record_id': Integer()}
+        if indexed:
+            attributes['Meta'] = type('Meta', (), {'indexes': [((kind, 'record_id'), {'unique': True})]})
+        return type('Party', (Model,), attributes)
+
+    first = Migration('0001_initial', CreateModel(finance_party(True, 'kind')))
+    renamed = Migration('0002_rename', RenameField('party', 'kind', 'role_kind'))
+    dropped = Migration('0003_drop', DropIndex('party', ('kind', 'record_id'), unique=True))
+    target = Registry(finance_party(False, 'role_kind'))
+    migrations = [first, renamed, dropped]
+    stepwise, together = tmp_path / 'stepwise.sqlite3', tmp_path / 'together.sqlite3'
+    for path in (stepwise, together):
+        Database(path, Registry(finance_party(True, 'kind')), migrations=[first]).migrate([first])
+    Database(stepwise, Registry(finance_party(True, 'role_kind'))).migrate([first, renamed])
+    with sqlite3.connect(stepwise) as connection:
+        assert connection.execute("SELECT sql FROM sqlite_master WHERE name = 'evlet_party_kind_record_id_unique'").fetchone()[0] \
+            .replace('"', '').endswith('(role_kind, record_id)')
+    assert Database(stepwise, target).migrate(migrations) == ['0003_drop']
+    assert Database(together, target).migrate(migrations) == ['0002_rename', '0003_drop']
+    for path in (stepwise, together):
+        database = Database(path, target, migrations=migrations)
+        database.initialize()
+        assert index_shape(database, 'party') == []
+        with sqlite3.connect(path) as connection:
+            assert not connection.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND sql LIKE '%record_id%'").fetchall()
+        assert Database(path, target).plan(migrations).text().endswith('The migrations produce the current models.')
+        database.create(target.models['party'], role_kind='customer', record_id=1)
+        database.create(target.models['party'], role_kind='customer', record_id=1)
+
+
 def test_drop_field_takes_its_composite_index_out_of_the_plan(tmp_path):
     from evlet import DropField, RetireField
     path = tmp_path / 'drop.sqlite3'
