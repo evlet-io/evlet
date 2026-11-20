@@ -35,12 +35,14 @@ Read on to see what each step does.
 ```sh
 evlet setup myproject
 cd myproject
-evlet app notes --legacy
+evlet app notes
 ```
 
 The project has two folders: `apps/` for reusable app code and `instances/` for
-sites. The new app lives in `apps/notes/`. It starts with an Item model containing
-a required title. Creating the app does not create a database or run app code.
+sites. The new app is one Python package in `apps/notes/`. Its first model,
+`apps/notes/models/item.py`, is an Item with a required title and the roles that
+may use it. Creating the app does not create a database or run app code.
+[The app layout](app-layout.md) describes each folder.
 
 ## 3. Create your site
 
@@ -77,8 +79,8 @@ records, accounts and private files remain in `instances/acme/`.
 
 ## 5. Make a change
 
-The live model is `apps/notes/notes/models/__init__.py`. Presentation settings such
-as labels and `Meta.list_fields` live beside its fields. Use:
+The model is `apps/notes/models/item.py`. Presentation settings such as labels and
+`Meta.list_fields` live beside its fields. Use:
 
 ```sh
 evlet dev --instance acme
@@ -92,8 +94,9 @@ authenticator app, as at a normal sign-in, and the app opens. After that, each l
 straight in with no password or code. Run `evlet dev-link` for a fresh link once one is used or
 expired, and `evlet users set-password acme admin` to change the password from the shell
 ([details](cli.md#development-sign-in-links)). A database field change also needs an
-explicit migration. Follow [What you can customize](customizing.md) for a complete
-example, then stop the server and run `evlet migrate acme` before restarting.
+explicit migration: stop the server, run `evlet makemigration notes --instance acme`,
+review the file it writes, then `evlet migrate acme`. Follow
+[What you can customize](customizing.md) for a complete example.
 
 ## Another site, same app
 

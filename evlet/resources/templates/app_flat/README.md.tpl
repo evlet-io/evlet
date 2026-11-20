@@ -9,5 +9,5 @@ Install it into a selected instance with
 `evlet install {{name}} --instance INSTANCE --trust`.
 
 Use explicit migrations for changes to an installed schema. Build does not
-migrate or activate an instance. See the installed declarative app guide for
+migrate or activate an instance. See the app layout guide (`evlet docs`, "App layout") for
 child tables, queries, dialogs, reports, native additions and upgrade rules.
