@@ -40,6 +40,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   triggers around each such operation inside the migration's transaction and adds them back at once, so a `RunData`
   step after it still cannot update or delete rows. `DropField` and `AlterField(fill=...)` stay refused
   ([docs/ledger.md](docs/ledger.md)).
+- **An MCP client is asked for approval once for an action that opens a prompt.** `run_action` on an action whose
+  body only returns a Prompt (finance_v1's Confirm, Deliver, Invoice, Return goods) or that declares `inputs=` asked
+  for approval, and submitting the prompt asked again. Opening it is a read now; the approval is asked on the
+  `answer_prompt` call that writes ([docs/tools.md](docs/tools.md)).
 
 ## 0.4.16 (20-11-2026)
 
