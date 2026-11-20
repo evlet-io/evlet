@@ -579,7 +579,8 @@ def list_tabs_for(model, meta, fields=None):
 # Filter operators that may compare with a field of the record (Ref('field')).
 REF_OPERATORS = ('eq', 'ne', 'gt', 'gte', 'lt', 'lte')
 # Columns a Related block shows at most, and the rows it shows a page by default and at most.
-RELATED_FIELDS = 6
+# The most fields a Related block lists as columns: as many as the app names, up to this.
+RELATED_FIELDS = 12
 RELATED_ROWS, RELATED_MAX = 5, 20
 
 
@@ -801,6 +802,8 @@ def field_schema(field):
               **({'suffix': field.suffix} if field.suffix else {}),
               # Integer(grouping=False): shown without thousands separators (display only).
               **({'grouping': False} if getattr(field, 'grouping', True) is False else {}),
+              # Decimal(display_scale=2): shown with at most that many places, without trailing zeros (display only).
+              **({'display_scale': field.display_scale} if getattr(field, 'display_scale', None) is not None else {}),
               # Forms leave out the standard title and a name no naming fills (evlet/naming.py); responses keep them.
               'hidden': field.hidden or form_hidden(field), 'read_only': field.read_only,
               **({'stored': field.stored} if field.compute is not None or field.query is not None or not field.stored else {}),

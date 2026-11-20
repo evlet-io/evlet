@@ -356,6 +356,12 @@ the same and keeps its own scale.
 amounts, such as a year (`2023`, not `2,023`) or a code. It is display only: storage and migrations
 are unchanged, and an edit accepts the number either way.
 
+`Decimal(scale=6, display_scale=2)` shows the value with at most two decimal places and no trailing
+zeros, so a counter stored as `0.000000` shows `0` and `1.500000` shows `1.5` (with
+`display_scale=6`, only the trailing zeros go). It is display only: the value is stored, validated,
+calculated and sent at `scale`, an edit shows every place it holds, and migrations are unchanged.
+It takes 0 up to the field's `scale`, on a Decimal or Percent; a Currency shows its currency's places.
+
 Every field, and a `Table`, takes `copy=` (default `True`). `copy=False` means the browser's
 Duplicate action never copies this value or these rows into the new record, for example a unique
 customer reference. It must be `True` or `False` (a `ValueError` otherwise). It is display
@@ -1312,7 +1318,10 @@ uniqueness. A changed index, such as one that becomes unique or covers other fie
 never had is done without a change, when one of the migrations it already ran made that index (an
 `AddIndex`, or a `CreateModel` or `AddTable` whose model declared it): an instance created from models that
 no longer declared the index records that history without the index. A `DropIndex` of an index that no
-applied migration made is still refused. Keep historical field
+applied migration made is still refused. A `RenameField` renames the field in the `Meta.indexes` entries
+that cover it, as the database renames the column inside the index, and a later `DropIndex` may name
+the fields by their old or their new names: it drops the database index on the columns they have now.
+Keep historical field
 and model definitions in migration files unchanged. Do not point an old
 `CreateModel` operation at a model definition that will keep changing.
 Migrations compare stored fields only, so a frozen class may have any Python name:

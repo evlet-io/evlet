@@ -12,7 +12,7 @@ import pytest
 from evlet import (AddField, AddIndex, Application, Boolean, Column, ConflictError, CreateModel, Currency, Database, Date,
                    DateTime, Decimal, Integer, Activity, Link, LockTimeout, LongText, Migration, Model, MultiSelect, Percent,
                    Reference, Registry, RenameField, Report, RetireField, RichText, Rule, SchemaError, Select, SetAppendOnly,
-                   State, Sum, Table, Tags, Text, ValidationError, action, AlterField, Count, Child, Email, Duration)
+                   State, Sum, Table, Tags, Text, ValidationError, action, AlterField, Count, Child, Email, Duration, DropField)
 from evlet.auth import LocalAuth, User
 from evlet.database import Session
 from evlet.ledger import describe, lock_hash, table as ledger_table
@@ -522,9 +522,48 @@ def test_create_add_field_and_add_index_migrations(tmp_path):
             connection.execute('UPDATE meter SET reading = 3')
 
 
-@pytest.mark.parametrize('operation', [RenameField('meter', 'reading', 'value'), RetireField('meter', 'reading'),
-                                       AlterField('meter', 'reading', Decimal(scale=2))])
-def test_append_only_tables_refuse_operations_that_rewrite_rows(tmp_path, operation):
+def test_a_schema_change_of_an_append_only_table_migrates_and_keeps_its_guard(tmp_path):
+    """finance_v1 changed posting.kind to a Select with a new choice: migrate lifts the append-only guard around the
+    AlterField (and a RenameField or RetireField) in the migration's transaction and puts it back at once."""
+    from evlet import RunData
+    path = tmp_path / 'lifted.sqlite3'
+    first = lean('Posting', {'kind': Select(('debit', 'credit')), 'amount': Integer()}, append_only=True)
+    history = [Migration('0001_posting', CreateModel(first))]
+    Database(path, Registry(first)).migrate(history)
+    with Database(path, Registry(first)).transaction() as tx:
+        tx.insert_many(first, [{'kind': 'debit', 'amount': 5}, {'kind': 'credit', 'amount': 3}])
+    after = lean('Posting', {'kind': Select(('debit', 'credit', 'reversal')), 'value': Decimal(scale=2)}, append_only=True)
+    # Written as makemigration writes it: no SetAppendOnly around the changes.
+    history.append(Migration('0002_kind', AlterField('posting', 'kind', Select(('debit', 'credit', 'reversal'))),
+                             AddField('posting', 'value', Decimal(scale=2)), RetireField('posting', 'amount')))
+    database = Database(path, Registry(after), migrations=history)
+    assert database.migrate(history) == ['0002_kind']
+    database.initialize()
+    assert sorted(row.kind for row in database.list(after)) == ['credit', 'debit']
+    with database.transaction() as tx:
+        tx.insert_many(after, [{'kind': 'reversal', 'value': '2'}])
+    with sqlite3.connect(path) as connection:
+        for statement in ('UPDATE posting SET kind = "debit"', 'DELETE FROM posting'):
+            with pytest.raises(sqlite3.IntegrityError, match='append only'):
+                connection.execute(statement)
+    renamed = lean('Posting', {'side': Select(('debit', 'credit', 'reversal')), 'value': Decimal(scale=2)}, append_only=True)
+    history.append(Migration('0003_side', RenameField('posting', 'kind', 'side')))
+    assert Database(path, Registry(renamed), migrations=history).migrate(history) == ['0003_side']
+    with sqlite3.connect(path) as connection, pytest.raises(sqlite3.IntegrityError, match='append only'):
+        connection.execute('UPDATE posting SET side = "credit"')
+
+    # A data step in the same migration still cannot change the rows: the guard is back before it runs.
+    def rewrite(session):
+        session.connection.execute('UPDATE posting SET value = 0')
+    widened = lean('Posting', {'side': Select(('debit', 'credit', 'reversal')), 'value': Decimal(scale=3)}, append_only=True)
+    with pytest.raises(SchemaError, match='RunData .*rewrite failed: posting is append only'):
+        Database(path, Registry(widened)).migrate([*history, Migration('0004_rewrite', AlterField('posting', 'value', Decimal(scale=3)),
+                                                                        RunData(rewrite))])
+    assert Database(path, Registry(renamed)).migrate(history) == []
+
+
+@pytest.mark.parametrize('operation', [DropField('meter', 'reading'), AlterField('meter', 'reading', Integer(required=True), fill=0)])
+def test_append_only_tables_refuse_operations_that_change_what_rows_recorded(tmp_path, operation):
     path = tmp_path / 'refused.sqlite3'
     model = lean('Meter', {'reading': Integer()}, append_only=True)
     Database(path, Registry(model)).migrate([Migration('0001_meter', CreateModel(model))])

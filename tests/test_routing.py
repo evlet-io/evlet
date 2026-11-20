@@ -60,6 +60,14 @@ def test_without_routes_py_every_browser_path_is_served_as_before(secured):
     assert status == 404 and isinstance(payload, dict)
 
 
+def test_the_desk_base_alone_redirects_to_the_start_page(secured):
+    # /app names no screen; the desk root (/) lands a signed-in person on their start page (the first list).
+    for path in ('/app', '/app/'):
+        status, _, headers = http(secured, 'GET', path)
+        assert status == 302 and headers[b'location'] == b'/', path
+    assert http(secured, 'GET', '/app/unknown')[0] == 404
+
+
 @pytest.mark.skipif(not (STATIC / 'index.html').is_file(), reason='Build browser assets before checking static serving')
 def test_record_pages_with_text_ids_are_served_with_200(secured):
     # Records have 13-character text ids; a decimal id from an older bookmark still opens its page.

@@ -4,6 +4,68 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## 0.4.17 (20-11-2026)
+
+### Upgrading to 0.4.17
+
+- **Nothing to change.** No migrations and no public API removed; every addition is a new keyword argument
+  (`Table(append_when_released=...)`, `Decimal(display_scale=...)`) or a filter key that was refused before.
+- **Turning `append_when_released` on for a table that already holds rows on released documents** takes that table
+  out of their released content, so the release hash no longer matches: the next write keeps the release's snapshot
+  marked drifted (with a warning in the log) and the next release takes a new number. A new table declared with the
+  option, as finance_v1's arrivals would be, does not change any hash.
+- **The frontend accepts Node 22.22.2+ as well as 24.15+.** Nothing to change on Node 24.
+
+### Added
+
+- **Link filters on the linked record's own fields, with an operator.** A Link's `filters=` key may name an operator
+  of the list route: `Link(Location, filters={"kind__ne": "transit"})`, `{"direction__in": ["out", "both"]}`. The
+  picker leaves those records out, and the server refuses one on every save and every move with a field error.
+  Before, a filter only compared for equality, so an app needed a derived flag on the target and a check when the
+  document posted ([docs/business-capabilities.md](docs/business-capabilities.md#link-filters)).
+- **A table code can append to on a released document.** `Table(Arrival, append_when_released=True)` is a log of
+  what follows the release: trusted code (an action, a hook, a job, `context`) may add rows at its end while the
+  record is locked, the saved rows stay as they are, and no request may add one. Its rows are not released content.
+  finance_v1 showed a Stock Transfer's arrivals as a separate model in a Related block instead
+  ([docs/states-actions.md](docs/states-actions.md)).
+- **A Related block lists up to 12 fields** as columns, instead of 6 ([docs/ui.md](docs/ui.md)).
+- **Display precision for a Decimal.** `Decimal(scale=6, display_scale=2)` shows at most two places without trailing
+  zeros (`0.000000` as `0`, `1.500000` as `1.5`) on forms, grids and lists; storage, validation, calculations and
+  migrations are unchanged ([docs/model-engine.md](docs/model-engine.md)).
+- **A remark on a system move.** `context.move(Model, id, key, remark=...)` on a rule with `by=()` was refused with
+  "takes no remark" unless the rule declared one. Code may give any system move a remark now, and the Activity's
+  `moved` entry keeps it like a person's; `remark="required"` refuses the move without one
+  ([docs/states-actions.md](docs/states-actions.md#system-moves)).
+
+### Fixed
+
+- **`/app` opens the start page.** GET `/app` (the desk's base with no screen) answered 404; it redirects to `/` now,
+  where a signed-in person lands on their start page, the first list their role can open
+  ([docs/routing.md](docs/routing.md)).
+- **The frontend installs and builds on the Node 22 LTS.** `frontend/package.json` asked for Node 24.15+ and `.npmrc`
+  enforces it, so `npm ci` refused Node 22. The range is `^22.22.2 || ^24.15.0` now (22.22.2 is the lowest version
+  jsdom, the test environment, accepts); CI installs, tests and builds on Node 22.22.2 as well, and a frontend test
+  checks that every locked package admits both floors ([CONTRIBUTING.md](CONTRIBUTING.md#install-for-development)).
+- **A `DropIndex` after a `RenameField` drops the database index.** After a rename the index stayed on the renamed
+  column, so a `DropIndex` naming the old fields cleared Evlet's schema but left the index in the database, and an
+  instance could not migrate past the rename while a `Meta.indexes` entry named the field ("Meta.indexes differ").
+  A `RenameField` now renames the field in the entries that cover it, and a `DropIndex` by the old or the new names
+  drops the index on the columns they have now. finance_v1's 0009 data step that drops the index by name is no
+  longer needed ([docs/model-engine.md](docs/model-engine.md)).
+- **A zero reads as a value in a collapsed section's summary.** A stored 0.00 (a paid invoice's `outstanding`), a zero
+  quantity at its default and No showed as "Not set" on the closed "More information" row. Only an empty value (null or
+  '') does now; the row's "3 of 5 filled" count is unchanged.
+- **A schema change of an append-only (ledger) table migrates without `SetAppendOnly` around it.** An `AlterField`
+  (finance_v1 gave `posting.kind` a new Select choice), a `RenameField` or a `RetireField` failed unless the migration
+  turned append only off and on again, which `makemigration` does not write. `migrate` now lifts the append-only
+  triggers around each such operation inside the migration's transaction and adds them back at once, so a `RunData`
+  step after it still cannot update or delete rows. `DropField` and `AlterField(fill=...)` stay refused
+  ([docs/ledger.md](docs/ledger.md)).
+- **An MCP client is asked for approval once for an action that opens a prompt.** `run_action` on an action whose
+  body only returns a Prompt (finance_v1's Confirm, Deliver, Invoice, Return goods) or that declares `inputs=` asked
+  for approval, and submitting the prompt asked again. Opening it is a read now; the approval is asked on the
+  `answer_prompt` call that writes ([docs/tools.md](docs/tools.md)).
+
 ## 0.4.16 (20-11-2026)
 
 ### Upgrading to 0.4.16

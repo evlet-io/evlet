@@ -212,6 +212,13 @@ class Visit(Model):
         branch = Link(Branch, filters={"company": Ref("parent.company")})
 ```
 
+A key may add an operator of the list route (`__ne`, `__in`, `__nin`, `__gt`, `__gte`, `__lt`,
+`__lte`, `__contains` and the rest the field's type takes), so a Link can leave out records by
+the target's own fields: `Link(Location, filters={"kind__ne": "transit"})` or
+`filters={"direction__in": ["out", "both"]}`. The picker searches with them, and the server
+checks them on the selected record on every save and every move, like an equality filter. An
+unknown field or operator fails when the registry is built.
+
 The server checks the selected record on every preview and save, and reading it applies the
 role's row scope. A record that does not fit gives a field error that names the mismatch in
 plain words: "Port office is not in Summit Services." when the Link has one filter, that filter

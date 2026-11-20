@@ -467,6 +467,46 @@ def test_tools_get_the_prompt_and_answer_it_by_ticket(app):
     assert read(app, Quotation, quotation_id).docstate == 'partial'
 
 
+def test_an_assistant_is_asked_once_for_an_action_that_opens_a_prompt(app):
+    """Over MCP, running Confirm only opens its prompt (its body is `return ConfirmQuotation`): a read, no approval.
+    Approval is asked once, on the submit that writes."""
+    from evlet import qb
+    from evlet.auth import KeyAccess
+    from evlet.tools import ApprovalNeeded
+    from evlet.prompts import opens_prompt
+    assert opens_prompt(Quotation.confirm) and opens_prompt(Quotation.reschedule) and opens_prompt(Quotation.note)
+
+    def writes_first(self):
+        self.valid_until = None
+        return ConfirmQuotation
+
+    def computes(self):
+        return ConfirmQuotation(customer_po=self.create_order([], None))
+    assert not opens_prompt(writes_first) and not opens_prompt(computes) and not opens_prompt(Quotation.create_order)
+    quotation_id = quotation(app, '2')
+    changes = [{'kind': 'setting', 'key': 'mcp.allow_writes', 'value': True}]
+    assert client(app)('POST', '/api/_controls/overrides', {'changes': changes})[0] == 200
+    assistant = User(1, 'admin', 'admin', access=KeyAccess(True, None, None, 0))
+    tools = app.business.tools
+
+    def approvals():
+        with app.database._connection() as connection:
+            return connection.run(qb.select('evlet_tool_approvals', 'id', 'tool', 'status').order_by('id')).all()
+    ran = tools.execute(assistant, 'run_action', {'model': 'quotation', 'id': str(quotation_id), 'action': 'confirm'})
+    prompt = ran['_outcome']['prompt']
+    assert prompt['models'][0]['name'] == '_prompt.confirm_quotation' and approvals() == []
+    row = prompt['values']['children']['lines'][0]['_key']
+    values = {'order_date': '2026-11-20', 'children': {'lines': [{'_key': row, 'confirm_qty': '1'}]}}
+    with pytest.raises(ApprovalNeeded):
+        tools.execute(assistant, 'answer_prompt', {'ticket': prompt['ticket'], 'values': values})
+    assert [(item['tool'], item['status']) for item in approvals()] == [('answer_prompt', 'pending')]
+    with app.database.transaction() as tx:
+        tx.connection.run(qb.update('evlet_tool_approvals', status='approved'))
+    done = tools.execute(assistant, 'answer_prompt', {'ticket': prompt['ticket'], 'values': values})
+    assert done['open']['model'] == 'customerorder' and read(app, Quotation, quotation_id).docstate == 'partial'
+    assert len(approvals()) == 1
+
+
 def test_action_inputs_open_as_a_prompt_over_http(app):
     with app.business.context(ADMIN) as context:
         customer = context.create(Customer, customer_name='Acme')

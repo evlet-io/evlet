@@ -175,6 +175,8 @@ def account_with(*blocks, models=()):
         due = Text()
         note = Text()
         code = Text()
+        # Enough fields for a Related block at its limit of 12, and one past it.
+        site, batch, carrier, seal, weight, size = Text(), Text(), Text(), Text(), Text(), Text()
 
         class Meta:
             measures = {'hours': Sum('hours')}
@@ -198,7 +200,8 @@ def account_with(*blocks, models=()):
     ((Related('work', 'title'),), 'Work.title is not a visible Link to Owner'),
     ((Related('owner2'),), 'has 2 Links to Owner (owner, twice); name one as link='),
     ((Related('work', fields=('nope',)),), 'unknown or hidden on Work: nope'),
-    ((Related('work', fields=('title', 'kind', 'hours', 'due', 'owner', 'note', 'code')),), 'shows at most 6 fields'),
+    ((Related('work', fields=('title', 'kind', 'hours', 'due', 'owner', 'note', 'code', 'site', 'batch', 'carrier', 'seal', 'weight',
+                              'size')),), 'shows at most 12 fields'),
     ((Related('work', filters={'nope': 1}),), "filter 'nope' names no stored, visible field of Work"),
     ((Related('work', filters={'owner__title': 'x'}),), 'not a path or child rows'),
     ((Related('work', filters={'kind__gt': 'a'}),), 'select fields do not take gt'),
@@ -231,6 +234,13 @@ def test_a_wrong_layout_item_is_ignored_with_one_warning_and_the_rest_is_drawn(b
     assert [block['kind'] for block in layout if block['kind'] not in ('section', 'table')] == []
     assert any(block['kind'] == 'table' and block['name'] == 'rows' for block in layout)
     assert sorted(name for group in view_for(owner)['layout'] for name in group['fields']) == ['kind', 'name']
+
+
+def test_a_related_block_shows_every_field_it_lists():
+    # finance_v1's arrivals log needs eight columns; the limit was six.
+    fields = ('title', 'kind', 'hours', 'due', 'note', 'code', 'site', 'carrier')
+    block = schema_entry(account_with(Section('A', ('name',)), Related('work', fields=fields)), 'owner')['record_layout']['blocks'][1]
+    assert block['kind'] == 'related' and block['fields'] == list(fields)
 
 
 @pytest.mark.parametrize('call, message', [

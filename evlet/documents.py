@@ -1188,12 +1188,18 @@ def link_mismatch(context, item, name, field, value, targets=None):
     business = context._business
     target = targets.get(field.target, value) if targets is not None else business.policy.record(context._tx, context.user, field.target, value)
     visible = business.policy.fields(context.user, field.target)
-    if set(field.filters) - visible: raise AccessError(403, 'A selection constraint is unavailable')
-    failed = []
+    if {name.split('__', 1)[0] for name in field.filters} - visible: raise AccessError(403, 'A selection constraint is unavailable')
+    failed, compared = [], {}
     for filter_name, expected in field.filters.items():
         path = expected.path if isinstance(expected, Ref) else None
         expected = item.read(path) if path else expected
-        if expected is None or getattr(target, filter_name) != expected: failed.append((filter_name, path, expected))
+        if '__' in filter_name and not (path and expected is None):
+            compared[filter_name] = expected  # An operator ("kind__ne") is decided by the query below.
+        elif expected is None or getattr(target, filter_name) != expected: failed.append((filter_name, path, expected))
+    # The same filters the picker searches with, on the selected record, through the list query (no row scope: the
+    # record was read above as this person).
+    if compared and not failed and not context._tx.list(field.target, filters={'id': value, **compared}, limit=1):
+        failed.append((next(iter(compared)), None, None))
     if not failed: return None
     general = f"This {field_label(item._definition, name) or 'selection'} doesn't fit the other values on this form."
     if len(field.filters) != 1 or failed[0][1] is None: return general

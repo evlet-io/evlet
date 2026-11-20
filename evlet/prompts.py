@@ -90,6 +90,36 @@ class Prompt(Model):
         raise NotImplementedError('Define submit(self) on the prompt')
 
 
+def opens_prompt(method):
+    """Whether an @action only opens a prompt and so writes nothing: its body (after a docstring) is `return P` or
+    `return P(...)` with constant or plain-name arguments, where P is a Prompt class, as in
+    `def confirm(self): return ConfirmQuotation`. Read from the source once; anything else is False."""
+    import ast
+    import inspect
+    import textwrap
+    cached = getattr(method, '__opens_prompt__', None)
+    if cached is not None:
+        return cached
+    source = inspect.unwrap(method)
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(source)))
+    except (OSError, TypeError, SyntaxError):
+        tree = None
+    body = tree.body[0].body if tree and isinstance(tree.body[0], ast.FunctionDef) else []
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+        body = body[1:]
+    returned = body[0].value if len(body) == 1 and isinstance(body[0], ast.Return) else None
+    plain = lambda node: isinstance(node, (ast.Constant, ast.Name)) or isinstance(node, ast.Attribute) and plain(node.value)
+    if isinstance(returned, ast.Call) and all(plain(item) for item in [*returned.args, *(keyword.value for keyword in returned.keywords)]):
+        returned = returned.func
+    found = isinstance(returned, ast.Name) and is_prompt(getattr(source, '__globals__', {}).get(returned.id))
+    try:
+        method.__opens_prompt__ = found
+    except AttributeError:
+        pass
+    return found
+
+
 def is_prompt(value):
     return isinstance(value, Prompt) or isinstance(value, type) and issubclass(value, Prompt) and value is not Prompt
 
