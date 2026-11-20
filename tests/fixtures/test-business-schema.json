@@ -10062,7 +10062,7 @@
         ]
       },
       "script": {
-        "url": "/assets/scripts/42d44d0353a69ee5/employee.js",
+        "url": "/assets/scripts/1ee022acfce2b824/playground/employee.js",
         "on_open": "opened"
       },
       "fields": [
@@ -10791,7 +10791,7 @@
       "calculation": {
         "language": "finite-v1",
         "numeric_profile": "finite40-hu18-v1",
-        "model_schema_hash": "sha256:9271676091b90fec4b38177e3a432a98f169ad778cad44750a8abe5a67cd70d2",
+        "model_schema_hash": "sha256:0142cf595c19d92a103a3d9da7046024728eb2d94b2a8aa8d7a1dc7f165771c3",
         "capabilities": {
           "split_total": "local_universal"
         },
@@ -11096,10 +11096,45 @@
                   "amount"
                 ]
               ]
+            },
+            {
+              "target": "receipts[*].note:visible_when",
+              "path": [
+                "receipts"
+              ],
+              "field": "note",
+              "kind": "visible_when",
+              "result_type": "boolean",
+              "target_type": "text",
+              "scale": null,
+              "stored": true,
+              "rounding": null,
+              "expression": {
+                "$expr": "gt",
+                "args": [
+                  {
+                    "$expr": "ref",
+                    "scope": "parent",
+                    "field": "amount"
+                  },
+                  {
+                    "$expr": "literal",
+                    "type": "decimal",
+                    "value": "500"
+                  }
+                ]
+              },
+              "reads": [
+                [
+                  "parent",
+                  null,
+                  "amount"
+                ]
+              ]
             }
           ],
-          "model_schema_hash": "sha256:5e3e344d39fd26eaa929cf34eb8c642dd83107f0b2b08e60cf56ba235ec8fcdd",
-          "source_plan_hash": "sha256:9271676091b90fec4b38177e3a432a98f169ad778cad44750a8abe5a67cd70d2"
+          "model_schema_hash": "sha256:7c24854899738fd3e7686f19d51ce54c2d60238ee42c28fb236cce4eecf6b85b",
+          "source_plan_hash": "sha256:0142cf595c19d92a103a3d9da7046024728eb2d94b2a8aa8d7a1dc7f165771c3"
         }
       }
     },
@@ -11949,9 +11984,31 @@
           "applies_when": null,
           "required_when": null,
           "locked_when": null,
-          "visible_when": null
+          "visible_when": {
+            "$expr": "gt",
+            "args": [
+              {
+                "$expr": "ref",
+                "scope": "parent",
+                "field": "amount"
+              },
+              {
+                "$expr": "literal",
+                "type": "decimal",
+                "value": "500"
+              }
+            ]
+          }
         }
       ],
+      "document_version": 1,
+      "resource": "Expense.receipts",
+      "behavior": {
+        "reference": {},
+        "note": {}
+      },
+      "order": [],
+      "sources": {},
       "permissions": {
         "create": true,
         "update": true,

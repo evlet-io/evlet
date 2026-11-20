@@ -13,7 +13,7 @@ import time
 from . import qb
 from .adapter import Column, TableDefinition
 from .auth import AccessError, has_role
-from .documents import Draft, handler_context, settle, source_values
+from .documents import Draft, Record, handler_context, settle, source_values
 from .identity import RecordId, jsonable
 from .models import Model, ValidationError, checked_body, storage_name
 from .permissions import trusted
@@ -133,30 +133,57 @@ def option(prompt, name, default=None):
 
 class Outcome(dict):
     """What an action or a prompt's submit() returns: a message, a record to open, a new record to review
-    prefilled (new=(Model, values)) or data for browser code. Return another Prompt to chain one."""
+    prefilled (new=(Model, values)) or data for browser code. Return another Prompt to chain one.
+
+    A model may be named by class or by name ("deliveryorder" or its resource name), in `open=(model, id)` and
+    `new=(model, values)`. A name is resolved, and the values serialized, where the outcome goes into the answer;
+    an unknown name fails there with "Unknown model"."""
     def __init__(self, message=None, *, open=None, new=None, data=None):
         super().__init__()
+        self._pending = {}
         if message is not None:
             if not isinstance(message, str) or len(message) > 500:
                 raise ValueError('An outcome message is text of at most 500 characters')
             self['message'] = message
         if open is not None:
-            self['open'] = record_ref(open)
+            if isinstance(open, tuple) and len(open) == 2 and isinstance(open[0], str):
+                if open[1] is None:
+                    raise ValueError('A record reference needs a saved record id')
+                self._pending['open'] = open
+            else:
+                self['open'] = record_ref(open)
         if new is not None:
-            if not isinstance(new, tuple) or len(new) != 2 or not isinstance(new[0], type) or not isinstance(new[1], dict):
-                raise ValueError('Pass new=(Model, values) to open a new record filled with values')
-            model, values = new
-            self['new'] = {'model': storage_name(model), 'values': serialized(model, values)}
+            if not isinstance(new, tuple) or len(new) != 2 or not isinstance(new[0], (type, str)) or not isinstance(new[1], dict):
+                raise ValueError('Pass new=(Model, values) to open a new record filled with values; Model may be its name')
+            if isinstance(new[0], type):
+                self['new'] = {'model': storage_name(new[0]), 'values': serialized(*new)}
+            else:
+                self._pending['new'] = new
         if data is not None:
             self['data'] = data
+
+    def resolve(self, registry):
+        """Resolve the models named in open= and new= through the registry and serialize the values; returns self."""
+        pending, self._pending = self._pending, {}
+        if 'open' in pending:
+            model, record_id = pending['open']
+            self['open'] = record_ref((registry.resolve(model), record_id))
+        if 'new' in pending:
+            model, values = pending['new']
+            model = registry.resolve(model)
+            self['new'] = {'model': storage_name(model), 'values': serialized(model, values)}
+        return self
 
 
 def record_ref(value):
     """(Model, id), a bound record or a draft with an id, as {"model": name, "id": id}."""
     if isinstance(value, tuple) and len(value) == 2 and isinstance(value[0], type):
         model, record_id = value
-    elif isinstance(value, Draft) or hasattr(value, '_model') and hasattr(value, '_data'):
-        model, record_id = getattr(value, '_definition', None) or value._model, value.id
+    elif isinstance(value, Draft):
+        model, record_id = value._definition, value.id
+    elif isinstance(value, Record):
+        # Record.model is the class unless the model has a field named model; the record's own class is always it.
+        model, record_id = value._model, value.id
     else:
         raise ValueError('Name a record as (Model, id) or pass the record itself')
     if record_id is None:
@@ -269,7 +296,8 @@ def submit_draft(context, draft):
         raise AccessError(403, 'This context is read only')
     settle(context, draft, complete=True)
     with trusted(), handler_context(context, draft):
-        return draft._definition.submit(draft)
+        result = draft._definition.submit(draft)
+    return result.resolve(context._business.registry) if isinstance(result, Outcome) else result
 
 
 # ---------- over HTTP: tickets, the surface and the routes ----------
@@ -306,6 +334,8 @@ def outcome_of(business, context, value, *, origin=None, model=None, record_id=N
         return {'prompt': issue(business, context, value, origin=origin, model=model, record_id=record_id)}
     if value is None:
         return {}
+    if isinstance(value, Outcome):
+        value = value.resolve(business.registry)
     encoded = json.dumps(jsonable(value), allow_nan=False)
     if len(encoded) > RESULT_LIMIT:
         raise ValueError('An outcome exceeds 64 KiB')

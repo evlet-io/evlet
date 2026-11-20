@@ -222,7 +222,18 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const calculated = meta.compute !== null && meta.compute !== undefined;
     return { key: name, label: meta.label, width: WIDTHS[meta.type] ?? 160, meta, calculated, align: kindOf(meta.type).align === 'right' ? 'right' : 'left' };
   });
-  const arranged = derive(() => arrange(allColumns, prefs.get()), { name: `${table.name} (arranged columns)` });
+  // A column whose field its rule hides (applies_when or visible_when false) on every row has no column, as in the row
+  // editor: a rule that reads only the parent, such as a pricing basis, hides it for all rows at once. One row that
+  // shows the field brings the column back. A table without rows keeps its columns.
+  const ruledOut = derive(() => {
+    const list = table.rows.get();
+    return list.length === 0 ? '' : allColumns.filter(column => list.every(row => row.fields.get(column.key)?.rules.get().visible === false))
+      .map(column => column.key).join(' ');
+  }, { name: `${table.name} (columns hidden by rules)` });
+  const arranged = derive(() => {
+    const out = new Set(ruledOut.get().split(' '));
+    return arrange(allColumns, prefs.get()).filter(column => !out.has(column.key));
+  }, { name: `${table.name} (arranged columns)` });
   const narrow = cell(narrowNow(), { name: `${table.name} (narrow)` });
   // The control column: checkbox, drag handle and the row's number with Edit (a phone keeps a narrow handle, without the number).
   const derived = Boolean(props.derived);

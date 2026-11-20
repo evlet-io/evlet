@@ -572,6 +572,44 @@ the model, the table and the field, when a name is not a field of that model, is
 `Percent` and `Duration` work as numbers in finite expressions; `Phone` works as text.
 `Time`, `Tags` and references cannot be used in calculations.
 
+## Abstract models
+
+A base that several documents share declares `Meta.abstract = True`. It holds fields, Tables, formulas,
+`derive()` and hooks like any model, and it may live in `models/`, but it is not a model of its own: discovery
+skips it, so it has no table, no schema entry and no migration. Each concrete model built from it gets its own
+table with the base's fields and rows.
+
+```python
+class TradeDocument(Model):
+    class Meta:
+        abstract = True
+        calculation_language = "finite-v1"
+
+    class Line(Child):
+        qty = Decimal(scale=2, default=1)
+        rate = Decimal(scale=2, default=0)
+        amount = Decimal(scale=2, compute=qty * rate)
+
+    party = Link(Party)
+    lines = Table(Line)
+    total = Decimal(scale=2, compute=lines.sum("amount"))
+
+
+class SalesOrder(TradeDocument):
+    pass
+
+
+class PurchaseOrder(TradeDocument):
+    pass
+```
+
+* `abstract` is read from the class's own `Meta` only and never inherited: a subclass that does not
+  repeat it is concrete, even when it inherits the base's `Meta` or subclasses it.
+* An abstract class is refused, with a message naming it, by `Registry(...)`, as a `Link` target and by
+  `context.create`, `context.get` and the other calls that resolve a model.
+* The checks that run when a class is created still run on it, so a mistake in the base fails where it is
+  declared.
+
 ## Section rows
 
 `Table(Line, sections=True)` lets a Table hold section rows: headings such as "Goods" and

@@ -264,6 +264,9 @@ class ModelType(type):
                 raise ValueError(f'{name}: {removed} was removed in 0.4.6; declare a State with rules and a release step '
                                  '(docs/states-actions.md)')
         cls.__ledger__ = ledger
+        # Meta.abstract = True: a base other models inherit; read from the class's own Meta only, never inherited.
+        own_meta = namespace.get('Meta')
+        cls.__abstract__ = bool(isinstance(own_meta, type) and vars(own_meta).get('abstract', False))
         # Meta.image names the Image field shown as the record's avatar or thumbnail.
         image = getattr(meta, 'image', None)
         if image is not None and (type(image) is not str or not isinstance(fields.get(image), Image)):
@@ -413,6 +416,10 @@ class Model(metaclass=ModelType):
         return instance
 
 
+def abstract_refusal(model, instead):
+    return f'{model.__name__} is abstract (Meta.abstract = True) and has no table; {instead}'
+
+
 @dataclass(frozen=True)
 class ChildTable:
     parent: type
@@ -430,6 +437,8 @@ class Registry:
         for model in models:
             if isinstance(model, type) and issubclass(model, Child):
                 raise ValueError(f'{model.__name__} is a Child row model. Declare row models inside their document with Table(...)')
+            if isinstance(model, type) and getattr(model, '__abstract__', False):
+                raise ValueError(abstract_refusal(model, 'register the models built from it'))
         expanded = list(models)
 
         def finite(model, seen=()):
@@ -508,6 +517,8 @@ class Registry:
                     if target is None:
                         raise ValueError(f'Unresolved Link {model.__name__}.{field.name}: {field.target}')
                     field.target = target
+                if isinstance(field, Link) and getattr(field.target, '__abstract__', False):
+                    raise ValueError(f'Link {model.__name__}.{field.name}: ' + abstract_refusal(field.target, 'link a model built from it'))
                 if isinstance(field, Link) and field.target not in models:
                     raise ValueError(f"Link target for {model.__name__}.{field.name} is not registered")
         for model in models:
@@ -646,6 +657,8 @@ class Registry:
         return name
 
     def resolve(self, value):
+        if isinstance(value, type) and getattr(value, '__abstract__', False):
+            raise ValueError(abstract_refusal(value, 'use a model built from it'))
         if isinstance(value, type):
             self.name_for(value)
             return value

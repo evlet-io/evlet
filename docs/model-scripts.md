@@ -36,17 +36,23 @@ export default class Quotation extends evlet.Model {
 
 ## The script file
 
-- `Meta.script` names a `.js` file in the folder of the module that declares the model, or in a
-  folder below it. A missing file or another extension fails at start-up, naming the model and
-  the path. Documents and prompts take a script ([In a prompt](#in-a-prompt)): a Table row's hooks call
+- `Meta.script` names a `.js` file relative to the folder of the module that declares the model. It
+  may go up with `..` (`"../trade.js"`) as long as the file stays inside the app package. A missing
+  file, another extension, a path that leaves the app package (a link out of it included) or a
+  hidden folder fails at start-up, naming the model and the path. Documents and prompts take a
+  script ([In a prompt](#in-a-prompt)), and `Extend` scripts follow the same rule: a Table row's hooks call
   its document's (or prompt's) script, and ledger models have none.
 - It is plain JavaScript, as an ES module, served as it is: no TypeScript, no bundler and no Node,
   on the server or in any `evlet` command. Its default export is a class that extends
   `evlet.Model`. `evlet` is one frozen global, set before any script loads.
-- It may import other `.js` files of its folder by relative path (`import { rate } from
-  './rates.js'`). It cannot import Evlet's bundled files.
+- It may import any other `.js` file of its app by relative path, across folders: the script of
+  `purchase/purchase_order.py` can share `trade.js` at the app's root with `import { rate } from
+  '../trade.js'`, so one file serves every model that needs it. It cannot import Evlet's bundled files,
+  files outside the app or files in hidden folders.
 - The browser loads it from `/assets/scripts/<hash>/<path>` only when a record of the model
-  opens. The hash covers every `.js` file of the folder, so a changed file gets a new address.
+  opens; `<path>` is the file's path in the app package (`purchase/purchase_order.js`). The hash covers
+  every `.js` file of the app, so a changed file gets a new address. The app package is the outermost
+  package of the declaring module (the app's source folder); a module in no package uses its own folder.
   The page's Content Security Policy is unchanged (`script-src 'self'`).
 - The server never runs it and never depends on it. The API, MCP, Eva, imports and jobs work the
   same without it, and every check stays on the server.

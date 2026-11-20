@@ -68,7 +68,7 @@
     "MigrationPlan": "class(state: str, pending: tuple, differences: tuple, suggestion: str, planned: dict = None) -> None",
     "Min": "class(field, *, where=None, model=None, link=None, trend=None, color=None)",
     "Model": "class(**values)",
-    "Model.Meta": "options['activity', 'api', 'append_only', 'attachments', 'autosave', 'board', 'calculation_language', 'cards', 'description', 'duplicate', 'focus', 'image', 'indexes', 'key_fields', 'label', 'layout', 'ledger', 'list_fields', 'list_tab', 'list_tabs', 'mail', 'measures', 'naming', 'numeric_profile', 'on_open', 'open_in', 'option', 'panel', 'panel_summary', 'period', 'period_scope', 'plural', 'relations', 'script', 'search_fields', 'side_blocks', 'status', 'summary', 'timestamps', 'title', 'title_field']",
+    "Model.Meta": "options['abstract', 'activity', 'api', 'append_only', 'attachments', 'autosave', 'board', 'calculation_language', 'cards', 'description', 'duplicate', 'focus', 'image', 'indexes', 'key_fields', 'label', 'layout', 'ledger', 'list_fields', 'list_tab', 'list_tabs', 'mail', 'measures', 'naming', 'numeric_profile', 'on_open', 'open_in', 'option', 'panel', 'panel_summary', 'period', 'period_scope', 'plural', 'relations', 'script', 'search_fields', 'side_blocks', 'status', 'summary', 'timestamps', 'title', 'title_field']",
     "Model.to_dict": "def(self)",
     "Month": "class(field)",
     "MultiSelect": "class(choices, **kwargs)",

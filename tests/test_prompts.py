@@ -15,9 +15,14 @@ ALL = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('r
        'viewer': Rule(('read',))}
 
 
+def note_on(self):
+    return SourceNote
+
+
 class Customer(Model):
     permissions = ALL
     customer_name = Text(required=True)
+    note = action('Note')(note_on)
 
     @action('Rename', inputs={'new_name': Text(required=True, max_length=60)})
     def rename(self, new_name):
@@ -54,6 +59,8 @@ class Quotation(Model):
                State.Rule(('submitted', 'partial'), 'confirmed', key='full', by=()),
                State.Rule('confirmed', 'partial', key='reopen_part', by=()),
                State.Rule(('partial', 'confirmed'), 'submitted', key='reopen_all', by=())))
+
+    note = action('Note')(note_on)
 
     @action('Reschedule')
     def reschedule(self):
@@ -106,6 +113,7 @@ class CustomerOrder(Model):
 
     lines = Table(Line, required=True)
     total = Currency(currency='AED', compute=lines.sum('amount'))
+    note = action('Note')(note_on)
     docstate = State(State.Step('draft', 'Draft'), State.Step('submitted', 'Submitted', release=True),
                      State.Step('cancelled', 'Cancelled', final=True),
                      rules=(State.Rule('draft', 'submitted', 'Submit', key='submit', primary=True),
@@ -174,6 +182,21 @@ class Reschedule(Prompt):
 
     def submit(self):
         return Outcome(data={name: str(getattr(self, name)) for name in ('from_load', 'from_start', 'from_code', 'untouched')})
+
+
+class SourceNote(Prompt):
+    """One prompt opened from three models: it reads which through self.source.model."""
+    answer = Text(required=True)
+
+    def submit(self):
+        model = self.source.model
+        if self.answer == 'open':
+            return Outcome(open=(model.__name__.lower(), self.source.id))
+        if self.answer == 'new':
+            return Outcome(new=('customer', {'customer_name': f'From {model.__name__}'}))
+        if self.answer == 'unknown':
+            return Outcome(new=('nosuchmodel', {}))
+        return Outcome(data={'model': model.__name__})
 
 
 def quick_note(context):
@@ -497,3 +520,44 @@ def test_values_set_by_code_keep_through_a_ticket(app):
     assert status == 200, outcome
     assert outcome['data'] == {'from_load': '2026-11-16', 'from_start': '2026-02-02', 'from_code': '2026-03-03',
                                'untouched': str(date.today())}
+
+
+# ---------- record.model, and outcomes that name a model ----------
+
+def three_sources(app):
+    quotation_id = quotation(app, '2')
+    with app.business.context(ADMIN) as context:
+        record = context.get(Quotation, quotation_id)
+        order = record.confirm({'order_date': '2026-11-20'})['open']['id']
+        return [(Customer, record.customer), (Quotation, quotation_id), (CustomerOrder, order)]
+
+
+def test_one_prompt_reads_which_model_opened_it(app):
+    for model, record_id in three_sources(app):
+        with app.business.context(ADMIN) as context:
+            record = context.get(model, record_id)
+            assert record.model is model
+            assert record.note({'answer': 'which'}) == {'data': {'model': model.__name__}}
+
+
+def test_an_outcome_names_a_model_by_name(app):
+    model, record_id = three_sources(app)[1]
+    with app.business.context(ADMIN) as context:
+        record = context.get(model, record_id)
+        assert record.note({'answer': 'open'})['open'] == {'model': 'quotation', 'id': record_id}
+        assert record.note({'answer': 'new'})['new'] == {'model': 'customer', 'values': {'customer_name': 'From Quotation'}}
+        with pytest.raises(ValueError, match='Unknown model: nosuchmodel'):
+            record.note({'answer': 'unknown'})
+    # Over HTTP the name resolves where the outcome goes into the answer.
+    c = client(app)
+    etag = c('GET', f'/api/quotation/{record_id}')[2][b'etag']
+    status, result, _ = c('POST', f'/api/quotation/{record_id}/actions/note', {}, headers={b'if-match': etag})
+    ticket = result['_outcome']['prompt']['ticket']
+    status, outcome, _ = c('POST', f'/api/_prompts/{ticket}/submit', {'values': {'answer': 'new'}})
+    assert status == 200 and outcome['new'] == {'model': 'customer', 'values': {'customer_name': 'From Quotation'}}
+
+
+def test_an_outcome_still_takes_a_class():
+    outcome = Outcome(new=(Customer, {'customer_name': 'Acme'}), open=(Customer, 7))
+    assert outcome.resolve(None) == {'open': {'model': 'customer', 'id': RecordId(7)},
+                                     'new': {'model': 'customer', 'values': {'customer_name': 'Acme'}}}

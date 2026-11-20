@@ -104,8 +104,15 @@ remark and the fields it asks for, and an action's typed arguments, open in the 
 Outcome('Order created', open=order)                   # a message, and a record to open: a bound record or (Model, id)
 Outcome(new=(Invoice, {'customer': 4, 'total': 70}))   # a new invoice filled with these values, to review and create
 Outcome(data={'estimate': '1200.00'})                  # data for browser code
+Outcome(new=('deliveryorder', {'customer': 4}))        # a model by name (or resource name) instead of its class
+Outcome(open=('invoice', invoice_id))                  # the same for a record to open
 return NextStep                                        # another Prompt: a wizard
 ```
+
+A model named by name is resolved, and the values serialized, where the outcome goes into the answer (the
+action's response, the prompt's `submit()` result in Python and over HTTP), as `context.create` resolves one; an
+unknown name fails there with `Unknown model: …`. So code that cannot import the model class (another app's
+model, or one that would import in a circle) names it.
 
 The JSON answer is at most 64 KiB. `submit()` may also return `None` (the screen says it is done) or any other JSON value (a dict, a list, a number or a string), which the screen receives as data.
 
@@ -167,7 +174,8 @@ customer.delete()
 
 `context.get`, `context.create` and each row of `context.list(...)['rows']` return a bound record: field values
 as attributes (Python values: `Decimal`, `date`, `RecordId`), Table rows as tuples of read-only rows, bound to
-the context that read it and to its revision. Virtual fields (`stored=False`) read as the HTTP detail shows them,
+the context that read it and to its revision. `record.model` is its model class, as on a draft (a field named
+`model` wins), so one prompt opened from several models reads `self.source.model`. Virtual fields (`stored=False`) read as the HTTP detail shows them,
 on the record and on its rows; they are calculated on the first read of one (a full settle of that record), so a
 `context.list` calculates none up front. `record['field']` and `record.get('field')` give the value as the
 record's JSON detail carries it, like a report row.

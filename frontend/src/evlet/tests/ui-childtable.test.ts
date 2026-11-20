@@ -848,3 +848,38 @@ describe('ChildTable Tab entry and Link go-to', () => {
     expect(cellOf(rowsIn(host)[1], 'product').querySelector('.link-go')).toBeNull();
   });
 });
+
+// ---------- a column hidden by its rule on every row ----------
+
+/** The order with a rate that shows only while the order's stage is open: a visible_when that reads only the parent. */
+async function ratedByStage(lines = 2) {
+  const ruled = structuredClone(schema) as any;
+  const order = ruled.models.find((item: any) => item.name === 'order');
+  const rule = { $expr: 'eq', args: [{ $expr: 'ref', field: 'stage', scope: 'parent' }, { $expr: 'literal', type: 'text', value: 'open' }] };
+  ruled.models.find((item: any) => item.name === 'order_lines').fields.find((field: any) => field.name === 'rate').visible_when = rule;
+  order.calculation.plan.fields.unshift({ expression: rule, field: 'rate', kind: 'visible_when', path: ['lines'], reads: [['parent', null, 'stage']],
+    result_type: 'boolean', rounding: null, scale: null, stored: true, target: 'lines[*].rate:visible_when', target_type: 'currency' });
+  const { api } = backend();
+  const store = new RecordStore({ api, schema: ruled, model: 'order', today: () => '2026-11-01' });
+  await store.create({ title: 'Ruled', stage: 'open', children: { lines: Array.from({ length: lines }, (_, index) => ({ _key: `r${index}`, qty: '1', rate: '2.50' })) } });
+  return store;
+}
+const headersOf = (host: Element) => [...host.querySelectorAll('thead th[data-key]')].map(th => (th as HTMLElement).dataset.key);
+
+describe('a column its rule hides on every row', () => {
+  it('goes while the parent hides the field on every row and comes back when one row shows it', async () => {
+    const store = await ratedByStage();
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'] }));
+    expect(headersOf(host)).toEqual(['product', 'qty', 'rate', 'amount']);
+    store.field('stage').set('won');
+    expect(store.table('lines').rows.peek().every(row => row.field('rate').rules.peek().visible === false)).toBe(true);
+    expect(headersOf(host)).toEqual(['product', 'qty', 'amount']);
+    expect(cellOf(rowsIn(host)[0], 'rate')).toBeUndefined();
+    store.field('stage').set('open');
+    expect(headersOf(host)).toEqual(['product', 'qty', 'rate', 'amount']);
+    // One row that shows the field is enough to bring the column back.
+    store.field('stage').set('won');
+    store.table('lines').rows.peek()[1].field('rate').rules.set({ applies: true, required: false, locked: false, visible: true });
+    expect(headersOf(host)).toEqual(['product', 'qty', 'rate', 'amount']);
+  });
+});

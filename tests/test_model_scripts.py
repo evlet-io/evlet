@@ -83,9 +83,10 @@ def test_a_changed_script_gets_a_new_address(tmp_path):
 @pytest.mark.parametrize('script, message', [
     ('missing.js', 'Quote.Meta.script: missing.js is not a file'),
     ('quote.ts', 'name a .js file'),
-    ('../quote.js', 'name a .js file'),
+    ('../quote.js', 'quote.js leaves the app package'),
     ('/etc/quote.js', 'name a .js file'),
     ('.hidden/quote.js', 'name a .js file'),
+    ('lib/../../quote.js', 'leaves the app package'),
 ])
 def test_a_missing_or_wrong_script_fails_at_start_up(tmp_path, script, message):
     module, _ = models(tmp_path, QUOTE.replace("script = 'quote.js'", f'script = {script!r}'), {'quote.js': '', 'quote.ts': ''})
@@ -397,3 +398,73 @@ def test_a_flat_app_extends_another_apps_model_in_install_order(tmp_path):
         for name in list(sys.modules):
             if name.split('.')[0] in ('sales', 'acme'):
                 del sys.modules[name]
+
+
+# One app, one script root: a script may import any .js file of its app package (docs/model-scripts.md).
+
+def app_package(tmp_path, monkeypatch, script="purchase_order.js"):
+    """An app package with a shared trade.js at its root and a purchase/ folder whose model imports it."""
+    name = f'scripted_app_{next(NUMBER)}'
+    root = tmp_path / name
+    (root / 'purchase').mkdir(parents=True)
+    (root / '__init__.py').write_text('')
+    (root / 'purchase' / '__init__.py').write_text('')
+    (root / 'trade.js').write_text('export const trade = 1;\n')
+    (root / 'purchase' / 'purchase_order.js').write_text('import { trade } from "../trade.js";\nexport default class PurchaseOrder {}\n')
+    (root / 'purchase' / 'models.py').write_text(HEADER + textwrap.dedent(f'''
+    class PurchaseOrder(Model):
+        permissions = {{'admin': Rule(('read', 'create', 'update', 'delete'))}}
+        supplier = Text(on_change='supplier_changed')
+
+        class Meta:
+            script = {script!r}
+    '''))
+    monkeypatch.syspath_prepend(str(tmp_path))
+    from importlib import import_module
+    return import_module(f'{name}.purchase.models'), root
+
+
+def test_a_script_imports_another_folder_of_its_app(tmp_path, monkeypatch):
+    module, root = app_package(tmp_path, monkeypatch)
+    app = start(Database(tmp_path / 'db.sqlite3', Registry(module.PurchaseOrder)))
+    try:
+        url = app.registry.scripts[module.PurchaseOrder]['url']
+        assert url.endswith('/purchase/purchase_order.js')
+        base = url.removesuffix('purchase/purchase_order.js')
+        status, body, _ = http(app, 'GET', url)
+        assert status == 200 and body.startswith(b'import { trade } from "../trade.js"')
+        # ../trade.js from purchase/ is the app's trade.js, served at the same hash.
+        assert http(app, 'GET', base + 'trade.js')[:2] == (200, b'export const trade = 1;\n')
+        # The hash covers every .js file of the app: changing the shared one changes the address.
+        (root / 'trade.js').write_text('export const trade = 2;\n')
+        assert Registry(module.PurchaseOrder).scripts[module.PurchaseOrder]['url'] != url
+    finally:
+        app.database.close()
+
+
+def test_meta_script_may_go_up_inside_the_app(tmp_path, monkeypatch):
+    module, _ = app_package(tmp_path, monkeypatch, script='../trade.js')
+    assert Registry(module.PurchaseOrder).scripts[module.PurchaseOrder]['url'].endswith('/trade.js')
+
+
+def test_a_script_outside_the_app_is_refused_at_start_up(tmp_path, monkeypatch):
+    (tmp_path / 'outside.js').write_text('')
+    module, _ = app_package(tmp_path, monkeypatch, script='../../outside.js')
+    with pytest.raises(ValueError, match=r'PurchaseOrder.Meta.script: \.\./\.\./outside\.js leaves the app package'):
+        Registry(module.PurchaseOrder)
+
+
+def test_a_link_out_of_the_app_is_neither_a_script_nor_served(tmp_path, monkeypatch):
+    outside = tmp_path / 'secret.js'
+    outside.write_text('export const secret = 1;\n')
+    module, root = app_package(tmp_path, monkeypatch)
+    (root / 'purchase' / 'linked.js').symlink_to(outside)
+    app = start(Database(tmp_path / 'db.sqlite3', Registry(module.PurchaseOrder)))
+    try:
+        base = app.registry.scripts[module.PurchaseOrder]['url'].removesuffix('purchase/purchase_order.js')
+        assert http(app, 'GET', base + 'purchase/linked.js')[0] == 404
+    finally:
+        app.database.close()
+    module.PurchaseOrder.Meta.script = 'linked.js'
+    with pytest.raises(ValueError, match='linked.js leaves the app package'):
+        Registry(module.PurchaseOrder)
