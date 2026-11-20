@@ -8,6 +8,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Upgrading
 
+- **No migrations and no public API removed.** `RunData` gains `seed=False` and `evlet` exports `DropIndex`.
+- **Seed steps run on new instances.** `RunData(..., seed=True)` now also runs on a new database and on a
+  baseline database, at startup and through `migrate()`, after the tables are created, against the current
+  models. Mark the data steps that create starting records `seed=True` (in a new migration: changing an applied
+  one changes its checksum), keep them working with today's models and make them idempotent. Other data
+  steps still do not run on a new database.
+- **The migration plan writes `DropIndex`.** `evlet migrate --plan` and `database.plan()` now suggest
+  `DropIndex` for an index the models no longer declare, written before any `AddIndex`, instead of leaving a
+  `Meta.indexes differ` mismatch. `DropField` now takes the `Meta.indexes` entries that name the dropped field
+  out of the plan as well.
 - **`derive()` sees suggestions.** An `initial=` suggestion that reads nothing `derive()` sets now fills its field
   before `derive()` runs, on a document created from Python, the API or a prompt (only the browser did before).
   `derive()` code that treated such a field as empty on those paths now reads the suggested value.
@@ -25,6 +35,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   now give `stored=False` fields their calculated value, computed on the first read of one, instead of `None`.
   Tests that called `business.virtual_values` to read them can read the attribute. A row read through a record
   now gives `None`, not `AttributeError`, for a declared field the detail left out.
+
+### Added
+
+- **`DropIndex(table, field, unique=False)`**, the counterpart of `AddIndex`: a field name clears the field's
+  `index` (or, with `unique=True`, `unique`) flag, a tuple removes the `Meta.indexes` entry. It drops the
+  database index with those columns and that uniqueness. A changed index migrates as a `DropIndex` and an
+  `AddIndex` ([docs/model-engine.md](docs/model-engine.md#explicit-migrations)).
+- **Seed data steps.** `RunData(function, seed=True)` creates starting records on every instance, new ones
+  included ([docs/app-upgrades.md](docs/app-upgrades.md#seed-data-on-new-instances)).
 
 ### Fixed
 

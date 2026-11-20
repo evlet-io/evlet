@@ -1235,7 +1235,12 @@ The current model definitions must describe the target schema, including
 `display_name = Text(...)`, `active = Boolean(required=True)`, and
 `index=True` on `display_name`. `CreateModel(HistoricalModel)` adds a model;
 `AddIndex(..., unique=True)` adds a uniqueness constraint, and `AddIndex(table, ("a", "b"),
-unique=True)` adds a [`Meta.indexes`](#composite-and-unique-indexes) entry. Keep historical field
+unique=True)` adds a [`Meta.indexes`](#composite-and-unique-indexes) entry. `DropIndex` takes the
+same arguments and undoes it: `DropIndex("customer", "display_name")` clears `index=True`,
+`unique=True` clears `unique=True`, and a tuple removes the `Meta.indexes` entry with that
+uniqueness. A changed index, such as one that becomes unique or covers other fields, is a
+`DropIndex` of the old one and an `AddIndex` of the new one, in that order. `DropField` takes every
+`Meta.indexes` entry that names the dropped field out with it. Keep historical field
 and model definitions in migration files unchanged. Do not point an old
 `CreateModel` operation at a model definition that will keep changing.
 Migrations compare stored fields only, so a frozen class may have any Python name:
@@ -1310,8 +1315,8 @@ current models, for example `employee.days: type is 'integer' after the migratio
 'decimal' in the models`. `suggestion` is Python for one migration covering what can be
 inferred: new models (`CreateModel` with a frozen class), new child tables (`AddTable`),
 new fields (`AddField` with a frozen copy of the field), a single renamed field
-(`RenameField`), removed fields (`RetireField`), safe type changes (`AlterField`) and new
-indexes (`AddIndex`). A required field without a fixed default gets `backfill=...`, and changes
+(`RenameField`), removed fields (`RetireField`), safe type changes (`AlterField`), removed
+indexes (`DropIndex`, written first) and new indexes (`AddIndex`). A required field without a fixed default gets `backfill=...`, and changes
 it cannot write become `#` comments; fill both in by hand. A removed field's values are not
 moved anywhere: add a `RunData` step when they belong in new fields.
 `migrate()` refuses a mismatch with the same list of differences, so the error names the
@@ -1457,10 +1462,34 @@ or `migrate(migrations, allow_maintenance=True)` from Python. Each such step wri
 audit row (actor `cli`, area `Records`, the migration's name) and logs a warning. Their Activity entries
 stay as they were; the step writes no Activity entries of its own.
 
-The migration checksum covers the function's source and `maintenance`, so keep the function in
+The migration checksum covers the function's source, `maintenance` and `seed`, so keep the function in
 the migration file and never change it once applied. Any exception rolls back the whole run,
-structural changes included. Like `Recompute`, data steps do not run when a database adopts its
-baseline.
+structural changes included. Like `Recompute`, data steps do not run on a new database or when a
+database adopts its baseline: they were written for older model shapes. Seed steps are the exception.
+
+#### Seed data
+
+`RunData(function, seed=True)` creates starting records a new instance needs, such as units or tax
+profiles:
+
+```python
+def starting_units(session):
+    Unit = session.registry.models["unit"]
+    for code in ("PCS", "KG"):
+        if not session.list(Unit, filters=[["code", "eq", code]]):
+            session.create(Unit, code=code)
+
+
+Migration("0007_units", RunData(starting_units, seed=True))
+```
+
+On an existing database a seed step runs in sequence like any data step. On a new database
+(`migrate()` or startup creating the tables from the current models) and on a baseline database
+(initialized from the current models, then given its migration list), Evlet runs every seed step of
+the history, in migration order, once the tables exist, and no other data step. A seed step
+therefore runs against today's models on a new instance: keep it working with the current models
+and make it idempotent (create a record only when it is missing). A seed step cannot be a
+maintenance step. See [app-upgrades.md](app-upgrades.md#seed-data-on-new-instances).
 
 ### Recalculating stored values
 
