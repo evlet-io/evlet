@@ -5,7 +5,7 @@ table. Dispatch, the allowed browser origins and `evlet routes` all read that ta
 It is never cached to disk.
 
 An instance with no `routes.py` serves the same URLs as before: the desk shell at
-`/`, `/login`, `/docs`, `/app/...`, `/reports/<name>` and `/assets/...`. `/settings/accounts` redirects (301) to `/controls/users`.
+`/`, `/login`, `/docs`, `/app/...`, `/reports/<name>` and `/assets/...`. `/settings/accounts` redirects (301) to `/controls/users`, and `/app` alone redirects (302) to `/`, which opens the person's start page.
 
 ## Frontends
 

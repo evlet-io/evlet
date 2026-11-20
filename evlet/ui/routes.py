@@ -37,6 +37,9 @@ def dispatch(application, scope):
                 return response
             if path.endswith('.js') and urlsplit(dict(scope.get('headers', [])).get(b'referer', b'').decode('latin-1')).path.startswith(PREFIX):
                 raise HTTPError(404, 'Route not found')
+        if found[0] == 'evlet.desk' and found[1] != '/' and found[2] in ('', '/'):
+            # The desk's base alone (/app) names no screen: its root sends a signed-in person to their start page.
+            return 302, Download(b''), [(b'location', b'/')]
         if path == '/settings/accounts' and application.routes.scopes(host) is None:
             return 301, Download(b''), [(b'location', b'/controls/users')]
         if not found[0].startswith('evlet.'):

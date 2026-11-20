@@ -29,6 +29,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **`/app` opens the start page.** GET `/app` (the desk's base with no screen) answered 404; it redirects to `/` now,
+  where a signed-in person lands on their start page, the first list their role can open
+  ([docs/routing.md](docs/routing.md)).
 - **The frontend installs and builds on the Node 22 LTS.** `frontend/package.json` asked for Node 24.15+ and `.npmrc`
   enforces it, so `npm ci` refused Node 22. The range is `^22.22.2 || ^24.15.0` now (22.22.2 is the lowest version
   jsdom, the test environment, accepts); CI installs, tests and builds on Node 22.22.2 as well, and a frontend test
