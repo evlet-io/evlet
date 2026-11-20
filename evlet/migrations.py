@@ -372,6 +372,9 @@ def initialize(database):
         if baseline:
             for i, migration in enumerate(migrations):
                 connection.run(qb.insert('evlet_migrations', position=i + 1, name=migration.name, checksum=checksums[i]))
+            # Starting records reach a new instance: its seed steps run on the tables just made (RunData seed=True).
+            for migration in migrations:
+                run_data(connection, database.registry, migration, seed_only=True)
         _save_definition(connection, database.registry)
 
 
@@ -548,6 +551,37 @@ class AddIndex:
         if columns is None:
             columns = set(connection.columns(self.table))
         index(connection, self.table, self.field, unique=self.unique, columns=stored_columns(columns, self.field))
+
+
+@dataclass(frozen=True)
+class DropIndex:
+    """Undo an AddIndex: clear a field's `index` flag (or its `unique` flag, with unique=True), or remove a
+    Meta.indexes entry (`field` is a tuple of field names). A changed index is a DropIndex and an AddIndex."""
+    table: str
+    field: str | tuple
+    unique: bool = False
+
+    def composite(self):
+        return isinstance(self.field, tuple)
+
+    def signature(self):
+        identifier(self.table)
+        for name in (self.field if self.composite() else (self.field,)):
+            identifier(name)
+        if self.composite() and (not self.field or len(set(self.field)) != len(self.field)):
+            raise SchemaError('DropIndex names distinct fields')
+        return {'operation': 'drop_index', 'table': self.table, 'field': list(self.field) if self.composite() else self.field,
+                'unique': self.unique}
+
+    def apply(self, connection, columns=None):
+        """Drop the index AddIndex made (or a table's creation): the one over the same columns with the same
+        uniqueness, found by its shape rather than its name, which a renamed field or a taken name changes."""
+        if columns is None:
+            columns = set(connection.columns(self.table))
+        covered = self.field if self.composite() else stored_columns(columns, self.field)
+        for found in connection.inspect(self.table).indexes:
+            if tuple(found.columns) == tuple(covered) and bool(found.unique) == self.unique and not found.partial:
+                connection.drop_index(found.name)
 
 
 @dataclass(frozen=True)
@@ -882,10 +916,18 @@ class RunData:
     (`allow_maintenance=True`, `evlet migrate --allow-maintenance`); each such step then writes a
     Controls audit row. Columns of retired fields are read through `session.connection`. The checksum
     covers the function's source, so an applied step cannot change silently. Any exception rolls back
-    the whole batch."""
+    the whole batch.
+
+    `seed=True` marks a step that creates starting records (units, tax profiles). On an existing database
+    it runs in sequence like any step. A new database (created from the current models, by migrate() or at
+    startup) and a baseline database (initialized from the current models, then given its migrations) run
+    no other data step, since those were written for older model shapes, but run every seed step in
+    migration order once the tables exist. A seed step therefore runs against today's models and should be
+    idempotent: create a record only when it is missing."""
     function: object
     name: str = None
     maintenance: bool = False
+    seed: bool = False
 
     def signature(self):
         import inspect
@@ -897,8 +939,13 @@ class RunData:
             raise SchemaError('RunData needs a function defined in a source file') from exc
         if type(self.maintenance) is not bool:
             raise SchemaError('RunData maintenance is True or False')
+        if type(self.seed) is not bool:
+            raise SchemaError('RunData seed is True or False')
+        if self.seed and self.maintenance:
+            raise SchemaError(f'RunData {self.label()}: a seed step creates starting records, so it cannot be a maintenance step')
+        # Each flag is left out when off, so the checksums of migrations written before it stay the same.
         return {'operation': 'run_data', 'name': self.label(), 'source': hashlib.sha256(source.encode()).hexdigest(),
-                **({'maintenance': True} if self.maintenance else {})}
+                **({'maintenance': True} if self.maintenance else {}), **({'seed': True} if self.seed else {})}
 
     def label(self):
         return self.name or getattr(self.function, '__qualname__', 'step')
@@ -1116,7 +1163,7 @@ def _write(session, model, record_id, values):
     session.connection.run(qb.update(session.registry.name_for(model), **dict(zip(names, stored))).where(id=record_id))
 
 
-OPERATIONS = (AddField, RenameField, AddIndex, CreateModel, AddTable, RetireField, DropField, AlterField, RunData, Recompute,
+OPERATIONS = (AddField, RenameField, AddIndex, DropIndex, CreateModel, AddTable, RetireField, DropField, AlterField, RunData, Recompute,
               SetAppendOnly)
 
 
@@ -1197,6 +1244,14 @@ def _planned_definition(saved, pending, steps=None):
                     raise SchemaError(f'{operation.table}: the index {operation.field} already exists')
                 entries.append({'fields': list(operation.field), 'unique': operation.unique})
                 continue
+            if isinstance(operation, DropIndex) and operation.composite():
+                entries = model_indexes.saved(models[operation.table])
+                kept = [item for item in entries if (tuple(item['fields']), item['unique']) != (operation.field, operation.unique)]
+                if len(kept) == len(entries):
+                    raise SchemaError(f'{operation.table}: there is no {"unique " if operation.unique else ""}index '
+                                      f'{operation.field} to drop')
+                entries[:] = kept
+                continue
             if isinstance(operation, AddField):
                 if operation.name in fields or operation.name == 'id':
                     raise SchemaError('Added field already exists or is reserved')
@@ -1224,6 +1279,9 @@ def _planned_definition(saved, pending, steps=None):
                 if (operation.table, operation.name) in retired:
                     raise SchemaError(f'{operation.table}.{operation.name}: drop a retired field in a later migration, '
                                       'after its data was checked')
+                # Its column goes, so every Meta.indexes entry that covers it goes too (apply drops the indexes).
+                entries = model_indexes.saved(models[operation.table])
+                entries[:] = [item for item in entries if operation.name not in item['fields']]
             elif isinstance(operation, AlterField):
                 if operation.name not in fields:
                     raise SchemaError(f'{operation.table}.{operation.name}: AlterField names a field that does not exist')
@@ -1235,6 +1293,12 @@ def _planned_definition(saved, pending, steps=None):
                 if operation.field not in fields:
                     raise SchemaError('Index field does not exist')
                 fields[operation.field]['unique' if operation.unique else 'index'] = True
+            elif isinstance(operation, DropIndex):
+                flag = 'unique' if operation.unique else 'index'
+                if not fields.get(operation.field, {}).get(flag):
+                    raise SchemaError(f'{operation.table}.{operation.field}: there is no {"unique " if operation.unique else ""}'
+                                      'index to drop')
+                fields[operation.field][flag] = False
             elif isinstance(operation, Recompute):
                 if set(operation.fields) - set(fields):
                     raise SchemaError('Recompute names a field that does not exist')
@@ -1287,7 +1351,7 @@ def option_differences(planned, current):
         was, now = model_indexes.of(model_indexes.saved(old)), model_indexes.of(model_indexes.saved(new))
         if was != now:
             result.append((name, None, f'{name}: Meta.indexes differ: {sorted(was)} after the migrations and '
-                                       f'{sorted(now)} in the models (AddIndex with a tuple of fields)'))
+                                       f'{sorted(now)} in the models (DropIndex and AddIndex with a tuple of fields)'))
     return result
 
 
@@ -1340,12 +1404,13 @@ def maintenance_steps(migrations, allow_maintenance):
                           'then migrate with allow_maintenance=True (evlet migrate --allow-maintenance)')
 
 
-def run_data(connection, registry, migration):
+def run_data(connection, registry, migration, *, seed_only=False):
     """Call one migration's RunData steps in order, with a trusted session over the models. A maintenance
-    step may write locked and posted records; each one leaves a Controls audit row (actor cli)."""
+    step may write locked and posted records; each one leaves a Controls audit row (actor cli). With
+    `seed_only` (a new or baseline database) only the seed steps run."""
     from .database import Session
     for operation in migration.operations:
-        if not isinstance(operation, RunData):
+        if not isinstance(operation, RunData) or seed_only and not operation.seed:
             continue
         session = Session(connection, registry)
         try:
@@ -1418,6 +1483,9 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
                             rename_in_overrides(connection, operation.table, renamed.__name__ if renamed is not None else None,
                                                 operation.old_name, operation.new_name)
                     run_data(connection, database.registry, migration)
+                else:
+                    # A new or baseline database already has today's tables: only its seed steps run (RunData seed=True).
+                    run_data(connection, database.registry, migration, seed_only=True)
                 connection.run(qb.insert('evlet_migrations', position=position, name=migration.name, checksum=checksums[position - 1]))
             applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
@@ -1491,6 +1559,10 @@ def describe(operation):
         if operation.composite():
             return f'add {"unique " if operation.unique else ""}index on {operation.table} ({", ".join(operation.field)})'
         return f'add {"unique " if operation.unique else ""}index on {operation.table}.{operation.field}'
+    if isinstance(operation, DropIndex):
+        if operation.composite():
+            return f'drop {"unique " if operation.unique else ""}index on {operation.table} ({", ".join(operation.field)})'
+        return f'drop {"unique " if operation.unique else ""}index on {operation.table}.{operation.field}'
     if isinstance(operation, SetAppendOnly):
         return f'turn append only {"on" if operation.enabled else "off"} for {operation.table}'
     if isinstance(operation, Recompute):
@@ -1502,6 +1574,8 @@ def describe(operation):
     if isinstance(operation, AlterField):
         return f'alter field {operation.table}.{operation.name} to {operation.field.kind}' + (
             f', filling empty values with {operation.fill!r}' if operation.fill is not None else '')
+    if isinstance(operation, RunData) and operation.seed:
+        return f'run seed step {operation.label()}'
     if isinstance(operation, RunData):
         return f'run data step {operation.name or getattr(operation.function, "__qualname__", "")}'
     return type(operation).__name__
@@ -1565,14 +1639,15 @@ def _frozen_class(model, base, fields, storage=None):
 
 def suggest(registry, planned, name='0002_changes', tables=None):
     """Python for one migration covering what can be inferred from the differences between `planned` (the
-    schema after the migrations) and the models: new models, owned tables, fields, renames and indexes.
+    schema after the migrations) and the models: new models, owned tables, fields, renames and indexes
+    (removed indexes become DropIndex, written before the additions).
     Removed fields become RetireField and safe type changes AlterField; other changes are written as
     comments to resolve by hand. `tables` limits it to those
     storage names, such as one app's models."""
     before = {model['name']: {field['name']: field for field in model['fields']} for model in _comparable(planned)['models']}
     after = {model['name']: {field['name']: field for field in model['fields']} for model in _comparable(registry.schema())['models']}
     children = {storage_name(child.model): child for child in registry.children}
-    names, classes, operations, notes = {'Migration'}, [], [], []
+    names, classes, operations, notes, drops = {'Migration'}, [], [], [], []
     for table, model in registry.models.items():
         if table in before or tables is not None and table not in tables:
             continue
@@ -1626,13 +1701,19 @@ def suggest(registry, planned, name='0002_changes', tables=None):
                          'add a RunData step')
         for key in sorted(old.keys() & new.keys()):
             changed = {item for item in old[key].keys() | new[key].keys() if old[key].get(item) != new[key].get(item)}
-            if changed and changed <= {'index', 'unique'} and all(new[key].get(item) for item in changed):
-                unique = 'unique' in changed
-                operations.append(f'AddIndex({table!r}, {key!r}' + (', unique=True)' if unique else ')'))
-                names.add('AddIndex')
-            elif changed:
+            for flag in sorted(changed & {'index', 'unique'}):
+                unique = ', unique=True)' if flag == 'unique' else ')'
+                if new[key].get(flag):
+                    operations.append(f'AddIndex({table!r}, {key!r}{unique}')
+                    names.add('AddIndex')
+                else:
+                    drops.append(f'DropIndex({table!r}, {key!r}{unique}')
+                    names.add('DropIndex')
+            changed -= {'index', 'unique'}
+            if changed:
                 try:
-                    conversion(table, key, old[key], new[key])
+                    # The index operations above already bring the flags in line.
+                    conversion(table, key, {**old[key], 'index': new[key].get('index'), 'unique': new[key].get('unique')}, new[key])
                 except SchemaError as exc:
                     notes.append(f'# {exc}')
                     continue
@@ -1649,9 +1730,15 @@ def suggest(registry, planned, name='0002_changes', tables=None):
         if ledgers.is_ledger(model) and old['ledger']['append_only'] != model.__append_only__:
             operations.append(f'SetAppendOnly({table!r}, {model.__append_only__!r})')
             names.add('SetAppendOnly')
-        for covered, unique in sorted(set(model.__indexes__) - model_indexes.of(model_indexes.saved(old))):
+        was = model_indexes.of(model_indexes.saved(old))
+        for covered, unique in sorted(was - set(model.__indexes__)):
+            drops.append(f'DropIndex({table!r}, {covered!r}' + (', unique=True)' if unique else ')'))
+            names.add('DropIndex')
+        for covered, unique in sorted(set(model.__indexes__) - was):
             operations.append(f'AddIndex({table!r}, {covered!r}' + (', unique=True)' if unique else ')'))
             names.add('AddIndex')
+    # Drops come first, so a changed index (or a new one over the same fields) is dropped before it is added.
+    operations = drops + operations
     if not operations and not notes:
         return ''
     parts = [f'from evlet import {", ".join(sorted(names))}', *classes]

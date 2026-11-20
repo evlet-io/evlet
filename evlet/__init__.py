@@ -89,9 +89,9 @@ __all__ += ["DevSignIn"]
 __all__ += ["PrintDesign"]
 
 from .ledger import LockTimeout
-from .migrations import SetAppendOnly
+from .migrations import DropIndex, SetAppendOnly
 
-__all__ += ["LockTimeout", "SetAppendOnly"]
+__all__ += ["DropIndex", "LockTimeout", "SetAppendOnly"]
 
 from .currencies import (currency_decimals, currency_unit, round_money, round_stored_money, set_currency_decimals,
                          set_currency_display)
