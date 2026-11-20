@@ -610,6 +610,36 @@ class PurchaseOrder(TradeDocument):
 * The checks that run when a class is created still run on it, so a mistake in the base fails where it is
   declared.
 
+Shared row bases may live in `models/` too. Discovery skips every `Child` class, abstract or not: a row
+model is reached through a document's `Table(...)`, which gives each Table its own row table, so a
+module-level `Child` is never a top-level model. One concrete `Child` may serve several documents'
+Tables, and a `Child` base may hold the fields its rows share:
+
+```python
+# models/lines.py
+class LineBase(Child):
+    qty = Decimal(scale=2, default=1)
+    rate = Decimal(scale=2, default=0)
+
+
+class PurchaseLine(LineBase):
+    item = Link(Item)
+
+
+# models/documents.py
+class PurchaseOrder(Model):
+    lines = Table(PurchaseLine)
+
+
+class PurchaseReturn(Model):
+    lines = Table(PurchaseLine)
+```
+
+`Meta.abstract = True` on a `Child` base is no longer needed for discovery, and keeping it is harmless.
+It stays useful on the document side: a shared base that holds fields, Tables and `derive()` for several
+documents (the `TradeDocument` above) still needs it, since that base is a `Model`, not a row. On a
+`Child` base it only marks the intent for readers; a `Table(...)` may still name the base itself.
+
 ## Section rows
 
 `Table(Line, sections=True)` lets a Table hold section rows: headings such as "Goods" and
@@ -1278,7 +1308,11 @@ same arguments and undoes it: `DropIndex("customer", "display_name")` clears `in
 `unique=True` clears `unique=True`, and a tuple removes the `Meta.indexes` entry with that
 uniqueness. A changed index, such as one that becomes unique or covers other fields, is a
 `DropIndex` of the old one and an `AddIndex` of the new one, in that order. `DropField` takes every
-`Meta.indexes` entry that names the dropped field out with it. Keep historical field
+`Meta.indexes` entry that names the dropped field out with it. A `DropIndex` of an index the instance
+never had is done without a change, when one of the migrations it already ran made that index (an
+`AddIndex`, or a `CreateModel` or `AddTable` whose model declared it): an instance created from models that
+no longer declared the index records that history without the index. A `DropIndex` of an index that no
+applied migration made is still refused. Keep historical field
 and model definitions in migration files unchanged. Do not point an old
 `CreateModel` operation at a model definition that will keep changing.
 Migrations compare stored fields only, so a frozen class may have any Python name:

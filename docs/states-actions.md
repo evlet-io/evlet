@@ -286,6 +286,8 @@ replaces a base's hook by defining a method of the same name. Each is a method t
   before `@release`, so a check that reads what `@release` posts (an invoice's outstanding before a
   payment settles it) sees the state before the posting. A record built outside
   the document pipeline (a `Session` write) runs its `@validate` checks too.
+* `@validate` has no `self.context.session`, so a check moved back from the ledger (or from `@release`)
+  into `@validate` reads stored values: what is already saved, never the rows this save is about to post.
 * `@state` and `@state.exit` are trusted code, like an action: they change the record through
   `self` and may write other rows through `self.context.session`
   ([below](#the-transaction-session-in-hooks-and-actions)). A `ValidationError` or `ValueError`

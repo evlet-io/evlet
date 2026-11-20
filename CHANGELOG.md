@@ -4,6 +4,18 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+- **`DropIndex` migrates an instance that never had the index.** An instance created from models that no
+  longer declared an index records the migration that made it, but not the index. A later `DropIndex` of
+  it now leaves that instance unchanged instead of stopping with `there is no unique index ... to drop`;
+  an instance that has the index drops it as before. A `DropIndex` of an index no applied migration made
+  (an `AddIndex`, or a `CreateModel`/`AddTable` model that declared it) is still refused. No app change.
+- **Discovery skips `Child` classes in `models/`.** A module-level row model, such as a shared line base or a
+  line two documents' `Table(...)`s use, is no longer collected as a top-level model (which `Registry`
+  refused with `... is a Child row model`). `Meta.abstract` on such a base is no longer needed.
+- **Docs.** `@validate` has no `context.session`, so a check moved back from the ledger reads stored values.
+
 ## 0.4.15 (20-11-2026)
 
 ### Upgrading to 0.4.15
