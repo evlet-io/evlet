@@ -35,7 +35,7 @@ evlet app selling
 evlet build --trust
 evlet instance local
 evlet install selling --instance local --trust
-evlet dev --instance local --watch
+evlet dev --instance local
 ```
 
 A new app has one Python package root: `apps/selling/__init__.py`, `models/`,

@@ -110,7 +110,7 @@ def parser():
             command.add_argument('--jobs', action='store_true', help='Run the existing short-task queue in this process')
         else:
             command.add_argument('--instance', help='Required when the project has several instances')
-            command.add_argument('--watch', action='store_true', help='Rebuild and reload when app source or assets change')
+            command.add_argument('--watch', action='store_true', help='Accepted for compatibility; evlet dev always reloads app source')
             add_link_options(command)
         command.add_argument('--debug', action='store_true', help='Show tracebacks for expected startup errors')
         command.add_argument('--host', default='127.0.0.1')
@@ -250,9 +250,9 @@ def main(argv=None):
     if command_name(values) == 'journal':
         command_parser.error("'evlet journal' was renamed: use 'evlet activity verify INSTANCE'")
     args = command_parser.parse_args(values)
-    if args.command in ('login', 'logout', 'describe', 'mcp'):
-        from .connector import run
-        return run(args)
+    from . import connector
+    if args.command in connector.COMMANDS:
+        return connector.run(args)
     try:
         if getattr(args, 'port', None) is not None and not 1 <= args.port <= 65535:
             raise ValueError('Use a port between 1 and 65535')
@@ -559,10 +559,15 @@ def main(argv=None):
             from .serve import serve
             name = args.instance or choose_instance(root, 'dev')
             development = args.command == 'dev'
+            if getattr(args, 'watch', False):
+                print('evlet dev always reloads app source; --watch is no longer needed.', file=sys.stderr)
             serve(root, name, host=args.host, port=args.port, development=development, jobs=getattr(args, 'jobs', False), debug=args.debug,
                   link=development and not args.no_link, user=args.user if development else None)
     except (KeyboardInterrupt, BrokenPipeError):
         return
+    except EOFError:
+        print('Input ended before the command finished. Nothing was changed.', file=sys.stderr)
+        raise SystemExit(1) from None
     except (ValueError, TypeError, SyntaxError, OSError, RuntimeError, ImportError, sqlite3.Error, subprocess.SubprocessError) as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1) from None

@@ -5,7 +5,7 @@ any block is a Jinja template filled in a sandbox with autoescape on, and any bl
 switched to HTML. WeasyPrint and Jinja2 come with the optional extra: pip install evlet[print].
 """
 
-from dataclasses import dataclass, field as dataclass_field, fields as dataclass_fields
+from dataclasses import dataclass
 from datetime import date as Date, datetime as DateTime
 from decimal import Decimal
 from html import escape
@@ -701,9 +701,13 @@ def report_context(context, report, filters):
 class Formats:
     """The helpers templates use: money, date, number, ar. Each isolates text direction."""
 
-    def __init__(self, design, markup, currencies=None):
+    def __init__(self, design, markup, currencies=None, zone='UTC'):
         # currencies: the site's currency display (evlet.currencies), {code: {symbol, image, position, space}}.
+        # zone: the instance timezone; stored DateTime values are UTC and print in this zone's wall time.
+        from datetime import timezone
+        from zoneinfo import ZoneInfo
         self.design, self.markup, self.currencies = design, markup, currencies or {}
+        self.zone = timezone.utc if zone == 'UTC' else ZoneInfo(zone)
 
     def ltr(self, text):
         return self.markup('<bdi dir="ltr">') + text + self.markup('</bdi>')
@@ -742,6 +746,8 @@ class Formats:
                 value = DateTime.fromisoformat(value) if 'T' in value else Date.fromisoformat(value)
             except ValueError:
                 return value
+        if isinstance(value, DateTime) and value.tzinfo is not None:
+            value = value.astimezone(self.zone)
         text = value.strftime(self.design.date_format + (' %H:%M' if isinstance(value, DateTime) else ''))
         return self.ltr(text)
 
@@ -820,7 +826,8 @@ class Compiler:
         self.markup = Markup
         self.env = environment()
         controls = getattr(business, 'controls', None)
-        self.formats = Formats(design, Markup, controls.settings.get('display.currencies') if controls is not None else None)
+        self.formats = Formats(design, Markup, controls.settings.get('display.currencies') if controls is not None else None,
+                               getattr(business, 'timezone', None) or 'UTC')
         self.variables = {**{key: value for key, value in context.items() if key in ('doc', 'report', 'sections')},
                           'money': self.formats.money, 'date': self.formats.date, 'number': self.formats.number, 'ar': self.formats.ar,
                           'title': design.title}

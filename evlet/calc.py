@@ -17,7 +17,6 @@ from .identity import RecordId
 
 LANGUAGE = 'finite-v1'
 PROFILE = 'finite40-hu18-v1'
-LEGACY_PROFILE = 'legacy-document-v2'
 PLAN_VERSION = 1
 EXPRESSION_VERSION = 1
 COMPILER_VERSION = 'evlet-finite-1'

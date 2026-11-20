@@ -24,8 +24,11 @@ Installation asks whether you trust the selected Python apps. In automation,
 review their source first and pass `--trust`. App dependencies are included in
 that confirmation. When an app declares background work in `services/` (module-level `Task` and
 `Schedule` objects, see [jobs-realtime.md](jobs-realtime.md#background-work-in-a-flat-app)), the
-question lists it and says that it runs as trusted code with full database access. Open http://127.0.0.1:8000 and create your administrator.
-There is no default password. The existing Docs, generated models, forms,
+question lists it and says that it runs as trusted code with full database access. Every instance has a
+built-in Administrator (`admin`) with no password, and there is no default password: `evlet serve` prints
+`The built-in Administrator has no password yet. Set one with: evlet users set-password acme admin`.
+Run that command, then open http://127.0.0.1:8000 and sign in as `admin`. `evlet dev` instead prints a
+one-time [development sign-in link](#development-sign-in-links) that leads to "Set your password". The existing Docs, generated models, forms,
 permissions, actions and private-file interfaces use the bundled browser UI.
 
 `setup` creates `apps/`, `instances/` and a real isolated `.venv`, installs Evlet
