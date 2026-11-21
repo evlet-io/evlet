@@ -1230,15 +1230,19 @@ def _planned_definition(saved, pending, steps=None, applied=()):
     steps = {} if steps is None else steps
     # {table: {old name: current name}} from every RenameField so far, applied migrations first: a DropIndex that
     # names a field by an old name finds the database index on the column it has now.
-    renames = {}
+    # `first` keeps every old name, even one a later AddField reused: a composite DropIndex that names an index by
+    # the names it had when it was made finds it under the names it has now, when no index has the names given.
+    renames, first = {}, {}
 
     def renamed(operation):
-        table = renames.setdefault(operation.table, {})
+        table, history = renames.setdefault(operation.table, {}), first.setdefault(operation.table, {})
         if isinstance(operation, RenameField):
-            for old, current in list(table.items()):
-                if current == operation.old_name:
-                    table[old] = operation.new_name
+            for names in (table, history):
+                for old, current in list(names.items()):
+                    if current == operation.old_name:
+                        names[old] = operation.new_name
             table[operation.old_name] = operation.new_name
+            history.setdefault(operation.old_name, operation.new_name)  # The first field under that name.
         elif isinstance(operation, AddField):
             table.pop(operation.name, None)  # A field added under an old name is that field, not the renamed one.
     for migration in applied:
@@ -1303,7 +1307,16 @@ def _planned_definition(saved, pending, steps=None, applied=()):
                 # By the names it gives or the names they have now (a saved schema from before RenameField renamed
                 # index entries may still hold the old ones).
                 names = {operation.field, steps[id(operation)]}
-                kept = [item for item in entries if not (tuple(item['fields']) in names and item['unique'] == operation.unique)]
+
+                def keep(names):
+                    return [item for item in entries if not (tuple(item['fields']) in names and item['unique'] == operation.unique)]
+                kept = keep(names)
+                if len(kept) == len(entries):
+                    # A later AddField reused an old name: the index is the one made under the names given, renamed since.
+                    history = first.get(operation.table, {})
+                    made = tuple(history.get(name, name) for name in operation.field)
+                    if len(keep({made})) < len(entries):
+                        steps[id(operation)], kept = made, keep({made})
                 if len(kept) == len(entries) and not _declared_earlier(applied, operation):
                     raise SchemaError(f'{operation.table}: there is no {"unique " if operation.unique else ""}index '
                                       f'{operation.field} to drop')

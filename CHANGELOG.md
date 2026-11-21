@@ -4,6 +4,18 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Fixed
+
+- **A `DropIndex` by an index's first names after its field was renamed and the name reused.** 0.4.17 renamed the
+  field in `Meta.indexes` entries, so after `RenameField("party", "kind", "role_kind")` and a new `AddField` named
+  `kind`, a later `DropIndex("party", ("kind", "record_id"), unique=True)` resolved `kind` to the new field, left
+  the renamed entry and its database index in place, and an instance created before the rename stopped with
+  "party: Meta.indexes differ". The `DropIndex` now matches the index by the names it had when it was made when no
+  index has the names given, and drops the database index on the columns they have now. Instances already past the
+  `DropIndex` are not affected ([docs/model-engine.md](docs/model-engine.md)).
+
 ## 0.4.17 (20-11-2026)
 
 ### Upgrading to 0.4.17
