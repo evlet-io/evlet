@@ -60,8 +60,8 @@ Every attempt is counted before any hashing, per 15 minutes:
   (429 otherwise), which keeps spread-out guessing slow. People signing in from a network
   they used before are not held up. An attacker who keeps the account above 50 failures and
   takes each 10-second attempt can still keep it from signing in from a new network (a new
-  device, a mobile network whose address changes); watch for this in the sign-in log and
-  reset the person's failures in Controls if it happens.
+  device, a mobile network whose address changes) while the attack lasts; a network the person
+  signed in from before still works.
 
 ## Restarting a service
 
