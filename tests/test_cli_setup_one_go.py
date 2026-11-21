@@ -344,6 +344,18 @@ def test_apply_needs_systemd(monkeypatch):
         site.run_privileged([['sudo', 'true']])
 
 
+def test_unit_is_sandboxed_and_keeps_its_instance_writable():
+    from pathlib import Path
+    text = proxy.systemd_unit(Path('/srv/acme'), 'acme', 8000, 'evlet')
+    for line in ('NoNewPrivileges=true', 'PrivateTmp=true', 'ProtectSystem=full', 'ProtectHome=read-only',
+                 'ReadWritePaths=/srv/acme/instances/acme'):
+        assert line + '\n' in text.split('[Install]')[0]
+    # ProtectHome would hide a project kept in a home directory.
+    for root in ('/home/ops/acme', '/root/acme'):
+        text = proxy.systemd_unit(Path(root), 'acme', 8000, 'evlet')
+        assert 'ProtectHome' not in text and f'ReadWritePaths={root}/instances/acme\n' in text and 'NoNewPrivileges=true' in text
+
+
 def test_unit_keeps_paths_literal(tmp_path):
     text = proxy.systemd_unit(tmp_path, 'acme', 8000, 'evlet')
     assert 'User=evlet\n' in text and '--host 127.0.0.1 --port 8000' in text and 'WantedBy=multi-user.target' in text

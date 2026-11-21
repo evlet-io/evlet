@@ -55,8 +55,8 @@ SolidJS by Evlet's own UI framework.
    are open to clients that can reach the development server; bind it to loopback.
 6. **Tests at public boundaries.** pytest covers validation, registration,
    transactions, SQL constraints, and complete ASGI requests against temporary
-   SQLite files. Vitest and Vue Test Utils exercise real PrimeVue components,
-   with a deterministic HTTP stub at the network boundary. A separate smoke
+   SQLite files. Vitest with jsdom exercises Evlet's own UI components
+   (`frontend/src/evlet/`), with a deterministic HTTP stub at the network boundary. A separate smoke
    command sends real HTTP requests to the running Playground. CI also builds
    and installs the wheel outside the source tree and builds the frontend.
 

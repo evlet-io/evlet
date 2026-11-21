@@ -342,6 +342,7 @@ erp.acme.com {
 \t\tnot path /_/mcp /_/oauth/authorize /_/oauth/token /_/oauth/register /_/oauth/revoke /_/mail/callback /_/mail/continue.js /_/oidc/start /_/oidc/callback /_/oidc/finish
 \t}
 \trespond @internal 404
+\theader Strict-Transport-Security "max-age=31536000"
 \treverse_proxy 127.0.0.1:8000
 }
 
@@ -353,6 +354,7 @@ portal.acme.com {
 \trespond @internal 404
 \t@primary_only path_regexp (?i)^/(controls|docs)(/|$)
 \trespond @primary_only 404
+\theader Strict-Transport-Security "max-age=31536000"
 \treverse_proxy 127.0.0.1:8000
 }
 '''

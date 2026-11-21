@@ -56,14 +56,21 @@ version and contents in `instances/acme/apps.lock`.
 
 ## 4. Open it
 
+Every instance has a built-in Administrator (username `admin`) with no password, and
+there is no default password. Set one (at least 15 characters by default), then serve:
+
 ```sh
+evlet users set-password acme admin
 evlet serve acme
 ```
 
-Open **http://127.0.0.1:8000**. Create the first administrator using a username and
-a password of at least 15 characters. (Under `evlet dev` in step 5 this is automatic.)
-Sign in, open **Items** under Models and
-create a record. Docs is the first page after sign-in.
+If you skip the first command, `evlet serve` reminds you at startup:
+`The built-in Administrator has no password yet. Set one with: evlet users set-password acme admin`.
+(Under `evlet dev` in step 5 you need neither: it prints a one-time sign-in link that opens
+"Set your password".)
+
+Open **http://127.0.0.1:8000** and sign in as `admin`. You land on the first list,
+**Items**; create a record there. Docs stays reachable from the navigation.
 
 Press Control-C to stop the server. Run the same command to return to your site;
 records, accounts and private files remain in `instances/acme/`.

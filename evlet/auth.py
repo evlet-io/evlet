@@ -472,7 +472,7 @@ class LocalAuth:
             raise AccessError(403, 'Cross-site request rejected')
         # A key in the Authorization header is never sent by a browser on its own, so it needs no CSRF header.
         if scope['method'] not in ('GET', 'HEAD') and headers.get(b'x-evlet-request') != b'1' and not API_KEY.fullmatch(self.bearer(scope) or ''):
-            raise AccessError(403, 'Missing request protection header')
+            raise AccessError(403, 'Missing request protection header: send X-Evlet-Request: 1 (and X-CSRF-Token from GET /api/auth/session) with writes, or use an API key')
 
     def note_forwarded(self, scope):
         """A request names a forwarded client. The header counts only from a trusted proxy; from any other
@@ -858,6 +858,10 @@ class LocalAuth:
             if challenge is not None:
                 return challenge, []
             tx.connection.run(qb.delete('evlet_login_limits').where(client=pair))
+            # A correct password is not an attack: give the network its attempt back, so a shared address
+            # (an office behind one NAT) is limited by failures only.
+            tx.connection.run(qb.update('evlet_login_limits', attempts=qb.col('attempts') - 1)
+                              .where(qb.eq('client', client), qb.gt('attempts', 0)))
             return self.start_session(tx, scope, current, realm)
 
     def start_session(self, tx, scope, account, realm, verified=False):

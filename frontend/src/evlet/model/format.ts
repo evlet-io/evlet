@@ -162,7 +162,9 @@ export function formatMoney(value: string | number | null | undefined, options: 
 const pad = (number: number) => String(number).padStart(2, '0');
 
 function validDate(year: number, month: number, day: number) {
-  const date = new Date(Date.UTC(year, month - 1, day));
+  // Date.UTC maps years 0-99 to 1900-1999; setUTCFullYear keeps them as given.
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
   return year >= 1 && date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
@@ -204,7 +206,7 @@ function partsInGst(value: string): Parts | null {
 }
 
 function dayText(parts: { year: number; month: number; day: number }) {
-  const { year, month, day } = parts;
+  const { month, day } = parts, year = String(parts.year).padStart(4, '0');
   switch (region.date) {
     case 'd MMM yyyy': return `${day} ${MONTHS[month - 1]} ${year}`;
     case 'yyyy-MM-dd': return `${year}-${pad(month)}-${pad(day)}`;
@@ -229,7 +231,7 @@ export function parseDate(value: string): string | null {
   const [day, month, year] = shown ? order.map(index => Number(shown[index]))
     : iso ? [iso[3], iso[2], iso[1]].map(Number)
     : named ? [Number(named[1]), MONTHS.findIndex(name => name.toLowerCase() === named[2].toLowerCase()) + 1, Number(named[3])] : [0, 0, 0];
-  return validDate(year, month, day) ? `${year}-${pad(month)}-${pad(day)}` : null;
+  return validDate(year, month, day) ? `${String(year).padStart(4, '0')}-${pad(month)}-${pad(day)}` : null;
 }
 
 /** A timestamp in the person's zone (GST by default): '01-11-2026 14:05'. Accepts an ISO string or a Date. */

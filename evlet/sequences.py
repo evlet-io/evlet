@@ -336,7 +336,7 @@ def raw_write(session, model, values, current, cleaned):
 
     `cleaned` are the record's validated values after the write. A raw create numbers a Sequence that is
     due on create (assign_on="create", or the default state is assign_on); without a date field its
-    period is today in UTC, because a Session has no instance timezone.
+    period is today in the session's instance timezone, as the naming series uses.
     """
     declared = fields_of(model)
     if not declared:
@@ -352,14 +352,14 @@ def raw_write(session, model, values, current, cleaned):
                 fixed(sequence, cleaned, current._values)
     if current is not None:
         return {}
-    from datetime import datetime, timezone
+    from .database import today
     numbers = {}
     for name, sequence in declared.items():
         due = sequence.assign_on == 'create' or cleaned.get(model.__state__) == sequence.assign_on
         if due and cleaned.get(name) is None:
             ensure_counters(session.connection)
             numbers[name] = next_number(session.connection, session.registry.name_for(model), name, model, sequence,
-                                        cleaned, datetime.now(timezone.utc).date().isoformat())
+                                        cleaned, today(getattr(session, 'timezone', None) or 'UTC'))
     return numbers
 
 

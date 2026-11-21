@@ -707,8 +707,8 @@ function SelectControl(field: FieldLike, id: string, options: ControlOptions): C
 function LinkControl(field: FieldLike, id: string, options: ControlOptions): Control {
   const meta = field.meta, links = options.links ?? defaultLinks;
   const button = html`<button type="button" class="in-link input" id=${id} disabled=${() => !field.editable.get()} aria-haspopup="listbox" aria-expanded="false"
-    aria-invalid=${() => field.error.get() ? 'true' : null} aria-describedby=${options.describedBy ?? null}
-    aria-label=${options.label ?? null}>${displayValue(field, { links, empty: `Choose ${meta.label.toLowerCase()}` })}${Icon('chevron-down', { size: 'sm' })}</button>` as HTMLButtonElement;
+    aria-invalid=${() => field.error.get() ? 'true' : null} aria-required=${() => field.rules.get().required ? 'true' : null}
+    aria-describedby=${options.describedBy ?? null} aria-label=${options.label ?? null}>${displayValue(field, { links, empty: `Choose ${meta.label.toLowerCase()}` })}${Icon('chevron-down', { size: 'sm' })}</button>` as HTMLButtonElement;
   const choose = (option: LinkOption | null) => {
     if (option && meta.target) links?.remember?.(meta.target, option.id, option.title);
     if (writeValue(field, option ? option.id : null)) options.onCommit?.();

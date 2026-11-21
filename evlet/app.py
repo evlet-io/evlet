@@ -129,8 +129,10 @@ class Application:
     def _redact_oidc_query(scope):
         # Uvicorn logs its original scope after the response. Keep callback credentials
         # out of that query string, including when a tenant router copies the scope.
-        if scope.get('type') == 'http' and scope.get('path') == '/_/oidc/callback':
-            scope.setdefault('evlet.oidc_query', scope.get('query_string', b''))
+        # The mailbox sign-in return carries an OAuth code and state just like the OIDC callback.
+        key = {'/_/oidc/callback': 'evlet.oidc_query', '/_/mail/callback': 'evlet.mail_query'}.get(scope.get('path'))
+        if scope.get('type') == 'http' and key:
+            scope.setdefault(key, scope.get('query_string', b''))
             scope['query_string'] = b''
 
     async def __call__(self, scope, receive, send):

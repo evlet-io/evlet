@@ -10,6 +10,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 import re
 import time
+import unicodedata
 from urllib.parse import parse_qs, quote
 
 from . import qb
@@ -1666,7 +1667,8 @@ class Business:
                 return 200, {'items': [dict(row) for row in rows]}, []
             if method == 'POST' and file_id is None:
                 filename = body.get('name')
-                if set(body) != {'name', 'content'} or not isinstance(filename, str) or not 1 <= len(filename) <= 180 or any(ord(c) < 32 or c in '/\\' for c in filename):
+                if set(body) != {'name', 'content'} or not isinstance(filename, str) or not 1 <= len(filename) <= 180 or any(c in '/\\' or unicodedata.category(c)[0] == 'C' for c in filename):
+                    # Category C: control (C0, DEL, C1), format (bidi overrides, zero-width), surrogate, private, unassigned.
                     raise ValidationError({'attachment': 'Use a filename without paths or control characters'})
                 try:
                     content = base64.b64decode(body['content'], validate=True)

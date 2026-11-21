@@ -250,3 +250,28 @@ def test_busy_password_service_does_not_consume_sign_in_attempts(secured, monkey
     with pytest.raises(AccessError) as failure:
         auth.login(scope, {'username': 'admin', 'password': 'wrong'})
     assert failure.value.status == 401
+
+
+def test_successful_sign_ins_do_not_count_toward_the_network_limit(secured):
+    import hashlib
+    auth = secured.business.auth
+    scope = {'client': ('198.51.100.40', 1), 'headers': []}
+    network = hashlib.sha256(b'network:198.51.100.40').hexdigest()
+    # An office behind one address: the network is one attempt from its ceiling, yet correct passwords keep working.
+    from evlet import qb
+    with secured.database.transaction(store='sessions') as tx:
+        tx.connection.run(qb.insert('evlet_login_limits', client=network, attempts=99, resets=int(time.time()) + 900))
+    for name in ('admin', 'editor', 'viewer', 'admin'):
+        assert auth.login(scope, {'username': name, 'password': PASSWORD})[0]['user']['username'] == name
+
+    def attempts():
+        with secured.database.transaction(store='sessions') as tx:
+            return tx.connection.run(qb.select('evlet_login_limits', 'attempts').where(client=network)).one()['attempts']
+    assert attempts() == 99
+    # Failures still count, and at the ceiling everyone on the network waits.
+    with pytest.raises(AccessError) as failure:
+        auth.login(scope, {'username': 'viewer', 'password': 'wrong'})
+    assert failure.value.status == 401 and attempts() == 100
+    with pytest.raises(AccessError) as failure:
+        auth.login(scope, {'username': 'editor', 'password': PASSWORD})
+    assert failure.value.status == 429

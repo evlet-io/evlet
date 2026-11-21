@@ -535,7 +535,7 @@ class Mailboxes:
             return 200, Download(b'document.forms[0].submit();\n'), [(b'content-type', b'text/javascript; charset=utf-8')]
         if scope['path'] != '/_/mail/callback' or scope['method'] not in ('GET', 'POST'):
             raise AccessError(404 if scope['path'] != '/_/mail/callback' else 405, NOT_FOUND)
-        source = scope.get('query_string', b'') if scope['method'] == 'GET' else raw
+        source = scope.get('evlet.mail_query', scope.get('query_string', b'')) if scope['method'] == 'GET' else raw
         try:
             query = parse_qs(source.decode('ascii'), keep_blank_values=True, max_num_fields=10)
         except (ValueError, UnicodeError):

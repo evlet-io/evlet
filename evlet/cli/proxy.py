@@ -60,7 +60,8 @@ def caddy(routes, port=8000, instance='<name>', trusted=(), global_options=True)
         lines = [f'{host} {{', '\t@internal {', '\t\tpath /_/*', '\t\tnot path ' + ' '.join(PUBLIC_PATHS), '\t}', '\trespond @internal 404']
         if host in routes.sub_hosts() and not routes.public(host):
             lines += [f'\t@primary_only path_regexp (?i)^/({"|".join(PRIMARY_ONLY)})(/|$)', '\trespond @primary_only 404']
-        lines += [f'\treverse_proxy 127.0.0.1:{port}', '}']
+        # Browsers that saw HTTPS once never try plain HTTP again, so a first visit can't be downgraded later.
+        lines += ['\theader Strict-Transport-Security "max-age=31536000"', f'\treverse_proxy 127.0.0.1:{port}', '}']
         sites.append('\n'.join(lines))
     return _note(instance, trusted) + (GLOBAL_OPTIONS + '\n' if global_options else '') + '\n\n'.join(sites) + '\n'
 
@@ -90,7 +91,7 @@ def nginx(routes, port=8000, instance='<name>', trusted=()):
     # Exact locations win over the /_/ prefix, so only the public framework routes pass. Evlet reads at most 64 KiB there.
     public = ''
     for path in PUBLIC_PATHS:
-        private_callback = '        access_log off;\n' if path == '/_/oidc/callback' else ''
+        private_callback = '        access_log off;\n' if path in ('/_/oidc/callback', '/_/mail/callback') else ''
         public += f'    location = {path} {{\n{private_callback}        {_nginx_proxy(port, "128k")}\n    }}\n'
     # Match the application's encoded-body ceilings. Use the supported image maximum so a later
     # Controls adjustment never requires a proxy reload; Evlet still applies the actual per-image limit.
@@ -112,6 +113,7 @@ def nginx(routes, port=8000, instance='<name>', trusted=()):
     ssl_certificate /etc/letsencrypt/live/{host}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/{host}/privkey.pem;
     if ($ssl_server_name != $host) {{ return 421; }}
+    add_header Strict-Transport-Security "max-age=31536000" always;
 {public}    location ^~ /_/ {{ return 404; }}
 '''
         if host in routes.sub_hosts() and not routes.public(host):
@@ -234,6 +236,9 @@ def systemd_unit(root, instance, port=8000, user='evlet'):
     # systemd expands % and $ and splits on spaces; keep the paths literal.
     if not re.fullmatch(r'[A-Za-z0-9._/@+-]+', str(root)) or not re.fullmatch(r'[a-z_][a-z0-9_-]*', user):
         raise ValueError('The project path and user may only use letters, digits and . _ / @ + -; move the project or choose another user')
+    # ProtectHome would hide a project kept in a home directory, so it is set only for projects outside one.
+    home = any(root.absolute().is_relative_to(base) for base in ('/home', '/root', '/run/user'))
+    protect_home = '' if home else 'ProtectHome=read-only\n'
     return f'''[Unit]
 Description=Evlet instance {instance}
 After=network.target
@@ -244,6 +249,10 @@ WorkingDirectory={root}
 ExecStart={python_in(root)} -P -m evlet serve {instance} --jobs --project {root} --host 127.0.0.1 --port {port}
 Restart=on-failure
 UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+{protect_home}ReadWritePaths={root}/instances/{instance}
 
 [Install]
 WantedBy=multi-user.target

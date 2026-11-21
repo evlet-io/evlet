@@ -53,8 +53,6 @@ MAX_INTEGER = 2**63 - 1
 ROUNDING = ("half_up", "half_even")
 # Finite-v1 expression options a field may declare, besides compute=.
 RULES = ("applies_when", "required_when", "locked_when")
-# Display only: hides a field (or a Table) while false; its value is kept, saved and validated as usual.
-DISPLAY_RULES = ("visible_when",)
 
 
 def rounding_mode(value, default):

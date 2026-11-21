@@ -108,7 +108,7 @@ because it changes after the number is assigned. Two companies can both have
   error unless they send the saved value or run inside `tx.maintenance()` for an audited
   repair.
 * A raw `Session.create` numbers a Sequence that is due on create, like `Context.create`.
-  Without `date=`, its period is today in UTC, because a session has no instance timezone.
+  Without `date=`, its period is today in the instance timezone (`database.timezone`), the same day its naming series uses.
 * Its schema entry is `read_only: true`.
 
 ## Counters

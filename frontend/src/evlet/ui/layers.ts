@@ -289,7 +289,11 @@ export function mountToasts(): HTMLElement {
   return toasts;
 }
 
-export interface ToastOptions { icon?: string; undo?: () => void; duration?: number }
+export interface ToastOptions {
+  icon?: string; undo?: () => void; duration?: number;
+  /** 'error': a red icon, announced at once (role=alert) and kept 8 s, for something that did not happen. */
+  tone?: 'ok' | 'error';
+}
 
 /**
  * A short dark confirmation at the bottom of the screen: 2.8 s, or 5 s with Undo. Messages say
@@ -304,11 +308,12 @@ export function toast(text: string, options: ToastOptions = {}): () => void {
     element.classList.add('out');
     setTimeout(() => { view.dispose(); element.remove(); }, 180);
   };
-  const view = layer(() => html`<div class="toast">${Icon(options.icon ?? 'check', { size: 'sm', className: 'ok' })}<span style="flex:1">${text}</span>${options.undo
+  const error = options.tone === 'error';
+  const view = layer(() => html`<div class="toast" role=${error ? 'alert' : null}>${Icon(options.icon ?? (error ? 'info' : 'check'), { size: 'sm', className: error ? 'err' : 'ok' })}<span style="flex:1">${text}</span>${options.undo
     ? html`<button type="button" on:click=${() => { options.undo!(); dismiss(); }}>Undo</button>` : null}</div>`);
   const element = view.node as HTMLElement;
   mountToasts().append(element);
-  timer = setTimeout(dismiss, options.duration ?? (options.undo ? 5000 : 2800));
+  timer = setTimeout(dismiss, options.duration ?? (error ? 8000 : options.undo ? 5000 : 2800));
   return dismiss;
 }
 
