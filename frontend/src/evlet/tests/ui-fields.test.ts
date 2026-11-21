@@ -106,9 +106,9 @@ describe('BaseField', () => {
     const field = localField({ name: 'reason', type: 'text', label: 'Reason' }, null);
     const host = render(() => BaseField({ field }));
     const root = host.querySelector<HTMLElement>('.fld')!;
-    field.rules.set({ applies: false, required: false, locked: false });
+    field.rules.set({ applies: false, required: false, locked: false, visible: false });
     expect(root.hidden).toBe(true);
-    field.rules.set({ applies: true, required: false, locked: true });
+    field.rules.set({ applies: true, required: false, locked: true, visible: true });
     expect(root.hidden).toBe(false);
     expect(host.querySelector('input')!.disabled).toBe(true);
     expect(host.querySelector('.ff-hint')!.textContent).toBe('locked');
@@ -123,6 +123,8 @@ describe('BaseField', () => {
     expect(host.querySelector('img')).toBeNull();
     expect(host.textContent).toContain(XSS);
     expect(host.querySelector('[data-field="boolean"] [role="switch"]')).not.toBeNull();
+    // A Boolean is just its switch: no Yes or No beside it.
+    expect(host.querySelector('[data-field="boolean"] [role="switch"]')!.textContent).toBe('');
     expect(host.querySelector('[data-field="select"] button.in-select[aria-haspopup="listbox"]')).not.toBeNull();
     expect(host.querySelector('select')).toBeNull();
     expect(host.querySelector('[data-field="state"]')!.textContent).toContain('changes through moves');

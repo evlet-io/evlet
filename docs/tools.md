@@ -68,6 +68,11 @@ levels. For MCP clients:
 | Move a document, app actions, business services | Approved in Evlet |
 | Delete, a move into a final step | Approved in Evlet |
 
+An app action that only opens a prompt (its body is `return SomePrompt` or `return SomePrompt(...)`
+with constant arguments, or the action declares `inputs=`) writes nothing, so `run_action` runs it
+without asking and returns the prompt. The approval is asked once, on the `answer_prompt` call that
+submits it.
+
 The API never asks: a key or session is the person's own program. Formal approvals in apps
 always apply as well.
 

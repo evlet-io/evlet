@@ -47,6 +47,10 @@ class Contact(Model):
   so `required=True` works. The field uses two columns, `<name>` (HTML) and `<name>_text` (the
   plain-text extract that search, filters and list cells use); it cannot be unique or indexed.
 - `Image()` holds one image, such as an item photo or a company logo. See [Image fields](#image-fields).
+- Field rules decide when a field applies, is required, is locked or shows: `applies_when=`,
+  `required_when=`, `locked_when=` and `visible_when=`, finite Booleans such as `F("stage") == "lost"`.
+  A `Table` takes `applies_when=` and `visible_when=` too. `visible_when` is display only; see
+  [finite-calculations.md](finite-calculations.md#field-rules).
 - Omitted values use defaults; explicit `None` stays null unless required.
   Callable defaults run when a new record is constructed. A partial update keeps
   omitted values, including their original defaults.
@@ -103,13 +107,24 @@ class Invoice(Model):
   calculations run in dependency order around it:
 
   ```
-  formulas that read nothing derive() sets → derive() → formulas that do → @validate
+  formulas and suggestions that read nothing derive() sets → derive() → everything else → @validate
   ```
 
   A formula reads a derived value when it reads a derived field, a derived Table or a derived
-  row field, directly or through another formula. So above, `derive()` sees each line's
+  row field, directly or through another formula, rule or suggestion. So above, `derive()` sees each line's
   `amount` and the `subtotal` of this write, and `tax_total` and `total` read what it built. A
-  model without `derive()` calculates in one pass. Both the finite-v1 plan and legacy string
+  model without `derive()` calculates in one pass.
+* **Suggestions it reads.** An `initial=` suggestion that reads nothing `derive()` sets fills its
+  field before `derive()` runs, on a document created from Python, the API or a prompt as in the
+  browser, and on an update that changes one of its inputs. A value the caller set is never
+  replaced. The suggestion stays a suggestion: after `derive()`, the full pass decides it exactly
+  as on a model without `derive()`, so the next change of its input fires it again. A suggestion
+  that reads a derived value runs after `derive()`.
+* **Rules that wait on it.** `derive()` sees the caller's value of a field whose rule or suggestion
+  waits on `derive()`; the rule applies after it. So with `typed_rate = Decimal(applies_when=parent.pricing_basis
+  == "manual")` and a derived `pricing_basis`, `derive()` reads `line.typed_rate` as the caller sent
+  it, and a save under another basis then stores it empty. A formula that reads such a field still
+  waits on `derive()`, since its result changes once the rule clears the field. Both the finite-v1 plan and legacy string
   formulas run this way. A locked or released record keeps its derived values on the writes
   that keep its saved results, so `derive()` does not run there
   ([finite-calculations.md](finite-calculations.md#server-writes)).
@@ -295,6 +310,43 @@ reference = Text(help_text="The number printed on the invoice.",
                  tooltip="Use the customer's purchase order number if they ask for one.")
 ```
 
+### Reactive help text
+
+`help_text` may name fields in braces. The browser fills them in from the record's values as they
+change, with no request: `{uom}` is a field of the same record or Table row, and on a Table row
+`{parent.currency}` is a field of the record that owns the Table. A value reads as the record shows it:
+a choice by its label (`box` reads `Box`), a Link by its record's title, a number at its scale. While
+any named value is empty the help text reads empty, so `"per {uom}"` never shows `"per "`. `{{` and `}}`
+are literal braces.
+
+```python
+class Line(Child):
+    item = Link(Item, required=True)
+    uom = Select(['nos', 'box'], default='nos', label='Unit')
+    rate = Currency(currency='AED', help_text='per {uom}')        # "per Box" under each row's rate
+    note = Text(help_text='For {parent.customer}')                 # the owning record's customer, by title
+
+class Order(Model):
+    customer = Link(Customer)
+    lines = Table(Line)
+    total = Currency(currency='AED', compute=lines.sum('rate'), help_text='Invoiced to {customer}')
+```
+
+**Subtext in Table rows.** A help text that names fields shows in a child table as a small grey line
+under the cell's value, filled in from that row; the row keeps its 35 px height. A plain help text
+says the same thing on every row, so the grid leaves it out and the row editor shows it under the
+input, as forms do. On a form, both kinds read under the input.
+
+**Checked when the class is defined.** A stray brace, a name that is not a field name, `{uom}` when the
+model has no field `uom`, `{parent.x}` on a model that is not a Table row, and `{parent.x}` when the
+record that owns the Table (checked when its class declares the `Table`) has no field `x` raise
+`ValueError` naming the model and field. Controls checks help text it saves the same way. The schema
+lists the names in `help_fields` (`["uom", "parent.currency"]`); a plain help text has none.
+
+There is no Python-computed help text: everything a description needs is a value already in the
+browser, and a request per keystroke would make the line lag behind what people type. A text that
+needs server data belongs in a `fetch=` or calculated field, which the template can then name.
+
 Every field takes `suffix=` (at most 20 characters), a unit the forms show in a box after the
 input and after the value at rest, such as `"%"` or `"days"`. It is display metadata only, like
 `prefix` on a UI control. `Percent` fields always show `%`; a `Decimal` with `suffix="%"` looks
@@ -303,6 +355,12 @@ the same and keeps its own scale.
 `Integer(grouping=False)` shows the number without thousands separators, for numbers that are not
 amounts, such as a year (`2023`, not `2,023`) or a code. It is display only: storage and migrations
 are unchanged, and an edit accepts the number either way.
+
+`Decimal(scale=6, display_scale=2)` shows the value with at most two decimal places and no trailing
+zeros, so a counter stored as `0.000000` shows `0` and `1.500000` shows `1.5` (with
+`display_scale=6`, only the trailing zeros go). It is display only: the value is stored, validated,
+calculated and sent at `scale`, an edit shows every place it holds, and migrations are unchanged.
+It takes 0 up to the field's `scale`, on a Decimal or Percent; a Currency shows its currency's places.
 
 Every field, and a `Table`, takes `copy=` (default `True`). `copy=False` means the browser's
 Duplicate action never copies this value or these rows into the new record, for example a unique
@@ -385,7 +443,7 @@ rich text images). The field's value is that attachment's id: an `int` in Python
 - **Trusted Python and the Connector.** A trusted session may save any held image's id (it has no
   person); the other rules are the same. The Connector uses the HTTP routes above.
 - **Options.** `label`, `help_text`, `tooltip`, `required`, `hidden`, `read_only`, `panel` and the
-  rules (`required_when`, `locked_when`, `applies_when`). Images have no `default`, `compute`,
+  rules (`required_when`, `locked_when`, `applies_when`, `visible_when`). Images have no `default`, `compute`,
   `query` or `fetch`, and cannot be unique or indexed.
 - **Migrations.** One nullable integer column, added with `AddField("product", "photo", Image())`.
 
@@ -510,8 +568,83 @@ Currency field's scale belongs to the framework and checksums as 2, and saved do
 calculation version, so they stay editable after the move (also when a formula reads the Link its
 currency comes through, such as `customer` for `currency='customer.currency'`).
 
+`Table(Line, totals=("net_total", "discount_percent", "discount_amount", "tax_total", "grand_total"))`
+names fields of the model that owns the table, in display order, to show as a stack under it: a
+document's Net total, Discount, Tax and Grand total ([ui.md](ui.md#record-layouts)). They are
+ordinary fields: nothing new is stored and no calculation changes. Defining the model fails, naming
+the model, the table and the field, when a name is not a field of that model, is a Table, is
+`hidden=True`, is listed twice, or is already in the totals of another Table.
+
 `Percent` and `Duration` work as numbers in finite expressions; `Phone` works as text.
 `Time`, `Tags` and references cannot be used in calculations.
+
+## Abstract models
+
+A base that several documents share declares `Meta.abstract = True`. It holds fields, Tables, formulas,
+`derive()` and hooks like any model, and it may live in `models/`, but it is not a model of its own: discovery
+skips it, so it has no table, no schema entry and no migration. Each concrete model built from it gets its own
+table with the base's fields and rows.
+
+```python
+class TradeDocument(Model):
+    class Meta:
+        abstract = True
+        calculation_language = "finite-v1"
+
+    class Line(Child):
+        qty = Decimal(scale=2, default=1)
+        rate = Decimal(scale=2, default=0)
+        amount = Decimal(scale=2, compute=qty * rate)
+
+    party = Link(Party)
+    lines = Table(Line)
+    total = Decimal(scale=2, compute=lines.sum("amount"))
+
+
+class SalesOrder(TradeDocument):
+    pass
+
+
+class PurchaseOrder(TradeDocument):
+    pass
+```
+
+* `abstract` is read from the class's own `Meta` only and never inherited: a subclass that does not
+  repeat it is concrete, even when it inherits the base's `Meta` or subclasses it.
+* An abstract class is refused, with a message naming it, by `Registry(...)`, as a `Link` target and by
+  `context.create`, `context.get` and the other calls that resolve a model.
+* The checks that run when a class is created still run on it, so a mistake in the base fails where it is
+  declared.
+
+Shared row bases may live in `models/` too. Discovery skips every `Child` class, abstract or not: a row
+model is reached through a document's `Table(...)`, which gives each Table its own row table, so a
+module-level `Child` is never a top-level model. One concrete `Child` may serve several documents'
+Tables, and a `Child` base may hold the fields its rows share:
+
+```python
+# models/lines.py
+class LineBase(Child):
+    qty = Decimal(scale=2, default=1)
+    rate = Decimal(scale=2, default=0)
+
+
+class PurchaseLine(LineBase):
+    item = Link(Item)
+
+
+# models/documents.py
+class PurchaseOrder(Model):
+    lines = Table(PurchaseLine)
+
+
+class PurchaseReturn(Model):
+    lines = Table(PurchaseLine)
+```
+
+`Meta.abstract = True` on a `Child` base is no longer needed for discovery, and keeping it is harmless.
+It stays useful on the document side: a shared base that holds fields, Tables and `derive()` for several
+documents (the `TradeDocument` above) still needs it, since that base is a `Model`, not a row. On a
+`Child` base it only marks the intent for readers; a `Table(...)` may still name the base itself.
 
 ## Section rows
 
@@ -871,6 +1004,136 @@ both databases.
 Only trusted Python code gets long lists. HTTP lists and aggregates, `Context`, Eva, tools,
 MCP and Connector keep the limit of 100 values per `in` or `nin`.
 
+## Record search and Link options
+
+Link dropdowns, record pickers (a filter's `in` list) and the search bar find records through one
+route, `GET /api/{model}/search`. Three declarations shape what they find and show.
+
+### Search fields
+
+`Meta.search_fields` names up to eight fields to search besides the title. It is checked when the
+class is defined (each name must be a field of the model; the schema check later requires visible
+short text fields):
+
+```python
+class Item(Model):
+    class Meta:
+        search_fields = ("item_code", "barcode")
+```
+
+A model that declares it is searched fuzzily in its title **and** those fields. "bx" finds
+"Box 40 x 40"; the code or barcode finds its item. Results are ranked:
+
+1. the whole value equals the text;
+2. a value starts with it;
+3. a word in a value starts with it;
+4. the text appears inside a word;
+5. the characters appear in order, the tightest span first.
+
+Within a tier the title comes before the other fields, then shorter values, then the title in
+alphabetical order. When the best match is in a field other than the title and the option has no
+declared subtext, that value shows as the subtext (the barcode that matched). Case is ignored.
+Spaces in the text are ignored for the in-order match, so "red box" also finds "Red large box".
+
+The model's own text fields the option shows with `F("field")` (a Select, Email or other short text,
+not a Link path or an aggregate) are searched too, so whatever a dropdown shows can be typed. With
+`Option(subtext=(F("code"), " · ", F("valuation")))`, typing "fifo" finds the items valued FIFO.
+Those matches rank after every match in the title and `Meta.search_fields`.
+
+A model **without** `Meta.search_fields` is searched as before: the typed text must appear in one of
+its default search fields (the list's search box) or the option's fields, in the list's default order.
+
+Permissions apply as everywhere: the role's row scope (and tenant) on the model, and a search field
+the role cannot read is neither searched nor shown. A model the role cannot read answers 403.
+
+### Link filters with form values
+
+A Link's `filters` ([business-capabilities.md](business-capabilities.md#link-filters)) already take
+values from the form with `Ref`: `Ref("item")` reads a field of the same row, `Ref("parent.customer")`
+the parent of a Table row. Plain strings stay literal values (`{"status": "active"}`), so existing
+filters keep their meaning:
+
+```python
+class Order(Model):
+    customer = Link(Customer)
+    warehouse = Link(Warehouse)
+
+    class Line(Child):
+        item = Link(Item)
+        uom = Link(ItemUnit, filters={"item": Ref("item"), "active": True})
+        project = Link(Project, filters={"customer": Ref("parent.customer")})
+```
+
+When the dropdown opens, the browser sends the Link's name (`link=order_line.uom`) and only the form
+values its filters and its option read, by path (`values={"item": "…"}`). The server applies the
+filters as declared: each literal as written, each `Ref` with the value sent for its path. It accepts
+only those paths, each readable by the role on that form; values are checked as values of the filtered
+field and bound as SQL parameters. A `Ref` the form left empty matches nothing (the dropdown says
+"Choose Item first."). A `Ref` to a field the role cannot read is skipped, as before, and the save
+still checks the Link.
+
+### What each option shows
+
+`Option` declares an option's title and a muted line below it, the subtext, without Python. Declare it
+on a Link (`option=`), or on the target's `Meta.option` for every Link to it; a Link's own wins.
+
+```python
+from evlet import Option, Ref, Sum
+from evlet.calc import F
+
+class Customer(Model):
+    class Meta:
+        option = Option(subtext=F("email"))
+
+class Line(Child):
+    item = Link(Item, option=Option(subtext=(
+        "In stock: ", Sum("qty", model=StockMove, link="item", where={"warehouse": Ref("parent.warehouse")}),
+        " ", F("stock_uom"))))
+```
+
+`title=` and `subtext=` take one part or a tuple of up to eight, joined as text:
+
+| Part | Shows |
+|---|---|
+| `"text"` | Literal text, up to 200 characters. |
+| `F("field")` | A field of the option's record. A Link field shows the linked record's title. |
+| `F("link.field")` | A field of the record a Link points to (one hop). |
+| `Count(Model, link=...)`, `Sum("field", model=..., link=...)`, `Min`, `Max` | An aggregate over the related records whose `link` points to the option. `where=` is `{field: value or Ref("path")}`; a `Ref` reads the form, so it is allowed only in a Link's `option=`. A sum or count of no records shows 0. |
+
+The parts compile to parameterized queries through the query builder: one query for the options' own
+columns, one per `F("link.field")` hop and one grouped query per aggregate, each keyed by the options'
+ids and each with the role's row scope on its model. Python joins the parts, so an exact decimal keeps
+its value ("12", "12.5"; trailing zeros are dropped). Field names are checked when the registry is
+built. When a part reads a field or model the role cannot read, or a form value that is empty, the
+option shows no subtext rather than part of one. Literal text alone never shows: without a value
+there is no subtext.
+
+`hook=` is trusted app code for what the parts cannot say. It runs after the parts with a read-only
+context, the options (dicts with `id`, `title`, `subtext` and the `record`) and the Link's form values,
+and returns them with `title` or `subtext` changed:
+
+```python
+def with_reorder(context, options, values):
+    for option in options:
+        if option["record"].reorder_level:
+            option["subtext"] = f"Reorder at {option['record'].reorder_level}"
+    return options
+
+item = Link(Item, option=Option(hook=with_reorder))
+```
+
+Like actions, a hook is trusted code: it decides what it shows, so keep it to fields the people who
+use the Link may see.
+
+### The search route
+
+`GET /api/{model}/search?q=<text>&link=<model>.<field>&values=<json>&limit=<1-20>` answers
+`{"items": [{"id", "title", "subtext"?}]}`, at most `limit` (default 8). `q` has at most 100
+characters. `link` names a Link to `{model}` on a model or a Table's row model (`order_lines.item`)
+that the role can read; `values` are allowed only with it. An unknown parameter, Link or path is a
+422. The search bar calls it without `link` for each model with search fields, five options each.
+Limits are in [performance.md](performance.md#record-search).
+
 ## HTTP API
 
 The existing create, list, detail, health, and schema endpoints remain available.
@@ -1046,7 +1309,21 @@ The current model definitions must describe the target schema, including
 `display_name = Text(...)`, `active = Boolean(required=True)`, and
 `index=True` on `display_name`. `CreateModel(HistoricalModel)` adds a model;
 `AddIndex(..., unique=True)` adds a uniqueness constraint, and `AddIndex(table, ("a", "b"),
-unique=True)` adds a [`Meta.indexes`](#composite-and-unique-indexes) entry. Keep historical field
+unique=True)` adds a [`Meta.indexes`](#composite-and-unique-indexes) entry. `DropIndex` takes the
+same arguments and undoes it: `DropIndex("customer", "display_name")` clears `index=True`,
+`unique=True` clears `unique=True`, and a tuple removes the `Meta.indexes` entry with that
+uniqueness. A changed index, such as one that becomes unique or covers other fields, is a
+`DropIndex` of the old one and an `AddIndex` of the new one, in that order. `DropField` takes every
+`Meta.indexes` entry that names the dropped field out with it. A `DropIndex` of an index the instance
+never had is done without a change, when one of the migrations it already ran made that index (an
+`AddIndex`, or a `CreateModel` or `AddTable` whose model declared it): an instance created from models that
+no longer declared the index records that history without the index. A `DropIndex` of an index that no
+applied migration made is still refused. A `RenameField` renames the field in the `Meta.indexes` entries
+that cover it, as the database renames the column inside the index, and a later `DropIndex` may name
+the fields by their old or their new names: it drops the database index on the columns they have now.
+When a later `AddField` reused an old name, a `DropIndex` by the names the index had when it was made
+still drops it, unless an index now covers the new field under those names.
+Keep historical field
 and model definitions in migration files unchanged. Do not point an old
 `CreateModel` operation at a model definition that will keep changing.
 Migrations compare stored fields only, so a frozen class may have any Python name:
@@ -1121,8 +1398,8 @@ current models, for example `employee.days: type is 'integer' after the migratio
 'decimal' in the models`. `suggestion` is Python for one migration covering what can be
 inferred: new models (`CreateModel` with a frozen class), new child tables (`AddTable`),
 new fields (`AddField` with a frozen copy of the field), a single renamed field
-(`RenameField`), removed fields (`RetireField`), safe type changes (`AlterField`) and new
-indexes (`AddIndex`). A required field without a fixed default gets `backfill=...`, and changes
+(`RenameField`), removed fields (`RetireField`), safe type changes (`AlterField`), removed
+indexes (`DropIndex`, written first) and new indexes (`AddIndex`). A required field without a fixed default gets `backfill=...`, and changes
 it cannot write become `#` comments; fill both in by hand. A removed field's values are not
 moved anywhere: add a `RunData` step when they belong in new fields.
 `migrate()` refuses a mismatch with the same list of differences, so the error names the
@@ -1268,10 +1545,34 @@ or `migrate(migrations, allow_maintenance=True)` from Python. Each such step wri
 audit row (actor `cli`, area `Records`, the migration's name) and logs a warning. Their Activity entries
 stay as they were; the step writes no Activity entries of its own.
 
-The migration checksum covers the function's source and `maintenance`, so keep the function in
+The migration checksum covers the function's source, `maintenance` and `seed`, so keep the function in
 the migration file and never change it once applied. Any exception rolls back the whole run,
-structural changes included. Like `Recompute`, data steps do not run when a database adopts its
-baseline.
+structural changes included. Like `Recompute`, data steps do not run on a new database or when a
+database adopts its baseline: they were written for older model shapes. Seed steps are the exception.
+
+#### Seed data
+
+`RunData(function, seed=True)` creates starting records a new instance needs, such as units or tax
+profiles:
+
+```python
+def starting_units(session):
+    Unit = session.registry.models["unit"]
+    for code in ("PCS", "KG"):
+        if not session.list(Unit, filters=[["code", "eq", code]]):
+            session.create(Unit, code=code)
+
+
+Migration("0007_units", RunData(starting_units, seed=True))
+```
+
+On an existing database a seed step runs in sequence like any data step. On a new database
+(`migrate()` or startup creating the tables from the current models) and on a baseline database
+(initialized from the current models, then given its migration list), Evlet runs every seed step of
+the history, in migration order, once the tables exist, and no other data step. A seed step
+therefore runs against today's models on a new instance: keep it working with the current models
+and make it idempotent (create a record only when it is missing). A seed step cannot be a
+maintenance step. See [app-upgrades.md](app-upgrades.md#seed-data-on-new-instances).
 
 ### Recalculating stored values
 

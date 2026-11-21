@@ -53,6 +53,8 @@ MAX_INTEGER = 2**63 - 1
 ROUNDING = ("half_up", "half_even")
 # Finite-v1 expression options a field may declare, besides compute=.
 RULES = ("applies_when", "required_when", "locked_when")
+# Display only: hides a field (or a Table) while false; its value is kept, saved and validated as usual.
+DISPLAY_RULES = ("visible_when",)
 
 
 def rounding_mode(value, default):
@@ -79,12 +81,88 @@ def _expr(op, left, *right):
     return operand(op, left, *right)
 
 
+_TEMPLATE = re.compile(r'\{\{|\}\}|\{([^{}]*)\}|[{}]')
+_REFERENCE = re.compile(r'(parent\.)?[A-Za-z_][A-Za-z0-9_]*')
+
+
+def help_references(text):
+    """The fields a help text names: "per {uom}" -> ('uom',), "in {parent.currency}" -> ('parent.currency',).
+    {{ and }} are literal braces. A help text without references is plain text. Raises ValueError on a
+    stray brace or a reference that is not a field name (docs/model-engine.md#reactive-help-text)."""
+    found = []
+    for match in _TEMPLATE.finditer(text):
+        token = match.group(0)
+        if token in ('{{', '}}'):
+            continue
+        name = match.group(1)
+        if name is None:
+            raise ValueError(f'help_text {text!r} has a stray {token!r}; write {token * 2} for a literal brace')
+        if not _REFERENCE.fullmatch(name):
+            raise ValueError(f'help_text {text!r}: {{{name}}} must name a field, as {{uom}} or {{parent.currency}}')
+        if name not in found:
+            found.append(name)
+    return tuple(found)
+
+
+def check_help_references(model, field, fields, parent=None):
+    """A help text's references name fields of its model, and parent. ones fields of the record that owns its
+    Table (`parent` is that model; None when the model is checked on its own, which leaves parent. ones for the
+    Table check). Raises ValueError naming the model, field and missing name."""
+    for name in help_references(field.help_text):
+        if name.startswith('parent.') and parent is None:
+            continue
+        owner, key, known = (parent, name[7:], parent.__app_fields__) if name.startswith('parent.') else (model, name, fields)
+        if key not in known:
+            raise ValueError(f'{model.__name__}.{field.name}: help_text names {{{name}}}, but {owner.__name__} has no field {key!r}'
+                             + (' (parent. names a field of the record that owns the Table)' if owner is parent else ''))
+
+
+# A model script method name: an identifier, not one of the names evlet.Model gives every script.
+SCRIPT_METHOD = re.compile(r'[A-Za-z_$][A-Za-z0-9_$]{0,63}')
+SCRIPT_RESERVED = frozenset(('constructor', 'model', 'id', 'is_new', 'state', 'field', 'table', 'call', 'move', 'save', 'reload', 'api', 'ui'))
+# The fixed looks a field may declare (look="muted"); look=Js("method") chooses one from the record.
+LOOKS = ('strong', 'muted', 'success', 'warning', 'danger')
+
+
+def script_method(value, where):
+    """A method name of the model's script (docs/model-scripts.md), checked; raises ValueError naming `where`."""
+    if type(value) is not str or not SCRIPT_METHOD.fullmatch(value) or value in SCRIPT_RESERVED:
+        raise ValueError(f'{where} names a method of the model script, such as "customer_changed", not {value!r}')
+    return value
+
+
+class Js:
+    """A value the model script works out in the browser: tooltip=Js("method") or look=Js("method")."""
+
+    __slots__ = ('method',)
+
+    def __init__(self, method):
+        self.method = script_method(method, 'Js')
+
+    def __repr__(self):
+        return f'Js({self.method!r})'
+
+
 def _finite_option(value, name):
     """initial= and rule options take a finite expression or a field, never text or a callable."""
     from .calc import Expr
     if value is None or isinstance(value, (Expr, Field)):
         return value
     raise ValueError(f"{name} takes a finite expression such as F('stage') == 'lost'")
+
+
+def check_visible_when(visible_when, *, required=False, required_when=None, hidden=False, visible_if=None):
+    """visible_when hides a value people may still need to enter, so it cannot be combined with what would ask
+    for that value while it is hidden. Use applies_when for a value that is required only when it shows."""
+    if visible_when is None:
+        return
+    if required or required_when is not None:
+        raise ValueError("A required field must stay visible, so it cannot have visible_when; use applies_when "
+                         "with required_when to hide it and ask for it only while it shows")
+    if hidden:
+        raise ValueError("A hidden field is never shown; drop visible_when or hidden=True")
+    if visible_if is not None:
+        raise ValueError("Use visible_when or visible_if, not both")
 
 
 class Field:
@@ -101,8 +179,8 @@ class Field:
                  label=None, help_text="", tooltip="", placeholder="", suffix="", hidden=False, read_only=False,
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
-                 initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking="value",
-                 panel=True, copy=True, column=True, derived=False):
+                 initial=None, applies_when=None, required_when=None, locked_when=None, visible_when=None, versioned=True, tracking="value",
+                 panel=True, copy=True, column=True, derived=False, on_change=None, look=None, control=None):
         if tracking not in ("value", "mask", "exclude"):
             raise ValueError("tracking is value, mask or exclude")
         self.tracking = tracking
@@ -116,11 +194,22 @@ class Field:
         self.name = ""
         if label is not None and (not isinstance(label, str) or not label):
             raise ValueError("label must be nonempty text")
+        # The model script's hooks on this field ({hook: method}); the browser calls them (docs/model-scripts.md).
+        self.hooks = {hook: script_method(value, f'{hook}=') for hook, value in (('on_change', on_change), ('control', control)) if value is not None}
+        if isinstance(tooltip, Js):
+            self.hooks['tooltip'], tooltip = tooltip.method, ""
+        if isinstance(look, Js):
+            self.hooks['look'], look = look.method, None
+        if look is not None and look not in LOOKS:
+            raise ValueError(f"look is one of {', '.join(LOOKS)}, or Js(\"method\")")
+        self.look = look
         if not isinstance(help_text, str) or not isinstance(tooltip, str) or not isinstance(placeholder, str) or not isinstance(suffix, str) or len(suffix) > 20:
             raise ValueError("Field help, tooltip, placeholder and suffix must be text; a suffix has at most 20 characters")
         if type(hidden) is not bool or type(read_only) is not bool:
             raise ValueError("hidden and read_only must be booleans")
-        # help_text shows under the input; tooltip behind a ? icon at its right end.
+        # help_text shows under the input; tooltip behind a ? icon at its right end. {field} and {parent.field}
+        # in help_text are filled in the browser from the record's values (checked again when the model is built).
+        help_references(help_text)
         self.label, self.help_text, self.tooltip, self.placeholder, self.suffix = label, help_text, tooltip, placeholder, suffix
         self.hidden, self.read_only = hidden, read_only
         # Whether the field shows when a list opens the record in its side panel. Display only: the full page
@@ -156,6 +245,8 @@ class Field:
         self.initial, self.applies_when = _finite_option(initial, "initial"), _finite_option(applies_when, "applies_when")
         self.required_when = _finite_option(required_when, "required_when")
         self.locked_when = _finite_option(locked_when, "locked_when")
+        self.visible_when = _finite_option(visible_when, "visible_when")
+        check_visible_when(visible_when, required=required, required_when=required_when, hidden=hidden, visible_if=visible_if)
         if initial is not None and (compute is not None or query is not None or fetch is not None or default is not MISSING):
             raise ValueError("initial= suggests a value; it cannot be combined with compute, default, fetch or query")
         if (compute is not None or query is not None) and any(getattr(self, key) is not None for key in RULES):
@@ -346,7 +437,7 @@ class Decimal(Field):
     sql_type = "INTEGER"
     default_rounding = "half_even"
 
-    def __init__(self, *, scale=4, minimum=None, maximum=None, rounding=None, **kwargs):
+    def __init__(self, *, scale=4, minimum=None, maximum=None, rounding=None, display_scale=None, **kwargs):
         super().__init__(**kwargs)
         self.rounding = rounding_mode(rounding, self.default_rounding)
         from .calc import Expr
@@ -355,6 +446,12 @@ class Decimal(Field):
         if scale is not None and (type(scale) is not int or not 0 <= scale <= 9):
             raise ValueError("scale must be an integer between 0 and 9")
         self.scale = scale
+        # Display only: shown with at most this many decimal places and no trailing zeros (0.000000 as 0, 1.500000 as
+        # 1.5); stored and validated at `scale`. Not on Currency, whose places come from its currency.
+        if display_scale is not None and (type(display_scale) is not int or not 0 <= display_scale <= (9 if scale is None else scale)
+                                          or self.kind == 'currency'):
+            raise ValueError("display_scale is a whole number from 0 to the field's scale, on a Decimal or Percent")
+        self.display_scale = display_scale
         self.minimum = DecimalValue(str(minimum)) if minimum is not None else None
         self.maximum = DecimalValue(str(maximum)) if maximum is not None else None
         if any(bound is not None and not bound.is_finite() for bound in (self.minimum, self.maximum)):
@@ -625,9 +722,14 @@ class Link(Integer):
     the 13-character text id in JSON (evlet/identity.py). Writes accept either form."""
     kind = "link"
 
-    def __init__(self, target, **kwargs):
+    def __init__(self, target, *, option=None, **kwargs):
         super().__init__(minimum=1, **kwargs)
         self.target = target
+        # What each choice shows in the dropdown (title and subtext); without it, the target's Meta.option.
+        from .declarations import Option
+        if option is not None and not isinstance(option, Option):
+            raise ValueError('option= takes an Option(title=, subtext=, hook=)')
+        self.option = option
 
     @property
     def ledger_target(self):

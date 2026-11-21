@@ -14,6 +14,370 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   the page, and the visitor signs in there if their session cookie didn't come with the link. `/api/`,
   frames, fetches and every write stay rejected cross-site
   ([docs/business-capabilities.md](docs/business-capabilities.md)).
+- **A `DropIndex` by an index's first names after its field was renamed and the name reused.** 0.4.17 renamed the
+  field in `Meta.indexes` entries, so after `RenameField("party", "kind", "role_kind")` and a new `AddField` named
+  `kind`, a later `DropIndex("party", ("kind", "record_id"), unique=True)` resolved `kind` to the new field, left
+  the renamed entry and its database index in place, and an instance created before the rename stopped with
+  "party: Meta.indexes differ". The `DropIndex` now matches the index by the names it had when it was made when no
+  index has the names given, and drops the database index on the columns they have now. Instances already past the
+  `DropIndex` are not affected ([docs/model-engine.md](docs/model-engine.md)).
+
+## 0.4.17 (20-11-2026)
+
+### Upgrading to 0.4.17
+
+- **Nothing to change.** No migrations and no public API removed; every addition is a new keyword argument
+  (`Table(append_when_released=...)`, `Decimal(display_scale=...)`) or a filter key that was refused before.
+- **Turning `append_when_released` on for a table that already holds rows on released documents** takes that table
+  out of their released content, so the release hash no longer matches: the next write keeps the release's snapshot
+  marked drifted (with a warning in the log) and the next release takes a new number. A new table declared with the
+  option, as finance_v1's arrivals would be, does not change any hash.
+- **The frontend accepts Node 22.22.2+ as well as 24.15+.** Nothing to change on Node 24.
+
+### Added
+
+- **Link filters on the linked record's own fields, with an operator.** A Link's `filters=` key may name an operator
+  of the list route: `Link(Location, filters={"kind__ne": "transit"})`, `{"direction__in": ["out", "both"]}`. The
+  picker leaves those records out, and the server refuses one on every save and every move with a field error.
+  Before, a filter only compared for equality, so an app needed a derived flag on the target and a check when the
+  document posted ([docs/business-capabilities.md](docs/business-capabilities.md#link-filters)).
+- **A table code can append to on a released document.** `Table(Arrival, append_when_released=True)` is a log of
+  what follows the release: trusted code (an action, a hook, a job, `context`) may add rows at its end while the
+  record is locked, the saved rows stay as they are, and no request may add one. Its rows are not released content.
+  finance_v1 showed a Stock Transfer's arrivals as a separate model in a Related block instead
+  ([docs/states-actions.md](docs/states-actions.md)).
+- **A Related block lists up to 12 fields** as columns, instead of 6 ([docs/ui.md](docs/ui.md)).
+- **Display precision for a Decimal.** `Decimal(scale=6, display_scale=2)` shows at most two places without trailing
+  zeros (`0.000000` as `0`, `1.500000` as `1.5`) on forms, grids and lists; storage, validation, calculations and
+  migrations are unchanged ([docs/model-engine.md](docs/model-engine.md)).
+- **A remark on a system move.** `context.move(Model, id, key, remark=...)` on a rule with `by=()` was refused with
+  "takes no remark" unless the rule declared one. Code may give any system move a remark now, and the Activity's
+  `moved` entry keeps it like a person's; `remark="required"` refuses the move without one
+  ([docs/states-actions.md](docs/states-actions.md#system-moves)).
+
+### Fixed
+
+- **`/app` opens the start page.** GET `/app` (the desk's base with no screen) answered 404; it redirects to `/` now,
+  where a signed-in person lands on their start page, the first list their role can open
+  ([docs/routing.md](docs/routing.md)).
+- **The frontend installs and builds on the Node 22 LTS.** `frontend/package.json` asked for Node 24.15+ and `.npmrc`
+  enforces it, so `npm ci` refused Node 22. The range is `^22.22.2 || ^24.15.0` now (22.22.2 is the lowest version
+  jsdom, the test environment, accepts); CI installs, tests and builds on Node 22.22.2 as well, and a frontend test
+  checks that every locked package admits both floors ([CONTRIBUTING.md](CONTRIBUTING.md#install-for-development)).
+- **A `DropIndex` after a `RenameField` drops the database index.** After a rename the index stayed on the renamed
+  column, so a `DropIndex` naming the old fields cleared Evlet's schema but left the index in the database, and an
+  instance could not migrate past the rename while a `Meta.indexes` entry named the field ("Meta.indexes differ").
+  A `RenameField` now renames the field in the entries that cover it, and a `DropIndex` by the old or the new names
+  drops the index on the columns they have now. finance_v1's 0009 data step that drops the index by name is no
+  longer needed ([docs/model-engine.md](docs/model-engine.md)).
+- **A zero reads as a value in a collapsed section's summary.** A stored 0.00 (a paid invoice's `outstanding`), a zero
+  quantity at its default and No showed as "Not set" on the closed "More information" row. Only an empty value (null or
+  '') does now; the row's "3 of 5 filled" count is unchanged.
+- **A schema change of an append-only (ledger) table migrates without `SetAppendOnly` around it.** An `AlterField`
+  (finance_v1 gave `posting.kind` a new Select choice), a `RenameField` or a `RetireField` failed unless the migration
+  turned append only off and on again, which `makemigration` does not write. `migrate` now lifts the append-only
+  triggers around each such operation inside the migration's transaction and adds them back at once, so a `RunData`
+  step after it still cannot update or delete rows. `DropField` and `AlterField(fill=...)` stay refused
+  ([docs/ledger.md](docs/ledger.md)).
+- **An MCP client is asked for approval once for an action that opens a prompt.** `run_action` on an action whose
+  body only returns a Prompt (finance_v1's Confirm, Deliver, Invoice, Return goods) or that declares `inputs=` asked
+  for approval, and submitting the prompt asked again. Opening it is a read now; the approval is asked on the
+  `answer_prompt` call that writes ([docs/tools.md](docs/tools.md)).
+
+## 0.4.16 (20-11-2026)
+
+### Upgrading to 0.4.16
+
+- **Nothing to change.** No migrations and no public API removed. A `DropIndex` of an index an instance
+  already lacks, which one of its earlier applied migrations made, now passes and leaves that instance's
+  schema and database unchanged.
+
+### Fixed
+
+- **`DropIndex` migrates an instance that never had the index.** An instance created from models that no
+  longer declared an index records the migration that made it, but not the index. A later `DropIndex` of
+  it now leaves that instance unchanged instead of stopping with `there is no unique index ... to drop`;
+  an instance that has the index drops it as before. A `DropIndex` of an index no applied migration made
+  (an `AddIndex`, or a `CreateModel`/`AddTable` model that declared it) is still refused. No app change.
+- **Discovery skips `Child` classes in `models/`.** A module-level row model, such as a shared line base or a
+  line two documents' `Table(...)`s use, is no longer collected as a top-level model (which `Registry`
+  refused with `... is a Child row model`). `Meta.abstract` on such a base is no longer needed.
+- **Docs.** `@validate` has no `context.session`, so a check moved back from the ledger reads stored values.
+
+## 0.4.15 (20-11-2026)
+
+### Upgrading to 0.4.15
+
+- **No migrations and no public API removed.** `RunData` gains `seed=False` and `evlet` exports `DropIndex`.
+- **Seed steps run on new instances.** `RunData(..., seed=True)` now also runs on a new database and on a
+  baseline database, at startup and through `migrate()`, after the tables are created, against the current
+  models. Mark the data steps that create starting records `seed=True` (in a new migration: changing an applied
+  one changes its checksum), keep them working with today's models and make them idempotent. Other data
+  steps still do not run on a new database.
+- **The migration plan writes `DropIndex`.** `evlet migrate --plan` and `database.plan()` now suggest
+  `DropIndex` for an index the models no longer declare, written before any `AddIndex`, instead of leaving a
+  `Meta.indexes differ` mismatch. `DropField` now takes the `Meta.indexes` entries that name the dropped field
+  out of the plan as well.
+- **`derive()` sees suggestions.** An `initial=` suggestion that reads nothing `derive()` sets now fills its field
+  before `derive()` runs, on a document created from Python, the API or a prompt (only the browser did before).
+  `derive()` code that treated such a field as empty on those paths now reads the suggested value.
+- **A field whose `applies_when` or `initial` waits on `derive()` is readable in `derive()`.** It reads the
+  caller's value, and the rule applies after it. Only formulas (`compute=`) over a derived value still raise
+  `derive() read ..., which depends on ... that derive() sets`; `Registry.derive_split()` now maps only those.
+- **`@validate` runs once per save, before `@release`.** A move into the released set no longer runs `@validate`
+  (and `Extend` checks) a second time after `@release`; calculations and field checks (required, locks, Links,
+  `min_rows`) still run again. A check that relied on seeing what `@release` posted must move into `@release`.
+- **Values code sets on a new draft are caller values.** An attribute set on a prompt or a new document's draft,
+  a value set in a prompt's `load()`, starting values (`Prompt(field=...)`) and the rows code assigns to a Table
+  are no longer replaced by `initial=` on `submit()` or save. Code that relied on the suggestion winning should
+  stop setting the field.
+- **A `Record` reads its virtual values.** `context.get(...)` and `context.list(...)` records (and their Table rows)
+  now give `stored=False` fields their calculated value, computed on the first read of one, instead of `None`.
+  Tests that called `business.virtual_values` to read them can read the attribute. A row read through a record
+  now gives `None`, not `AttributeError`, for a declared field the detail left out.
+- **Model scripts are served from the app package.** A script's address is now
+  `/assets/scripts/<hash>/<path in the app>` (`purchase/purchase_order.js`), and the hash covers every `.js` file
+  of the app. `Meta.script` may use `..` inside the app; a path out of it fails at start-up with "leaves the app
+  package" instead of "name a .js file". Tests that pinned a script URL or matched the old message need updating.
+  Copies of a shared script kept beside each model can go: import it by relative path (`../trade.js`).
+- **`Meta.abstract` is a Meta option.** A base class that declares it gets no table; a model inheriting such a
+  base's `Meta` stays concrete. Registering, linking to or resolving an abstract class fails naming it.
+- **`Outcome(new=..., open=...)` accept a model name.** A name is resolved, and its values serialized, when the
+  outcome is answered; `Outcome` gains `resolve(registry)`, and `documents.add_outcome` takes the registry.
+- **A Table column its rule hides on every row is not shown.** In the grid (editable or locked), a field whose
+  `applies_when` or `visible_when` is false on every row has no column until a row shows it. A frontend test that
+  counted columns under such a rule needs updating.
+
+### Added
+
+- **`DropIndex(table, field, unique=False)`**, the counterpart of `AddIndex`: a field name clears the field's
+  `index` (or, with `unique=True`, `unique`) flag, a tuple removes the `Meta.indexes` entry. It drops the
+  database index with those columns and that uniqueness. A changed index migrates as a `DropIndex` and an
+  `AddIndex` ([docs/model-engine.md](docs/model-engine.md#explicit-migrations)).
+- **Seed data steps.** `RunData(function, seed=True)` creates starting records on every instance, new ones
+  included ([docs/app-upgrades.md](docs/app-upgrades.md#seed-data-on-new-instances)).
+- **Abstract models.** `Meta.abstract = True` declares a shared base with fields, Tables and `derive()` that
+  has no table, schema entry or migration of its own ([docs/model-engine.md](docs/model-engine.md#abstract-models)).
+- **One script root per app.** A model, prompt or `Extend` script may import any `.js` file of its app
+  across folders ([docs/model-scripts.md](docs/model-scripts.md#the-script-file)).
+- **`record.model`**, the model class of a bound record, as on a draft ([docs/prompts.md](docs/prompts.md)).
+- **Model names in `Outcome`:** `Outcome(new=("deliveryorder", values))` and `Outcome(open=("invoice", id))`.
+
+### Changed
+
+- `initial=` suggestions that read nothing `derive()` sets now fill before `derive()` on every path, and values
+  code sets on a new draft or prompt are no longer replaced by them.
+- `@validate` and `Extend` checks run once per save, before `@release`.
+- Model scripts are served from the app package at `/assets/scripts/<hash>/<path in the app>`.
+- `documents.add_outcome` takes the registry, and `Outcome` resolves model names when answered.
+- The migration plan writes `DropIndex` for an index the models no longer declare.
+
+### Fixed
+
+- `initial=` suggestions ran after `derive()` outside the browser
+  ([docs/model-engine.md](docs/model-engine.md#derived-values)).
+- A rule over a derived field made the field unreadable in `derive()`.
+- A payment check that read the invoice's outstanding refused every payment, since `@validate` ran again after
+  `@release` posted ([docs/states-actions.md](docs/states-actions.md)).
+- `initial=` overwrote values set on a new prompt or draft by code, `load()` or starting values
+  ([docs/prompts.md](docs/prompts.md)).
+- A `Record` from `context.get`/`context.list` read virtual fields as `None`, while one refreshed after a write had them.
+- A grid column stayed, empty, while its field's rule hid the field on every row (a Rate under standard pricing).
+
+## 0.4.14 (19-11-2026)
+
+### Upgrading to 0.4.14
+
+- **No migrations and no public API removed.** Apps on 0.4.13 run as they are; the new options change nothing
+  until an app uses them. (The Playground adds its own migration `0022_expenses` for its Expense example.)
+- **`initial=` suggestions no longer overwrite what the caller set.** A suggestion now refills only after a write
+  that changes one of its inputs, never over a value sent in the same write, and no longer on a save that changed
+  something else. An app or test that relied on a suggestion re-firing on any save, or replacing a value sent on
+  create, must now set that value itself or make the field a `compute=`.
+- **Rule states carry `visible`.** `Document.rule_states()` / `ruleStates()` and a field's `rules` cell now hold
+  `{applies, required, locked, visible}`. Tests that compare a rule state dict exactly, or frontend code that sets
+  a field's `rules` cell itself, add `visible` (true unless `visible_when` is false).
+- **New refusals, only for the new options:** `visible_when` with `required=True`, `required_when`, `hidden=True`
+  or `visible_if`; `Table(applies_when=...)` with `required`/`min_rows` or `derived=True`; `Table(visible_when=...)`
+  with `required`/`min_rows`; `Table(totals=...)` naming an unknown, hidden or Table name, or a field twice.
+- **Derived-value preview has no pause.** `PREVIEW_PAUSE_MS` is gone from `model/record.ts`. A frontend test that
+  advanced fake timers by 600 ms to wait for `POST /api/_draft` should await the request instead.
+- **A hook on a Prompt** (`on_change=`, `Js(...)`, `look=Js`, `control=`) now asks for `Meta.script` by name
+  instead of being refused outright; a test matching the old message needs the new one.
+- **Record page changes visible to UI tests:** Related is a section of count chips, its rows loaded only when it
+  opens (`GET /api/{model}/{id}/related` counts first), and a Boolean on the record page is just its switch, with
+  no Yes/No text or pencil. Frontend tests that clicked the old Related rows or read "Yes" from a Boolean value
+  need updating.
+
+### Added
+
+- **Model scripts in prompts.** A Prompt takes `Meta.script` and `Meta.on_open`, and its fields and its Table rows'
+  fields take `on_change=`, `tooltip=Js(...)`, `look=Js(...)` and `control=`, as on a model. A hook on a prompt
+  without `Meta.script` now fails naming the field, instead of every hook being refused. The open response carries
+  the script, the modal runs it over the prompt's form (`id` null, `is_new` true; `call`, `move`, `save` and
+  `reload` reject), and closing the modal makes its views inert. Custom blocks stay unsupported in a prompt
+  ([docs/model-scripts.md](docs/model-scripts.md#in-a-prompt)).
+- **`visible_when=` on fields.** A finite Boolean such as `F("payment") == "card"` that hides the field
+  while it is false, live in the browser. Display only: the value is kept, saved and validated as usual,
+  so it is not a permission boundary. An undecided rule shows the field. A required field (`required=True`
+  or `required_when`) cannot have it; use `applies_when` with `required_when` for that.
+- **`applies_when=` and `visible_when=` on `Table(...)`.** `visible_when` hides the whole Table block.
+  `applies_when` false hides it, calculations read it as empty, and a save removes its rows, as for a field
+  that does not apply. Passing either to `Table` raised `TypeError: unexpected keyword argument` before.
+  `Document.table_states` / `tableStates` report them; `rule_states` / `ruleStates` now include `visible`.
+- **Declared totals under a table.** `Table(Line, totals=("net_total", "discount_percent", "grand_total"))`
+  names fields of the owning model to show under the table, in that order, in place of the inferred totals:
+  a read-only value for a calculated or locked field, the usual control for one people edit (the lines below
+  recalculate as it is typed), no line while its `applies_when` or `visible_when` is false, no stack while the
+  Table itself is hidden by its rule, the last line as the grand total. The
+  fields count as placed, so they leave Details and Other; a layout block that names one is warned about. A role
+  that cannot read the table sees them where the layout would otherwise put them. The
+  schema's `children` entry carries `"totals"`. A Table without `totals=` is unchanged
+  ([docs/ui.md](docs/ui.md#record-layouts)). The Playground's Quick invoice shows a discount stack.
+
+### Changed
+
+- **Related is a section of count chips.** After More information, each relation is a chip with a count badge; the
+  counts come from one read, `GET /api/{model}/{id}/related` (row scope applied, only relations the role can see),
+  sent when the section first scrolls into view, and rows load only when a relation's list shows. Number cards show
+  a placeholder until their measures arrive after the record paints ([docs/ui.md](docs/ui.md)).
+- **A Boolean on the record page is just its switch**, at rest and while editing: click, Space or Enter flips and
+  saves it, with Undo; read only shows it disabled. Forms and table cell editors draw the same bare switch.
+- **Derived values show without the 600 ms pause.** The form changes the draft only when an edit is committed, so
+  the pause before `POST /api/_draft` guarded nothing and delayed every derived value. The preview now goes at once:
+  changes in one turn of the event loop as one request, at most one in flight, and once more when it returns if the
+  draft moved meanwhile; a stale answer is still dropped. `PREVIEW_PAUSE_MS` is gone (an internal name).
+- Link dropdowns, record pickers and the search bar also search the model's own text fields the
+  option shows with `F("field")`, so typing what the subtext says finds the record ("fifo" in
+  `code · valuation`). Those matches rank after the title and `Meta.search_fields`.
+
+### Fixed
+
+- **A suggestion (`initial=`) no longer overwrites what the caller set.** One that reads a calculated field fired
+  on any save (a rate typed under manual pricing was replaced when only a note changed) and over a value sent on
+  create; one that reads through a Link that is itself suggested replaced a value sent in the same create. An
+  input now counts as changed only when its value after the write differs from the saved one, and a value the
+  caller sent always stays, in the browser and on the server (API, MCP, Eva, imports)
+  ([docs/finite-calculations.md](docs/finite-calculations.md)).
+- **Keys typed in a script control in a table cell reach it.** The grid started its own edit and swallowed the
+  first key, so typing 25 gave 5. While the focus is inside a control drawn by `control=`, its keys are its own; the
+  grid keeps Tab and Shift Tab ([docs/model-scripts.md](docs/model-scripts.md#control)).
+- **A prompt's fields are readable on a phone.** Its field grid stayed four columns (68 px each at 390 px wide, a
+  date showing one character), because the rules that narrow it belong to the record page. It now narrows with the
+  dialog's own width, at the same steps.
+- **A prompt Table that `load()` filled offers no Add row.** The modal still showed Add row, Enter on the last cell
+  added a blank row and Duplicate copied one, and submit then refused it (422). The open response now gives such a
+  table `max_rows` at its rows, and Duplicate and Insert below respect `max_rows` like Add row.
+
+## 0.4.13 (17-11-2026)
+
+### Upgrading to 0.4.13
+
+- **Nothing to change.** No migrations and no public API removed; apps on 0.4.12 run as they are.
+- **Deleting selected table rows now asks first** (by button, or by Enter while rows are selected). A
+  frontend test that clicks Delete must confirm the dialog too.
+- **Model scripts and extensions are opt-in**: `Meta.script` and `Extend` change nothing until an app uses them.
+
+### Added
+
+- **Model scripts.** `Meta.script = "quotation.js"` names one plain JavaScript file next to the model, and the
+  model names which of its methods runs where: a field's `on_change=`, `tooltip=Js("method")`, `look=` (a fixed
+  `"strong"`, `"muted"`, `"success"`, `"warning"` or `"danger"`, or `Js("method")`) and `control=` (the input,
+  in forms and table cells), `Main(custom=)` and `Section("Title", custom=)` blocks, and `Meta.on_open`. The script
+  extends `evlet.Model` and reaches the record only through a small API (`this.field`, `this.table`, `this.call`,
+  `this.move`, `this.save`, `this.api`, `this.ui`). It loads from a hashed `/assets/scripts/` address when a record
+  opens; the CSP is unchanged, no build step or Node is involved, and the server never depends on it. A missing
+  file, a hook on a model without a script, or a script on a Table row fails at start-up
+  ([docs/model-scripts.md](docs/model-scripts.md)). The Playground's Employee shows each hook.
+- **Extend another app's model.** `class AcmeQuotation(Extend)` with `Meta.model = "quotation"`, registered with
+  `AppDefinition(extensions=(...))` (a flat app's are found like its models), adds `@validate` checks that run
+  after the model's own, `on_change` hooks on existing fields (`Meta.on_change = {"customer": "check_blacklist"}`)
+  and its own script with `on_open`, in app install order. It cannot add or change fields, formulas, states,
+  actions or the model's hooks; unknown names fail at start-up
+  ([docs/model-scripts.md](docs/model-scripts.md#extending-a-model-from-another-app)).
+
+### Changed
+
+- **The README no longer asks for Node to build app TS/JS extensions**: there are none to build; app browser
+  behaviour is a model script.
+- Two-line options in a Link dropdown get room between their title and subtext.
+- Search results in a Link dropdown and ⌘K mark the part the typed text matches with a light tint.
+- Tab from the field before a child table goes straight to its first cell. The ↗ arrow on a Link
+  field and the Focus and Columns buttons by a table's title take no Tab stop.
+- As the window narrows (or zooms in), a record page's activity column folds first, at 1380 px, and
+  the menu after it, at 1220 px. Folded, it is a named button ("Activity") at the end of the
+  breadcrumb row instead of a bare edge arrow. `DocFrame(narrowWhen=...)` takes the media query.
+- With rows selected, Enter in a child table deletes them. Deleting selected rows, by key or button,
+  now asks first; Undo stays in the toast.
+
+## 0.4.12 (17-11-2026)
+
+### Upgrading to 0.4.12
+
+- **`Meta.search_fields` is checked when the class is defined**: up to eight distinct names of the
+  model's fields. A typo now fails at import instead of when the schema is built.
+- **Search results change order** for models with `Meta.search_fields`: Link dropdowns, record pickers
+  and the search bar now rank fuzzy matches instead of listing text matches in list order. To keep the
+  old behaviour for a model, remove `Meta.search_fields` (its default search fields still serve the
+  list's search box). The list's own search box is unchanged.
+- **Custom `LinkSource`s** (`frontend/src/evlet/ui/fields.ts`): `search()` gets a fourth argument,
+  the Link's context; `canCreate()` and `create()` are new and optional. Front ends that call
+  `apiLinks(api, schema)` need nothing; pass `{ quickCreate }` to offer Create new.
+- Apps that tested the Link dropdown or the palette against `GET /api/{model}?q=` should expect
+  `GET /api/{model}/search` instead.
+
+- **Braces in `help_text` now name fields.** A help text with a literal `{` or `}` fails when its class
+  is defined; write `{{` and `}}`. A help text whose braces name a field that does not exist fails with
+  the model, field and name.
+- **To show a subtext under a Table cell,** name the row's fields in the field's existing `help_text`,
+  such as `rate = Currency(..., help_text='per {uom}')`. No new attribute, migration or frontend change is
+  needed; plain help text keeps showing only in the row editor and on forms.
+
+### Search and Link options
+
+- **Fuzzy, ranked record search.** A model with `Meta.search_fields` is searched in its title and those
+  fields by Link dropdowns, record pickers and the search bar: whole value, then start, then a word's
+  start, then inside a word, then the characters in order. A new route, `GET /api/{model}/search`,
+  serves all three with the role's row scope and readable fields
+  ([docs/model-engine.md](docs/model-engine.md#record-search-and-link-options)). Limits are in
+  [docs/performance.md](docs/performance.md#record-search).
+- **Link filters on the server.** The dropdown sends the Link's name and only the form values its
+  `Ref` filters read; the server applies the filters as declared.
+- **`Option`** (`from evlet import Option`): what a Link option shows, title and a muted subtext below
+  it, declared as text, `F("field")`, `F("link.field")` and `Count`, `Sum`, `Min` or `Max` over a related
+  model, keyed by form values with `Ref`. Set it on `Link(..., option=)` or the target's `Meta.option`;
+  `hook=` runs trusted code for the rest.
+- **Create new from a Link.** The dropdown's last option, for people who may create the target, opens a
+  quick form with the typed text in its title and the filter values filled in; the Link selects the new
+  record.
+- The Playground shows each: customers by name or email with the email below, invoice options with their
+  customer and total, and projects with what was invoiced to the invoice's customer.
+
+### Fixed
+
+- **Mod+S (⌘S or Ctrl+S) while a child table cell or the record's title is being edited** commits
+  that value first, as leaving it would, so the save includes it and the cell shows it. Text that
+  can't be read still stops the save with the field's error, as in a parent field.
+- **A child table's Link cell shows its ↗ go-to arrow on hover** while the table is not being
+  edited, as a Link field does: nudged, with the "Open <name>" hint. It stays out of the Tab order.
+- **Tab into a child table takes one stop.** Tab from the field before it starts editing its first
+  editable cell (Shift+Tab from after it, its last), or lands on Add row when it has no rows. Row
+  selection and the column controls are reached from the cells with ← and ↑
+  ([docs/ui.md](docs/ui.md#field-and-tab-order)).
+
+### Added
+
+- **The record's side column (activity and attachments) folds to its edge** from a round button
+  like the sidebar's collapse button, and the choice is remembered per user.
+
+- **Reactive help text and Table row subtext.** `help_text` may name fields in braces: `{uom}` on the
+  same record or row, `{parent.currency}` on the record that owns a Table row. The browser fills them in as
+  the values change, with no request; a choice reads by its label and a Link by its record's title. In a
+  child table such a help text shows as a small grey line under the cell's value (`help_text='per {uom}'`
+  reads "per Box"), and the row keeps its height; plain help text stays in the row editor. Names are
+  checked when the class is defined, and the schema lists them in `help_fields`
+  ([docs/model-engine.md](docs/model-engine.md#reactive-help-text)). The Playground's Quick invoice now
+  has lines with item, unit, quantity and rate.
 
 ## 0.4.11 (17-11-2026)
 

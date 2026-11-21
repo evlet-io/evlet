@@ -165,6 +165,7 @@ describe('ChildTable over a record store', () => {
       host.querySelector<HTMLButtonElement>('thead [role="checkbox"]')!.click();
       expect(host.querySelector('.g-selinfo')!.textContent).toBe('4 selected');
       [...host.querySelectorAll<HTMLButtonElement>('.g-bar button')].find(button => button.textContent!.includes('Delete'))!.click();
+      document.querySelector<HTMLButtonElement>('.modal-wrap [data-primary]')!.click();
       expect(lines.rows.peek()).toHaveLength(0);
       // Empty again: the header and the Add row placeholder, no total line.
       expect(host.querySelector('.g-empty')).toBeNull();
@@ -748,5 +749,137 @@ describe('ChildTable focus view', () => {
     expect(host.querySelector('.grid.max')).not.toBeNull();
     key(document.activeElement!, 'Escape');
     expect(host.querySelector('.grid.max')).toBeNull();
+  });
+});
+
+// ---------- Tab into the table, and the Link cell's go-to arrow ----------
+
+describe('ChildTable Tab entry and Link go-to', () => {
+  /** A field before the table and one after it, as on a record form. */
+  const around = (table: () => HTMLElement) => render(() => {
+    const before = document.createElement('input'), after = document.createElement('input');
+    before.className = 'before'; after.className = 'after';
+    return [before, table(), after];
+  });
+  /** Tab as a browser delivers it: the key, then the focus moves to the next tabbable element in the page. */
+  const tab = (from: Element, to: HTMLElement, shiftKey = false) => { key(from, 'Tab', { shiftKey }); to.focus(); };
+
+  it('Tab from the field before a table lands in the first editable cell, past the bar, header and row controls', async () => {
+    const store = await entryLines();
+    const host = around(() => ChildTable({ table: store.table('lines'), columns: ['amount', 'note', 'kind', 'phone'] }));
+    const before = host.querySelector<HTMLInputElement>('.before')!;
+    before.focus();
+    // The browser's next stop would be the table's Columns button; the table takes the focus on to its first editable cell.
+    tab(before, host.querySelector<HTMLElement>('.g-colb')!);
+    expect(focusedCell()).toBe(cellOf(rowsIn(host)[0], 'note'));
+    expect(cellOf(rowsIn(host)[0], 'note').classList.contains('editing')).toBe(true);
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[0], 'note').querySelector('input'));
+    // Shift Tab from the first cell leaves the table for the field before it.
+    key(document.activeElement!, 'Tab', { shiftKey: true });
+    expect(document.activeElement).toBe(before);
+    expect(host.querySelector('td.editing')).toBeNull();
+  });
+
+  it('Shift Tab from the field after a table lands in its last editable cell; Shift Tab from Add row too', async () => {
+    const store = await entryLines();
+    const host = around(() => ChildTable({ table: store.table('lines'), columns: ['note', 'kind', 'phone', 'amount'] }));
+    const after = host.querySelector<HTMLInputElement>('.after')!;
+    after.focus();
+    tab(after, host.querySelector<HTMLElement>('.g-add')!, true);
+    expect(focusedCell()).toBe(cellOf(rowsIn(host)[1], 'phone'));
+    expect(document.activeElement).toBe(cellOf(rowsIn(host)[1], 'phone').querySelector('input'));
+    // Tab past the last cell reaches Add row; Shift Tab there goes back to the last cell.
+    key(document.activeElement!, 'Tab');
+    expect(document.activeElement).toBe(host.querySelector('.g-add'));
+    key(document.activeElement!, 'Tab', { shiftKey: true });
+    expect(focusedCell()).toBe(cellOf(rowsIn(host)[1], 'phone'));
+  });
+
+  it('Tab into an empty table lands on Add row, and Enter there adds a row', async () => {
+    const { api } = backend();
+    const store = new RecordStore({ api, schema, model: 'order', today: () => '2026-11-01' });
+    await store.create({ title: 'Empty' });
+    const host = around(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'rate'] }));
+    const before = host.querySelector<HTMLInputElement>('.before')!;
+    before.focus();
+    tab(before, host.querySelector<HTMLElement>('.g-colb')!);
+    const add = host.querySelector<HTMLButtonElement>('.g-add')!;
+    expect(document.activeElement).toBe(add);
+    add.click();
+    expect(store.table('lines').rows.peek()).toHaveLength(1);
+  });
+
+  it('a click on the bar is not redirected, and the arrows reach the row and header controls from the cells', async () => {
+    const store = await entryLines();
+    const host = around(() => ChildTable({ table: store.table('lines'), columns: ['note', 'kind'] }));
+    const columnsButton = host.querySelector<HTMLElement>('.g-colb')!;
+    columnsButton.focus();
+    expect(document.activeElement).toBe(columnsButton);
+    const first = cellOf(rowsIn(host)[0], 'note');
+    first.focus();
+    key(first, 'ArrowLeft');
+    expect(document.activeElement).toBe(rowsIn(host)[0].querySelector('.g-ctl [role="checkbox"]'));
+    key(document.activeElement!, 'ArrowRight');
+    expect(document.activeElement).toBe(first);
+    key(first, 'ArrowUp');
+    expect(document.activeElement).toBe(host.querySelector('thead .g-ctl [role="checkbox"]'));
+    key(document.activeElement!, 'ArrowDown');
+    expect(document.activeElement).toBe(first);
+  });
+
+  it('shows the Link cell\'s go-to arrow with its Open hint while the table is not being edited', async () => {
+    const store = await entryLines();
+    store.table('lines').rows.peek()[0].field('product').set(id(2));
+    const links = { search: async () => [{ id: id(2), title: 'Licence' }], title: () => cell<string | null>('Licence'),
+      href: (model: string, row: string) => `/m/${model}/${row}` };
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['note', 'product'], links }));
+    const product = cellOf(rowsIn(host)[0], 'product');
+    expect(product.classList.contains('editing')).toBe(false);
+    const arrow = product.querySelector<HTMLAnchorElement>('.in-link-box > a.link-go')!;
+    expect(arrow).not.toBeNull();
+    expect(arrow.getAttribute('href')).toBe(`/m/product/${id(2)}`);
+    expect(arrow.querySelector('.link-go-hint')!.textContent).toBe('Open Licence');
+    // Out of the Tab order, which moves between cells; a click on it opens the record, not the cell's editor.
+    expect(arrow.getAttribute('tabindex')).toBe('-1');
+    arrow.addEventListener('click', event => event.preventDefault());
+    arrow.click();
+    expect(product.classList.contains('editing')).toBe(false);
+    // A row without a value shows no arrow.
+    expect(cellOf(rowsIn(host)[1], 'product').querySelector('.link-go')).toBeNull();
+  });
+});
+
+// ---------- a column hidden by its rule on every row ----------
+
+/** The order with a rate that shows only while the order's stage is open: a visible_when that reads only the parent. */
+async function ratedByStage(lines = 2) {
+  const ruled = structuredClone(schema) as any;
+  const order = ruled.models.find((item: any) => item.name === 'order');
+  const rule = { $expr: 'eq', args: [{ $expr: 'ref', field: 'stage', scope: 'parent' }, { $expr: 'literal', type: 'text', value: 'open' }] };
+  ruled.models.find((item: any) => item.name === 'order_lines').fields.find((field: any) => field.name === 'rate').visible_when = rule;
+  order.calculation.plan.fields.unshift({ expression: rule, field: 'rate', kind: 'visible_when', path: ['lines'], reads: [['parent', null, 'stage']],
+    result_type: 'boolean', rounding: null, scale: null, stored: true, target: 'lines[*].rate:visible_when', target_type: 'currency' });
+  const { api } = backend();
+  const store = new RecordStore({ api, schema: ruled, model: 'order', today: () => '2026-11-01' });
+  await store.create({ title: 'Ruled', stage: 'open', children: { lines: Array.from({ length: lines }, (_, index) => ({ _key: `r${index}`, qty: '1', rate: '2.50' })) } });
+  return store;
+}
+const headersOf = (host: Element) => [...host.querySelectorAll('thead th[data-key]')].map(th => (th as HTMLElement).dataset.key);
+
+describe('a column its rule hides on every row', () => {
+  it('goes while the parent hides the field on every row and comes back when one row shows it', async () => {
+    const store = await ratedByStage();
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'] }));
+    expect(headersOf(host)).toEqual(['product', 'qty', 'rate', 'amount']);
+    store.field('stage').set('won');
+    expect(store.table('lines').rows.peek().every(row => row.field('rate').rules.peek().visible === false)).toBe(true);
+    expect(headersOf(host)).toEqual(['product', 'qty', 'amount']);
+    expect(cellOf(rowsIn(host)[0], 'rate')).toBeUndefined();
+    store.field('stage').set('open');
+    expect(headersOf(host)).toEqual(['product', 'qty', 'rate', 'amount']);
+    // One row that shows the field is enough to bring the column back.
+    store.field('stage').set('won');
+    store.table('lines').rows.peek()[1].field('rate').rules.set({ applies: true, required: false, locked: false, visible: true });
+    expect(headersOf(host)).toEqual(['product', 'qty', 'rate', 'amount']);
   });
 });

@@ -40,9 +40,10 @@ A field declared `column=False` (a currency source, say) starts hidden in a chil
 Columns menu and is left out of a list's default columns; the form still shows it
 ([model-engine.md](model-engine.md#more-field-types)).
 
-Values the record fills itself (`derived=True`) show while the person edits: once they pause
-for 600 ms the form asks the server for a preview (`POST /api/_draft/{model}`) and shows what
-`derive()` set, without making it an unsaved change. Formulas (`compute=`) show at once without
+Values the record fills itself (`derived=True`) show while the person edits: as soon as an edit
+is committed (a field left, Enter, an option picked; never on each keystroke) the form asks the
+server for a preview (`POST /api/_draft/{model}`) and shows what `derive()` set, without making
+it an unsaved change. There is no pause to wait for. Formulas (`compute=`) show at once without
 a request.
 
 A Table the record fills itself (`derived=True`, [model-engine.md](model-engine.md#derived-values))
@@ -97,8 +98,14 @@ The form of a saved record leaves out what the header and the cards or strip sho
 record number nothing can edit (the breadcrumb, or in a side panel the subtitle, shows it), and the cards' or
 strip's fields. While a side panel hides the cards or strip (`Meta.panel_summary = False`), the form keeps their
 fields. So a section left with only such fields, such as Other holding the number, does not show. A new record's
-form keeps everything. Related records are a row of "more information"
-that counts each relation while closed and lists every one when open. A slim footer under the form has
+form keeps everything. Related records are a section of their own after "more information", under the
+same grey heading. Closed, each relation is a chip with its name and a small count badge (no add button);
+the names come from the schema at once, and the badges show a placeholder until one read counts every relation
+(`GET /api/{model}/{id}/related`, docs/meaning.md), sent once the section first scrolls into view. A chip opens
+the section at its relation; open, each relation lists a page of five once its list shows. The record's own
+values always paint first: the per-record measures of the key cards or summary strip are asked for after that,
+and each such card shows a pulsing placeholder until its number comes, as a card with a linked record does
+until its title comes. Counts and measures only read; a save asks for them again. A slim footer under the form has
 Created and Modified (who and when), the record ID with a copy button, and a Copy link button for the
 record's address; More has Copy link and Copy record ID too, and More > Duplicate starts a copy
 ([below](#duplicate)). The side column is 370 px wide.
@@ -143,6 +150,13 @@ scrolls with it.
 
 A record page has no tabs (removed in 0.4): every record uses the [compact record page](#compact-record-page).
 Its content comes first; Activity is in the side column, which a narrow window opens as a drawer.
+The side column folds before the sidebar: at 1380 px and under it is a drawer, and the sidebar
+becomes one at 1220 px, so as the window narrows (or zooms in) the page gives up its right edge
+first, and the column stays folded once the sidebar has left. On a wide page a round button on
+the side column's edge folds it away; folded, a button named after it ("Activity", or
+"Attachments") at the end of the breadcrumb row brings it back, the same button that opens the
+drawer in a narrow window. The choice is kept per user in the browser
+(`evlet.<username>.sideCollapsed`), like the sidebar's.
 
 Two options change this per model:
 
@@ -150,7 +164,7 @@ Two options change this per model:
 class Project(Model):
     class Meta:
         summary = False                              # no summary strip
-        side_blocks = ('related', 'files')           # keep the automatic Related row and the attachments
+        side_blocks = ('related', 'files')           # keep the automatic Related section and the attachments
 ```
 
 `side_blocks` takes `key_fields`, `related`, `files` and `info`, each once. On the record page `files`
@@ -216,7 +230,7 @@ matter in the panel, `Meta.panel` names what to keep, in order, and hides everyt
 
 ```python
     class Meta:
-        panel = ('Ticket', 'related', 'info')   # a section, the Related row and Record info
+        panel = ('Ticket', 'related', 'info')   # a section, the Related section and Record info
 ```
 
 Names are section titles, field names, `Table` field names, the record's parts (`activity`,
@@ -317,22 +331,37 @@ class Employee(Model):
 | Block | Zone | What it shows |
 |---|---|---|
 | `Main(fields, title=None)` | main | A group of fields. With a title it shows a small heading. |
-| `Main('table_name')` | main | One Table, with its title bar (title, row count, Add, Focus, Columns), total line and totals. |
+| `Main('table_name')` | main | One Table, with its title bar (title, row count, Add, Focus, Columns), total line and totals: the inferred ones, or the fields its `totals=` declares. |
 | `Section(title, fields, *, collapsible=True, collapsed=True, flow='rows', panel=True, description=None)` | more information | Fields. `collapsed` is `True` (closed, the default), `False` (open) or `'empty'` (closed while every field is empty). `('Title', fields)` is a section that can't collapse, so it starts open. |
 | `TableSection('table_name', *, collapsible=True, collapsed=True, panel=True)` | more information | One Table, with the same title bar. `'empty'` is closed while the table has no rows. A Table name on its own is `TableSection(name)`. |
-| `Related(model, link=None, *, label, filters, fields, limit, order)` | more information | Records of `model` whose Link `link` points to this record, `limit` a page (default 5, at most 20), with a pager and **View all**. |
+| `Related(model, link=None, *, label, filters, fields, limit, order)` | more information | Records of `model` whose Link `link` points to this record, `limit` a page (default 5, at most 20), with a pager and **View all**. `fields` are its columns, as many as it names up to 12. |
 | `Html(content)` | more information | Text from the app. `{field}` shows that field of the record. |
 | `Chart(type, x=None, y=..., *, model, link=None, filters, label)` | more information | Declared measures of `model` over the records that point to this one: `'stat'` numbers, or `'bar'` or `'line'` grouped by `x` (`'status'`, `'due:month'`). |
 
 - **A Table is never a field.** It is always its own block, `Main('lines')` or `TableSection('lines')`.
   The form of 0.4.9, `Main(fields, 'lines', ...)`, still works: it reads as `Main(fields)` followed by
   `Main('lines')` for each Table named.
-- **Nothing is lost.** Every visible field shows somewhere; `hidden=True` keeps it out and `applies_when`
-  still hides one that does not apply. Fields no block names go, in declaration order, to one last
+- **Nothing is lost.** Every visible field shows somewhere; `hidden=True` keeps it out, `applies_when`
+  still hides one that does not apply, and `visible_when` hides one while it is false (keeping its value). A
+  Table's `applies_when` and `visible_when` hide its whole block, in the primary area or as a row of more
+  information ([finite-calculations.md](finite-calculations.md#table-rules)). Fields no block names go, in declaration order, to one last
   Section labelled Other (closed, like any section). Tables no block names follow it, each as a
   `TableSection` under its own label. On a new record a row of more information that holds a required
   field starts open. A layout need not name the title, name or State, which the header shows; left
   out, they still go to Other, where a new record fills them in.
+- **Totals under a table.** Without `totals=`, the totals under a table are inferred: the parent's sums over its
+  columns (a sum shows there only while its column is hidden) and the parent fields calculated only from those sums.
+  `Table(Line, totals=("net_total", "discount_percent", "grand_total"))` replaces them with the named fields of the
+  record, as a right-aligned stack in that order: label on the left, value on the right, the last line emphasized
+  as the grand total. A calculated, read-only or locked field is a read-only value, formatted as in the form; a
+  field the person may edit is edited in its line with its usual control, shows its error there, and recalculates
+  the lines below it as it is typed. Tab reaches the stack after the table. A field whose `applies_when` or `visible_when` is
+  false has no line, and a table with no rows, or hidden by its own `applies_when` or `visible_when`, shows no totals. A declared field keeps its line even while its column's
+  sum shows in the total line, which stays as it is. The stack is the same in `Main('lines')`, a `TableSection`,
+  a Prompt's table and the side panel, and takes the full width on a phone. A field in a table's totals counts as
+  placed: it is not in Details or Other, and a block that names it again is ignored with a layout warning
+  (a Prompt refuses the layout), so the field shows once. A role that cannot read the table still sees the
+  fields it may read: in the block that names them, else under Other.
 - **Names.** Every area keeps a stable name, its `name` in the schema, for `Meta.panel` and Controls: a
   section, and a `Main` with a title, by its title; the first untitled `Main` by the model's label and
   each later untitled one by the label and its number ("Employee 2"); a Table by its field name; a
@@ -353,7 +382,7 @@ class Employee(Model):
   `Tab` and `Meta.tabs` still fail with their message.
 - **No tabs.** `Tab`, `Meta.tabs` and `Meta.default_tab` were removed in 0.4. Using them fails when the
   model is defined, with a message pointing to `Main` and `Section`. Activity is in the side column;
-  Related is a row of more information.
+  Related is a section after more information.
 - **`link`** is the other model's Link field to this one. Leave it out when there is exactly one.
 - **Filters** use the list filter syntax on the other model's own fields, as a dict
   (`{'status__ne': 'done'}`) or a list of conditions. `Ref('field')` compares with a field of this
@@ -367,7 +396,7 @@ class Employee(Model):
   the class is defined; anything else outside the list is dropped. Record values are always
   inserted as text, never as markup. `{{` and `}}` are literal braces. It is the app's own trusted
   text: never put user-entered HTML in it.
-- **The automatic Related row** turns off for a model whose layout declares a `Related` block. Name
+- **The automatic Related section** turns off for a model whose layout declares a `Related` block. Name
   `related` in `Meta.side_blocks` to keep it. A model without Related blocks keeps it, as before.
 - **Permissions.** Related rows come from `GET /api/{model}` with the block's filters and
   `[link, "eq", <record id>]`, and charts from `GET /api/{model}/aggregate`, so row scopes, field
@@ -522,12 +551,12 @@ Step colours come from `State.Step(color=...)`; a final step coloured `rose` rea
 badge wraps with the title in the side panel and on a phone; the bar scrolls sideways there.
 See [states-actions.md](states-actions.md#how-a-state-and-a-status-show).
 
-Related records (`Meta.relations`) show in the Related row of "more information": closed, it counts the
-records of each relation; open, it has a short table per relation. Nothing is asked for when a
-record opens: a relation's records load when the Related row first scrolls into view (at once in a
-browser without IntersectionObserver). One server page of five records serves both the count and the
-table, and it stays loaded while the record is open; a save of the record reloads the pages already
-shown. Each section shows five rows; with more, a small pager under it reads "1–5 of 12" with previous and
+Related records (`Meta.relations`) show in the Related section after "more information": closed, a chip
+per relation with its count; open, a short table per relation. Nothing is asked for when a record opens:
+the counts come from one read when the section first scrolls into view (at once in a browser without
+IntersectionObserver), and a relation's records load when its table first shows. A loaded page's total
+then stands in for the count. Pages stay loaded while the record is open; a save of the record reloads
+the counts and the pages already shown. Each section shows five rows; with more, a small pager under it reads "1–5 of 12" with previous and
 next, each a server page (`limit` and `offset`). **View all** in the section's heading opens the
 related model's list filtered to this record (`?f=[["customer","eq","<id>"]]`), shown as a
 filter that can be removed. It is left out when the role cannot filter that list on the link.
@@ -1033,6 +1062,23 @@ The DOM order of a form is its visual order, and nothing uses a positive `tabind
 Tab skips values that can't change (read only, locked or calculated); a click still focuses them,
 showing why, and screen readers read them. A record page has no tabs.
 
+A child table is one Tab stop. Tab from the field before it starts editing its first editable cell
+(Shift+Tab from the field after it, its last), past the table's bar, header and row controls; an
+empty table lands on Add row, where Enter adds a row. Inside, Tab and Shift+Tab move between
+editable cells, Tab past the last cell reaches Add row, and Shift+Tab before the first leaves the
+table. The other controls stay reachable from the cells: ← from a row's first cell focuses its
+checkbox (Tab then reaches its move and Edit buttons, → comes back), and ↑ from the first row
+focuses Select all, from where Shift+Tab reaches the table bar's Focus and Columns (↓ comes back). On a
+record page the Focus and Columns buttons by the table's title are for the mouse and take no Tab stop,
+as does a Link field's ↗ arrow; Tab goes from field to field.
+
+With rows selected, Enter in the table (not while a cell is being edited) is Delete. Delete, by key or
+by the button, asks first: the dialog's Delete has the focus, so a second Enter confirms, and the
+toast that follows has Undo.
+
+Search results (a Link's dropdown and the records in ⌘K search) mark the part the typed text matches
+with a light accent tint: the text itself, or else its characters in order, as the search ranks them.
+
 ### Focus on new forms
 
 A new record (the full page `/app/<model>/new` and the side panel) and a prompt focus their first
@@ -1200,8 +1246,8 @@ does (⌘S and ⇧⌘D on a Mac, Ctrl+S and Ctrl+Shift+D elsewhere).
 - **Duplicate is Alt+Shift+D.** Like Alt+N it is read from the physical key, because Option+Shift+D
   on a Mac types a character.
 - **Plain keys stay out of the way.** C, / and ? never fire while typing in a field. Mod+S does.
-- **Mod+S commits what is typed first.** In a text field it commits the typing, as leaving the field
-  would. Only when that commit fails (the text can't be read, or a required field is empty) does Mod+S
+- **Mod+S commits what is typed first.** In a text field, a child table cell being edited or the
+  title being edited in place, it commits the typing, as leaving it would, and the save includes it. Only when that commit fails (the text can't be read, or a required field is empty) does Mod+S
   stop: the field shows its error, a "Not saved. Check the highlighted values." message appears, and
   the focus stays in the field. On any other control (a select, tags, an image, a link picker) a
   stale error from the server does not stop it: the save runs, as with the Save button, and the
@@ -1243,8 +1289,10 @@ open Controls. Portal users see the times only. See
 A Link with `filters` ([business-capabilities.md](business-capabilities.md#link-filters)) is
 handled in the form with the values the person has entered, saved or not:
 
-- The picker lists only records that fit, by sending the filters to the list route. While a field
-  the filters read is empty, it lists nothing and says "Choose Company first.".
+- The picker lists only records that fit: it names the Link and sends the form values its filters
+  read to the search route, which applies the filters on the server
+  ([model-engine.md](model-engine.md#link-filters-with-form-values)). While a field the filters read
+  is empty, it lists nothing and says "Choose Company first.".
 - When a field changes, every Link whose filters read it is checked again: on the same row, and
   `Ref("parent.<field>")` Links on the rows of its tables. A value that still fits is kept. One that
   no longer fits is cleared, with a note under the field (a tooltip in a table cell) such as
@@ -1254,6 +1302,29 @@ handled in the form with the values the person has entered, saved or not:
   field permissions apply. When it cannot tell, the value stays and the save reports it.
 
 The server still checks every Link on preview and save; the form only avoids keeping a stale value.
+
+### Link dropdown
+
+A Link's dropdown is a search box over a list of options, from `GET /api/{model}/search`
+([model-engine.md](model-engine.md#record-search-and-link-options)):
+
+- **Matching.** A target with `Meta.search_fields` is matched in its title and those fields, fuzzily
+  and ranked on the server: whole value, then start, then a word's start, then inside a word, then the
+  characters in order. Other targets match the text as the list's search box does.
+- **Each option** shows the record's mark and title, and below it, smaller and muted, its subtext when
+  it has one: what the Link's `option=` or the target's `Meta.option` declares ("In stock: 12 box"),
+  or the search field that matched (a barcode). Long lines end with an ellipsis.
+- **Create new.** When the person may create the target (its `permissions.create`, not read-only, not
+  a child table), the last option is **Create new <field> "<typed text>"** (without text, **Create new
+  <field>**). The arrow keys reach it after the results and Enter or a click opens it. It opens a small
+  form for the target in a dialog, **New <model>**: its title field filled with the typed text, the
+  fields the Link's filters name filled with the form's values (a new project for the invoice's
+  customer), and its required fields without a default; at most eight fields. **Create <model>** saves
+  through the usual create route, with every check, and the Link selects the new record. Cancel, Esc or
+  the close button leaves the Link as it was. Errors show under the fields as on the record page.
+
+The search bar (the palette's **Records**) uses the same route for each model with search fields,
+five options each, with the subtext under each title.
 
 ### List card
 

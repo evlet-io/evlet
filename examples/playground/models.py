@@ -2,10 +2,10 @@
 
 from datetime import date
 
-from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Link, LongText, Main, Model, Naming,
-                   Activity, Ref, Registry, Related, RichText, Rule, Section, Select, Series, State, Sum, Table, TableSection, Text,
+from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Js, Link, LongText, Main, Model, Naming,
+                   Activity, Option, Ref, Registry, Related, RichText, Rule, Section, Select, Series, State, Sum, Table, TableSection, Text,
                    ValidationError, action, state)
-from evlet.calc import F
+from evlet.calc import F, parent
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
 # KWD has 3 decimal places (ISO 4217); XCR is a client's own credit unit the demo gives 5 in Controls, Currencies.
@@ -18,7 +18,11 @@ class Customer(Model):
         # The record title (Link pickers, lists, search) is the customer's name.
         title_field = 'customer_name'
         list_fields = ('customer_name', 'email', 'active')
+        # Link dropdowns, record pickers and the search bar match the name and the email fuzzily, ranked:
+        # "zms" finds Zayed Medical Supplies, and part of an email address finds its customer.
         search_fields = ('customer_name', 'email')
+        # Every customer option shows the email below the name (a Link's own option= replaces it).
+        option = Option(subtext=F('email'))
         # flow='columns': down the left column (name, email, active), then the right (currency); the Tab key goes
         # the same way, and notes, full width, sits below both columns. A layout of sections only: the first one is
         # the record page's primary area.
@@ -74,7 +78,11 @@ class Invoice(Model):
     customer = Link(Customer, required=True)
     # Only projects of the invoice's customer. Changing the customer clears a project of another one,
     # with a note under the field; the server names the mismatch if one is saved anyway.
-    project = Link('project', filters={'customer': Ref('customer')}, help_text="One of this customer's projects.")
+    # Below each project, what was invoiced to this invoice's customer on it: a Sum over invoices keyed by the
+    # form's customer, built in the search query. "Create new project" fills in the customer.
+    project = Link('project', filters={'customer': Ref('customer')}, help_text="One of this customer's projects.",
+                   option=Option(subtext=('Invoiced to this customer: ', Sum('total', model='invoice', link='project',
+                                                                             where={'customer': Ref('customer')}))))
     # help_text reads under the input; tooltip sits behind a ? icon at its right end.
     reference = Text(required=True, unique=True, max_length=40, label='Customer reference',
                      help_text="The customer's reference for this invoice.",
@@ -116,7 +124,8 @@ class Payment(Model):
         # instead of keeping them for later (docs/ui.md, Unsaved changes).
         autosave = False
 
-    invoice = Link(Invoice, required=True)
+    # Each invoice option shows its customer (through the Link, with its title) and total.
+    invoice = Link(Invoice, required=True, option=Option(subtext=(F('customer'), ' · ', F('total'))))
     reference = Text(required=True, unique=True, max_length=40)
     # The currency is a field on the payment itself.
     currency = Select(CURRENCIES, required=True, default='AED')
@@ -236,7 +245,8 @@ TEAM = Hierarchy('employee', parent='reports_to')
 
 class Skill(Child):
     skill = Text(required=True, max_length=80)
-    level = Select(['learning', 'practised', 'expert'], required=True, default='practised')
+    # The Employee script (employee.js) colours the level and draws it as three buttons in the Skills table.
+    level = Select(['learning', 'practised', 'expert'], required=True, default='practised', look=Js('level_look'), control='level_picker')
 
 
 class SkillLevel(Child):
@@ -270,7 +280,12 @@ class Employee(Model):
             Related('employee', 'reports_to', label='Direct reports', fields=('full_name', 'email', 'department'), order='full_name'),
             Related('employee', 'reports_to', label='Reports in the same department', filters={'department': Ref('department')},
                     fields=('full_name', 'email')),
+            Section('Profile', custom='profile'),
         )
+        # Browser behaviour the model cannot declare, in one JavaScript file next to this one (docs/model-scripts.md):
+        # the methods below are named on fields and in the layout; the server never runs it.
+        script = 'employee.js'
+        on_open = 'opened'
         # People counted by the charts above; the list shows the count too.
         measures = {'people': Count()}
         # A key card may show a value derive() sets, like a formula's result.
@@ -282,8 +297,8 @@ class Employee(Model):
     # Deleting someone who still has reports is refused by the reports_to Link.
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'delete')),
                    'viewer': Rule(('read',), scope=TEAM.team())}
-    full_name = Text(required=True, max_length=120, label='Full name')
-    email = Text(max_length=254)
+    full_name = Text(required=True, max_length=120, label='Full name', tooltip=Js('name_tip'))
+    email = Text(max_length=254, on_change='email_changed')
     department = Select(DEPARTMENTS)
     reports_to = Link('employee', index=True, label='Reports to')
     # Section rows group skills under headings such as "Languages" or "Tools" (docs/model-engine.md#section-rows).
@@ -368,8 +383,41 @@ class PointBalance(Model):
     points = Integer(required=True, default=0)
 
 
+class ExpenseSplit(Child):
+    person = Text(required=True, max_length=80)
+    amount = Currency(minimum='0', default='0.00', currency='AED')
+
+
+class ExpenseReceipt(Child):
+    reference = Text(required=True, max_length=40)
+    # A rule over the claim, not the row: below 500 every receipt hides it, so the grid drops the Note column.
+    note = Text(max_length=120, visible_when=parent.amount > 500)
+
+
+class Expense(Model):
+    """An expense claim whose form follows its payment: field and Table rules (docs/finite-calculations.md#field-rules)."""
+    class Meta:
+        description = 'Expense claims: the form shows what the payment needs.'
+        list_fields = ('title', 'payment', 'amount')
+        layout = (Main(('title', 'amount', 'payment', 'card_last4', 'split_total')), Main('splits'), Main('receipts'))
+
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'delete')),
+                   'viewer': Rule(('read',))}
+    title = Text(required=True, max_length=120)
+    amount = Currency(minimum='0', default='0.00', currency='AED')
+    payment = Select(['cash', 'card', 'split'], required=True, default='cash')
+    # Shown only for a card payment. Display only: switching to cash hides it and keeps what was typed.
+    card_last4 = Text(max_length=4, label='Card (last 4)', visible_when=F('payment') == 'card')
+    # Only a split payment has people to split it between. Switching away hides the Table, the total reads it
+    # as empty, and saving removes its rows.
+    splits = Table(ExpenseSplit, label='Split between', applies_when=F('payment') == 'split')
+    split_total = Currency(currency='AED', compute=splits.sum('amount'), label='Split total')
+    # Receipts are asked for over 100; below that the Table is hidden and any receipts are kept.
+    receipts = Table(ExpenseReceipt, label='Receipts', visible_when=F('amount') > 100)
+
+
 # Items have about 200 fields and two child tables: the list filters at scale. Imported here so the
 # registry lists every Playground model; items.py links to customers by name, not by import.
 from .items import Item  # noqa: E402
 
-registry = Registry(Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item, Employee, PointMove, PointBalance, Recognition)
+registry = Registry(Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item, Employee, PointMove, PointBalance, Recognition, Expense)

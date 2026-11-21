@@ -87,8 +87,9 @@ describe('a compact record page', () => {
     const row = host.querySelector('.ev-crumb-row')!;
     expect(row.lastElementChild!.classList.contains('ev-side-toggle')).toBe(true);
     const button = row.querySelector<HTMLButtonElement>('.ev-side-toggle button')!;
-    // The panel-right icon: the shell's sidebar toggle mirrored, for the column on the right.
-    expect(button.innerHTML).toBe((await import('../ui/base')).Icon('panel-right', { size: 'sm' }).outerHTML);
+    // The panel-right icon (the shell's sidebar toggle mirrored, for the column on the right) and the column's name.
+    expect(button.querySelector('svg')!.innerHTML).toContain('M15 3v18');
+    expect(button.textContent!.trim()).toMatch(/^(Activity|Attachments)$/);
     const aside = host.querySelector<HTMLElement>('.doc-side')!;
     expect(button.getAttribute('aria-controls')).toBe(aside.id);
     expect(button.getAttribute('aria-pressed')).toBe('false');
@@ -106,6 +107,36 @@ describe('a compact record page', () => {
     await until(() => expect(doc.classList.contains('side-open')).toBe(false));
   });
 
+  it('folds the side column to its edge from a round button like the sidebar\'s, remembered per user', async () => {
+    localStorage.clear();
+    const opened = async () => {
+      const { host } = start(withSchema(shipmentSchema({ attachments: true })), `/app/shipment/${shipment}`, { storage: localStorage });
+      await until(() => expect(host.querySelector('.doc > .doc-side-edge')).not.toBeNull());
+      return host;
+    };
+    let host = await opened();
+    const doc = host.querySelector('.doc')!, edge = host.querySelector<HTMLButtonElement>('.doc > .doc-side-edge')!;
+    // The sidebar's edge button look (side-edge), on the side column's edge, controlling it.
+    expect(edge.classList.contains('side-edge')).toBe(true);
+    expect(edge.getAttribute('aria-controls')).toBe(host.querySelector('.doc-side')!.id);
+    expect(edge.getAttribute('aria-expanded')).toBe('true');
+    expect(edge.getAttribute('aria-label')).toMatch(/^Collapse (attachments|activity)/);
+    expect(doc.classList.contains('side-collapsed')).toBe(false);
+    edge.click();
+    expect(doc.classList.contains('side-collapsed')).toBe(true);
+    expect(edge.getAttribute('aria-expanded')).toBe('false');
+    expect(edge.getAttribute('aria-label')).toMatch(/^Expand (attachments|activity)/);
+    expect(Object.entries(localStorage).find(([name]) => name.endsWith('.sideCollapsed'))?.[1]).toBe('true');
+    // Another record page (after a reload, say) opens folded. Folded, the named button by the breadcrumb unfolds it.
+    stopAll();
+    host = await opened();
+    expect(host.querySelector('.doc')!.classList.contains('side-collapsed')).toBe(true);
+    host.querySelector<HTMLButtonElement>('.ev-crumb-row .ev-side-toggle button')!.click();
+    expect(host.querySelector('.doc')!.classList.contains('side-collapsed')).toBe(false);
+    expect(host.querySelector('.doc')!.classList.contains('side-open')).toBe(false);
+    localStorage.clear();
+  });
+
   it('shows the selection on the table title line: the count, Duplicate and Delete, with the row placeholder below', async () => {
     const { host } = await start(routes, `/app/shipment/${shipment}`);
     await until(() => expect(host.querySelector('.ev-cmp-table tbody tr[data-key]')).not.toBeNull());
@@ -116,9 +147,14 @@ describe('a compact record page', () => {
     // Title, count, "1 selected", Duplicate, then Delete (red, outlined).
     expect([...title.querySelectorAll('button')].slice(0, 2).map(text)).toEqual(['Duplicate', 'Delete']);
     expect(title.querySelector('.btn.ev-cmp-del.danger-soft')).not.toBeNull();
+    // Focus and Columns are for the mouse: Tab goes from the field before the table to its first cell.
+    expect([...title.querySelectorAll<HTMLButtonElement>('.ev-cmp-tools button')].map(button => button.tabIndex)).toEqual([-1, -1]);
     byText(title, 'button', 'Duplicate')!.click();
     await until(() => expect(text(title.querySelector('.ev-cmp-count'))).toBe('2'));
     byText(title, 'button', 'Delete')!.click();
+    // Delete asks first.
+    expect(document.querySelector('.modal-wrap h2')?.textContent).toBe('Delete 1 row?');
+    document.querySelector<HTMLButtonElement>('.modal-wrap [data-primary]')!.click();
     await until(() => expect(text(title.querySelector('.ev-cmp-count'))).toBe('1'));
     expect(title.querySelector('.ev-cmp-sel')).toBeNull();
   });
@@ -130,6 +166,7 @@ describe('a compact record page', () => {
     (block.querySelector('tbody tr[data-key] [role="checkbox"]') as HTMLElement).click();
     await until(() => expect(byText(title, 'button', 'Delete')).not.toBeNull());
     byText(title, 'button', 'Delete')!.click();
+    document.querySelector<HTMLButtonElement>('.modal-wrap [data-primary]')!.click();
     await until(() => expect(text(title.querySelector('.ev-cmp-count'))).toBe('0'));
     // No "No stops yet" box: the table stays, with its header and the placeholder row, and no total line or totals.
     expect(block.querySelector('.ev-cmp-empty')).toBeNull();

@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from evlet import User
+from evlet import Rule, User
 from evlet.builds import prepare
 from evlet.cli.app import create_app
 from evlet.cli.instance import create_instance
@@ -317,3 +317,147 @@ def test_build_subprocess_ignores_modules_in_the_working_directory(project, monk
     monkeypatch.chdir(cwd)
     prepare(project, resolve_packages(project, ['notes']))
     assert not marker.exists()
+
+
+ABSTRACT = '''from evlet import Child, Decimal, Integer, Link, Model, Rule, Table, Text
+from evlet.calc import F
+
+
+class TradeDocument(Model):
+    """A shared base in models/: fields, a Table and derive(), but no table of its own."""
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
+
+    class Meta:
+        abstract = True
+        calculation_language = 'finite-v1'
+
+    class Line(Child):
+        qty = Decimal(scale=2, default=1)
+        rate = Decimal(scale=2, default=0)
+        amount = Decimal(scale=2, compute=F('qty') * F('rate'))
+
+    party = Text()
+    lines = Table(Line)
+    total = Decimal(scale=2, compute=lines.sum('amount'))
+    line_count = Integer(derived=True)
+
+    def derive(self):
+        self.line_count = len(self.lines)
+
+
+class SalesOrder(TradeDocument):
+    class Meta:
+        calculation_language = 'finite-v1'
+
+
+class PurchaseOrder(TradeDocument):
+    """Inherits the base's Meta without repeating abstract: concrete."""
+'''
+
+
+def test_abstract_models_are_bases_without_tables(project, monkeypatch, tmp_path):
+    from evlet import Database, Link, Model, Registry, Text
+    from evlet.builds import discover
+    from test_rules_types import start
+    package = read_package(create_app(project, 'notes'))
+    shutil.rmtree(package.path / 'models')
+    (package.path / 'models.py').write_text(ABSTRACT)
+    monkeypatch.syspath_prepend(str(package.path.parent))
+    definition = discover(package)
+    assert [model.__name__ for model in definition.models] == ['PurchaseOrder', 'SalesOrder']
+    module = sys.modules['notes.models']
+    base = module.TradeDocument
+    assert base.__abstract__ and not module.SalesOrder.__abstract__ and not module.PurchaseOrder.__abstract__
+    registry = Registry(*definition.models)
+    tables = {entry['name'] for entry in registry.schema()['models']}
+    assert {'salesorder', 'purchaseorder'} <= tables and not any('tradedocument' in name for name in tables)
+    app = start(Database(tmp_path / 'abstract.sqlite3', registry))
+    try:
+        with app.business.context(User(1, 'admin', 'admin')) as context:
+            for model in (module.SalesOrder, module.PurchaseOrder):
+                record = context.create(model, party='Acme', children={'lines': [{'qty': '2', 'rate': '5'}, {}]})
+                record = context.get(model, record.id)
+                assert (str(record.total), record.line_count) == ('10.00', 2)
+        assert app.database.count(module.SalesOrder) == app.database.count(module.PurchaseOrder) == 1
+        with app.business.context(User(1, 'admin', 'admin')) as context, \
+                pytest.raises(ValueError, match=r'TradeDocument is abstract \(Meta.abstract = True\) and has no table'):
+            context.create(base, party='Acme')
+    finally:
+        app.database.close()
+    with pytest.raises(ValueError, match=r'TradeDocument is abstract .*; register the models built from it'):
+        Registry(base)
+
+    class Payment(Model):
+        permissions = {'admin': Rule(('read',))}
+        document = Link(base)
+    with pytest.raises(ValueError, match=r'Link Payment.document: TradeDocument is abstract'):
+        Registry(module.SalesOrder, Payment)
+    # Class-creation checks still run on an abstract class.
+    with pytest.raises(ValueError):
+        class Broken(Model):
+            class Meta:
+                abstract = True
+            x_field = Text()
+
+
+
+SHARED_LINE = '''from evlet import Child, Decimal, Text
+
+
+class LineBase(Child):
+    """A shared row base in models/: not a model of its own, and not marked abstract."""
+    qty = Decimal(scale=2, default=1)
+    rate = Decimal(scale=2, default=0)
+
+
+class PurchaseLine(LineBase):
+    """A concrete row that two documents' Tables use."""
+    item = Text(max_length=80)
+'''
+
+LINE_DOCUMENTS = '''from evlet import Model, Rule, Table, Text
+
+from .lines import PurchaseLine
+
+
+class PurchaseOrder(Model):
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
+    supplier = Text()
+    lines = Table(PurchaseLine)
+
+
+class PurchaseReturn(Model):
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
+    supplier = Text()
+    lines = Table(PurchaseLine)
+'''
+
+
+def test_discovery_skips_child_rows_declared_in_models(project, monkeypatch, tmp_path):
+    from evlet import Database, Registry
+    from evlet.builds import discover
+    from test_rules_types import start
+    for name in [name for name in sys.modules if name == 'notes' or name.startswith('notes.')]:
+        monkeypatch.delitem(sys.modules, name)
+    package = read_package(create_app(project, 'notes'))
+    shutil.rmtree(package.path / 'models')
+    (package.path / 'models').mkdir()
+    (package.path / 'models/__init__.py').write_text('')
+    (package.path / 'models/lines.py').write_text(SHARED_LINE)
+    (package.path / 'models/documents.py').write_text(LINE_DOCUMENTS)
+    monkeypatch.syspath_prepend(str(package.path.parent))
+    definition = discover(package)
+    assert [model.__name__ for model in definition.models] == ['PurchaseOrder', 'PurchaseReturn']
+    registry = Registry(*definition.models)
+    documents = sys.modules['notes.models.documents']
+    app = start(Database(tmp_path / 'lines.sqlite3', registry))
+    try:
+        with app.business.context(User(1, 'admin', 'admin')) as context:
+            for model in (documents.PurchaseOrder, documents.PurchaseReturn):
+                record = context.create(model, supplier='Gulf', children={'lines': [{'item': 'Bolt', 'qty': '3', 'rate': '2'}]})
+                rows = context.get(model, record.id).lines
+                assert [(row.item, str(row.qty), str(row.rate)) for row in rows] == [('Bolt', '3.00', '2.00')]
+    finally:
+        app.database.close()
+    for name in [name for name in sys.modules if name == 'notes' or name.startswith('notes.')]:
+        del sys.modules[name]

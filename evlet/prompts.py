@@ -13,14 +13,14 @@ import time
 from . import qb
 from .adapter import Column, TableDefinition
 from .auth import AccessError, has_role
-from .documents import Draft, handler_context, settle, source_values
+from .documents import Draft, Record, handler_context, settle, source_values
 from .identity import RecordId, jsonable
 from .models import Model, ValidationError, checked_body, storage_name
 from .permissions import trusted
 
 RESULT_LIMIT = 65536
 EXPIRES = 3600
-META = ('title', 'primary', 'layout', 'focus')
+META = ('title', 'primary', 'layout', 'focus', 'script', 'on_open')
 
 # Every Prompt class by its id (module.qualname); a ticket names the prompt it opened.
 PROMPTS = {}
@@ -62,6 +62,19 @@ class Prompt(Model):
         for key, value in vars(cls).items():
             if isinstance(value, Table):
                 value.child.__form_name__ = f'{cls.__form_name__}.{key}'
+        # A model script, as on a document (docs/model-scripts.md): its hooks on the prompt's fields and rows.
+        from .fields import Field, script_method
+        rows = [value.child for value in vars(cls).values() if isinstance(value, Table)]
+        hooked = [f'{owner.__name__}.{name}' for owner, fields in ((cls, vars(cls)), *((row, getattr(row, '__app_fields__', {})) for row in rows))
+                  for name, field in fields.items() if isinstance(field, Field) and field.hooks]
+        script, on_open = option(cls, 'script'), option(cls, 'on_open')
+        if on_open is not None:
+            hooked.append(f'{cls.__name__}.Meta.on_open')
+            script_method(on_open, f'{cls.__name__}.Meta.on_open')
+        if hooked and script is None:
+            raise ValueError(f'{hooked[0]} names a script method, so {cls.__name__} needs Meta.script, the .js file that holds it')
+        from .ui.scripts import prompt_script
+        cls.__script__ = None if script is None else prompt_script(cls, script, on_open)
 
     def __init__(self, **values):
         """Starting values, applied after load(); trusted like load()."""
@@ -75,6 +88,36 @@ class Prompt(Model):
 
     def submit(self):
         raise NotImplementedError('Define submit(self) on the prompt')
+
+
+def opens_prompt(method):
+    """Whether an @action only opens a prompt and so writes nothing: its body (after a docstring) is `return P` or
+    `return P(...)` with constant or plain-name arguments, where P is a Prompt class, as in
+    `def confirm(self): return ConfirmQuotation`. Read from the source once; anything else is False."""
+    import ast
+    import inspect
+    import textwrap
+    cached = getattr(method, '__opens_prompt__', None)
+    if cached is not None:
+        return cached
+    source = inspect.unwrap(method)
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(source)))
+    except (OSError, TypeError, SyntaxError):
+        tree = None
+    body = tree.body[0].body if tree and isinstance(tree.body[0], ast.FunctionDef) else []
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str):
+        body = body[1:]
+    returned = body[0].value if len(body) == 1 and isinstance(body[0], ast.Return) else None
+    plain = lambda node: isinstance(node, (ast.Constant, ast.Name)) or isinstance(node, ast.Attribute) and plain(node.value)
+    if isinstance(returned, ast.Call) and all(plain(item) for item in [*returned.args, *(keyword.value for keyword in returned.keywords)]):
+        returned = returned.func
+    found = isinstance(returned, ast.Name) and is_prompt(getattr(source, '__globals__', {}).get(returned.id))
+    try:
+        method.__opens_prompt__ = found
+    except AttributeError:
+        pass
+    return found
 
 
 def is_prompt(value):
@@ -120,30 +163,57 @@ def option(prompt, name, default=None):
 
 class Outcome(dict):
     """What an action or a prompt's submit() returns: a message, a record to open, a new record to review
-    prefilled (new=(Model, values)) or data for browser code. Return another Prompt to chain one."""
+    prefilled (new=(Model, values)) or data for browser code. Return another Prompt to chain one.
+
+    A model may be named by class or by name ("deliveryorder" or its resource name), in `open=(model, id)` and
+    `new=(model, values)`. A name is resolved, and the values serialized, where the outcome goes into the answer;
+    an unknown name fails there with "Unknown model"."""
     def __init__(self, message=None, *, open=None, new=None, data=None):
         super().__init__()
+        self._pending = {}
         if message is not None:
             if not isinstance(message, str) or len(message) > 500:
                 raise ValueError('An outcome message is text of at most 500 characters')
             self['message'] = message
         if open is not None:
-            self['open'] = record_ref(open)
+            if isinstance(open, tuple) and len(open) == 2 and isinstance(open[0], str):
+                if open[1] is None:
+                    raise ValueError('A record reference needs a saved record id')
+                self._pending['open'] = open
+            else:
+                self['open'] = record_ref(open)
         if new is not None:
-            if not isinstance(new, tuple) or len(new) != 2 or not isinstance(new[0], type) or not isinstance(new[1], dict):
-                raise ValueError('Pass new=(Model, values) to open a new record filled with values')
-            model, values = new
-            self['new'] = {'model': storage_name(model), 'values': serialized(model, values)}
+            if not isinstance(new, tuple) or len(new) != 2 or not isinstance(new[0], (type, str)) or not isinstance(new[1], dict):
+                raise ValueError('Pass new=(Model, values) to open a new record filled with values; Model may be its name')
+            if isinstance(new[0], type):
+                self['new'] = {'model': storage_name(new[0]), 'values': serialized(*new)}
+            else:
+                self._pending['new'] = new
         if data is not None:
             self['data'] = data
+
+    def resolve(self, registry):
+        """Resolve the models named in open= and new= through the registry and serialize the values; returns self."""
+        pending, self._pending = self._pending, {}
+        if 'open' in pending:
+            model, record_id = pending['open']
+            self['open'] = record_ref((registry.resolve(model), record_id))
+        if 'new' in pending:
+            model, values = pending['new']
+            model = registry.resolve(model)
+            self['new'] = {'model': storage_name(model), 'values': serialized(model, values)}
+        return self
 
 
 def record_ref(value):
     """(Model, id), a bound record or a draft with an id, as {"model": name, "id": id}."""
     if isinstance(value, tuple) and len(value) == 2 and isinstance(value[0], type):
         model, record_id = value
-    elif isinstance(value, Draft) or hasattr(value, '_model') and hasattr(value, '_data'):
-        model, record_id = getattr(value, '_definition', None) or value._model, value.id
+    elif isinstance(value, Draft):
+        model, record_id = value._definition, value.id
+    elif isinstance(value, Record):
+        # Record.model is the class unless the model has a field named model; the record's own class is always it.
+        model, record_id = value._model, value.id
     else:
         raise ValueError('Name a record as (Model, id) or pass the record itself')
     if record_id is None:
@@ -256,7 +326,8 @@ def submit_draft(context, draft):
         raise AccessError(403, 'This context is read only')
     settle(context, draft, complete=True)
     with trusted(), handler_context(context, draft):
-        return draft._definition.submit(draft)
+        result = draft._definition.submit(draft)
+    return result.resolve(context._business.registry) if isinstance(result, Outcome) else result
 
 
 # ---------- over HTTP: tickets, the surface and the routes ----------
@@ -293,6 +364,8 @@ def outcome_of(business, context, value, *, origin=None, model=None, record_id=N
         return {'prompt': issue(business, context, value, origin=origin, model=model, record_id=record_id)}
     if value is None:
         return {}
+    if isinstance(value, Outcome):
+        value = value.resolve(business.registry)
     encoded = json.dumps(jsonable(value), allow_nan=False)
     if len(encoded) > RESULT_LIMIT:
         raise ValueError('An outcome exceeds 64 KiB')
@@ -307,6 +380,8 @@ def check(prompt):
     blocks, warnings = layout_blocks(prompt, option(prompt, 'layout'), visible, title)
     if warnings:
         raise ValueError(warnings[0])
+    if any(block['kind'] == 'custom' for block in blocks):
+        raise ValueError(f'{prompt.__name__}.Meta.layout: custom blocks are not supported in a prompt')
     if option(prompt, 'focus') is not None:
         check_focus(f'{prompt.__name__}.Meta.focus', prompt, option(prompt, 'focus'))
     return blocks
@@ -327,10 +402,12 @@ def schema(registry, prompt, name):
         'behavior': {key: {kind: {item: rule(value) for item, value in entry.items()} if kind == 'filters' else rule(entry)
                            for kind, entry in value.items()} for key, value in plans(prompt).items()},
         'children': [{'name': table, 'model': declared.child.__form_name__, 'label': declared.label or table.replace('_', ' ').capitalize(),
-                      'row_changes': True, 'min_rows': declared.min_rows, 'max_rows': min(declared.max_rows, 100)}
+                      'row_changes': True, 'min_rows': declared.min_rows, 'max_rows': min(declared.max_rows, 100),
+                      **({'totals': list(declared.totals)} if declared.totals else {})}
                      for table, declared in prompt.__tables__.items()],
         'permissions': {'create': True, 'update': True, 'delete': False}, 'actions': [], 'autosave': False,
         **({'focus': option(prompt, 'focus')} if option(prompt, 'focus') else {}),
+        **({'script': vars(prompt)['__script__']} if vars(prompt).get('__script__') else {}),
     }]
     for table, declared in prompt.__tables__.items():
         entries += schema(registry, declared.child, declared.child.__form_name__)
@@ -351,9 +428,14 @@ def surface(business, user, ticket, prompt, draft, model, record, errors, states
         readable = business.policy.fields(user, model)
         title = getattr(record, field, None) if field in readable else None
         source = {'model': business.registry.name_for(model), 'id': record.id, 'title': str(title or record.id)}
+    models = schema(business.registry, prompt, name)
+    # A Table that load() (or the starting values) filled takes no new rows (form_draft): the grid offers none.
+    for child in models[0]['children']:
+        if draft._rows.get(child['name']):
+            child['max_rows'] = len(draft._rows[child['name']])
     return {'ticket': ticket, 'name': name, 'title': option(prompt, 'title') or prompt.__name__,
             'primary': option(prompt, 'primary') or 'Submit', 'source': source,
-            'models': schema(business.registry, prompt, name), 'values': draft_values(draft), 'errors': errors, 'states': states}
+            'models': models, 'values': draft_values(draft), 'errors': errors, 'states': states}
 
 
 def check_origin(business, context, origin, model, record_id):

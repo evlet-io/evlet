@@ -7,17 +7,17 @@ from . import guards, activity, ledger, meaning, measures, permissions, sequence
 from .app import Application
 from .database import ConflictError, Database, NotFoundError
 from .fields import (Boolean, Currency, CurrentUser, Date, DateTime, Decimal, Duration, Email, Integer,
-                     Image, Link, LongText, MultiSelect, Percent, Phone, Reference, RichText, Select, Tags, Text, Time, URL)
+                     Image, Js, Link, LongText, MultiSelect, Percent, Phone, Reference, RichText, Select, Tags, Text, Time, URL)
 from .migrations import (AddField, AddIndex, AddTable, AlterField, CreateModel, DropField, Migration, MigrationPlan, Recompute,
                          RenameField, RetireField, RunData, SchemaError)
 from .models import Model, Registry, ValidationError, Child
-from .declarations import Ref, Table, Query, action, depends
+from .declarations import Extend, Option, Ref, Table, Query, action, depends
 from .sequences import Naming, Sequence, Series
 from .statemanager import State, release, state, validate
 
 __all__ = [
     "AddField", "AddIndex", "AddTable", "AlterField", "Application", "Boolean", "ConflictError", "CreateModel", "DropField",
-    "Currency", "CurrentUser", "Database", "Date", "DateTime", "Decimal", "Email", "Image", "Integer", "Link",
+    "Currency", "CurrentUser", "Database", "Date", "DateTime", "Decimal", "Email", "Image", "Integer", "Js", "Link",
     "LongText", "Migration", "MigrationPlan", "Model", "MultiSelect", "NotFoundError", "Registry", "RenameField",
     "SchemaError", "Select", "Text", "URL", "ValidationError",
     "Duration", "Naming", "Percent", "Phone", "Recompute", "Reference", "RetireField", "RichText", "RunData", "Sequence", "Series", "State", "Tags", "Time",
@@ -60,7 +60,7 @@ from .auth import Security
 __all__ += ["AppDefinition", "Instance", "Schedule", "Security"]
 from .routing import ApiScope, ControlsAccess, Docs, Frontend, Host, Request, Response
 __all__ += ["ApiScope", "ControlsAccess", "Docs", "Frontend", "Host", "Request", "Response"]
-__all__ += ["Child", "Table", "Ref", "Query", "action", "validate", "depends", "release", "state"]
+__all__ += ["Child", "Extend", "Table", "Option", "Ref", "Query", "action", "validate", "depends", "release", "state"]
 from .forms import Chart, Report, Column
 __all__ += ["Chart", "Report", "Column"]
 
@@ -89,9 +89,9 @@ __all__ += ["DevSignIn"]
 __all__ += ["PrintDesign"]
 
 from .ledger import LockTimeout
-from .migrations import SetAppendOnly
+from .migrations import DropIndex, SetAppendOnly
 
-__all__ += ["LockTimeout", "SetAppendOnly"]
+__all__ += ["DropIndex", "LockTimeout", "SetAppendOnly"]
 
 from .currencies import (currency_decimals, currency_unit, round_money, round_stored_money, set_currency_decimals,
                          set_currency_display)

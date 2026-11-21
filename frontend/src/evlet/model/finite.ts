@@ -161,7 +161,11 @@ class Scope {
     const target = scope === 'row' ? this.member : scope === 'parent' ? this.row.parent : this.row;
     return target ? this.document.result(target, field) : pending('PARENT_CONTEXT_REQUIRED', [this.at]);
   }
-  members(table: string) { return (this.row.children[table] || []).map(member => new Scope(this.document, this.row, member, this.at, this.misses)); }
+  // A Table whose applies_when is false reads as empty; a save removes its rows.
+  members(table: string) {
+    if (this.document.decided(this.row, table, 'applies_when', true) === false) return [];
+    return (this.row.children[table] || []).map(member => new Scope(this.document, this.row, member, this.at, this.misses));
+  }
   address(field: string) { return (this.member || this.row).label + field; }
 }
 
@@ -346,10 +350,14 @@ export const wireScale = (field: any) => field.target_type === 'currency' ? 2 : 
 export interface CurrencyInput { decimals?: Record<string, number>; settings?: Record<string, string> }
 
 const address = (path: string[], field: string) => path.map(name => name + '[*].').join('') + field;
-// Plan entries: a calculation (no kind) or a field's initial and rules (applies_when, required_when, locked_when).
-const KINDS = ['initial', 'applies_when', 'required_when', 'locked_when'], RULES = ['applies_when', 'required_when', 'locked_when'];
+// Plan entries: a calculation (no kind) or a field's initial and rules (applies_when, required_when, locked_when, visible_when).
+// A Table's applies_when and visible_when are entries with table: true and the Table's name as field.
+const RULES = ['applies_when', 'required_when', 'locked_when', 'visible_when'], KINDS = ['initial', ...RULES];
 const nodeName = (entry: any) => entry.kind ? entry.field + ':' + entry.kind : entry.field;
-export type RuleState = {applies: boolean; required: boolean; locked: boolean};
+// visible: whether the field shows (it applies and its visible_when is not false; undecided shows it).
+export type RuleState = {applies: boolean; required: boolean; locked: boolean; visible: boolean};
+// A Table's rules on the row that owns it: applies_when false empties it for calculations and a save removes its rows.
+export type TableState = {applies: boolean; visible: boolean};
 // Whether setting a source leaves it unchanged; objects and arrays always count as a change.
 const sameValue = (values: any, field: string, value: unknown) => own(values, field) && (value === null || typeof value !== 'object') && values[field] === value;
 const KEY = /^[A-Za-z0-9_-]{1,64}$/;
@@ -475,7 +483,8 @@ export class FiniteDocument {
   private steps: Array<{node: Node; handle: string; name: string; row: Row; field: any; inputs: Set<Node>; target: Node; meta: any}> = [];
   observers = new Map<Node, Array<(result: Result) => void>>();
   ruleObservers = new Map<string, Array<(states: Record<string, RuleState>) => void>>();
-  // Initial suggestions waiting to be written, and fields the host set in the current write (touched).
+  // Initial suggestions waiting to be written, and the fields the host set in its last write (touched); host
+  // inputs that arrive after a write (lookups, today) never override what it set.
   armed = new Set<Node>();
   touched = new Set<Node>();
   // Lock results of the document as loaded (handle -> field -> true, false or null when undecided).
@@ -517,7 +526,6 @@ export class FiniteDocument {
     this.bind();
     const created = new Set([...this.deps.keys()].filter(node => this.rows.get(nodeParts(node)[0])!.created && node.endsWith(':initial')));
     this.settle(new Set(), new Set(this.deps.keys()), this.touched, created);
-    this.touched = new Set();
     this.takeLocks();
     this.revision = 1;
   }
@@ -618,8 +626,11 @@ export class FiniteDocument {
     for (const [handle, row] of this.rows) {
       for (const [position, field] of this.templates.get(row.path.join('/')) || []) {
         // applies_when also runs when its own field changes, so a value set while it does not apply is cleared.
-        const node = nodeKey(handle, nodeName(field)), inputs = new Set<Node>(field.kind === 'applies_when' ? [nodeKey(handle, field.field)] : []);
+        const node = nodeKey(handle, nodeName(field)), inputs = new Set<Node>(field.kind === 'applies_when' && !field.table ? [nodeKey(handle, field.field)] : []);
         for (const [scope, table, name] of field.reads) {
+          // A Table that does not apply reads as empty, so its readers follow its applies_when.
+          if ((scope === 'membership' || scope === 'member') && this.fields.has(row.path.join('/') + '\u0000' + table + ':applies_when'))
+            inputs.add(nodeKey(handle, table + ':applies_when'));
           if (scope === 'self') inputs.add(nodeKey(handle, name));
           else if (scope === 'parent' && row.parent) inputs.add(nodeKey(row.parent.handle, name));
           else if (scope === 'membership') inputs.add(nodeKey(handle, '#' + table));
@@ -675,15 +686,17 @@ export class FiniteDocument {
     return this.today === null || this.today === undefined ? pending('COMPUTE_INPUT_MISSING', ['@today']) : sourceValue({type: 'date'}, this.today, '@today');
   }
 
-  // An initial is armed when its row is new or a document input it reads changed (host inputs such as
-  // lookups and today() do not arm it). A field touched in this write disarms it. An armed initial writes
-  // its first ready result unless the field is locked. applies_when clears its field.
+  // An initial is armed when its row is new or an input it reads changed through a write: a value the host set,
+  // a row added or removed, or an initial written, and what follows from those. A result that is new, or moved
+  // only by a host input (a lookup, today()), does not arm it. A field touched in the last write disarms it. An
+  // armed initial writes its first ready result unless the field is locked. applies_when clears its field.
   private settle(changed: Set<Node>, fresh: Set<Node>, touched: Set<Node> = new Set(), arm: Set<Node> = new Set()) {
     const budget = new Budget(this.budget), updated = new Set<Node>();
+    const written = new Set([...changed].filter(node => !node.startsWith('@')));
     let evaluated = 0, skipped = 0;
     for (const {node, handle, name, row, field, inputs, target, meta} of this.steps) {
       if (field.kind === 'initial') {
-        if (arm.has(node) || anyChanged(inputs, changed, true)) this.armed.add(node);
+        if (arm.has(node) || anyChanged(inputs, written, false)) this.armed.add(node);
         if (touched.has(target)) this.armed.delete(node);
       }
       if (!fresh.has(node) && !anyChanged(inputs, changed, false)) { skipped++; continue; }
@@ -700,12 +713,15 @@ export class FiniteDocument {
       if (scope.misses.size) this.misses.set(node, scope.misses); else this.misses.delete(node);
       evaluated++;
       this.counts.set(node, (this.counts.get(node) || 0) + 1);
-      if (!same(outcome, this.results.get(node))) { this.results.set(node, outcome); changed.add(node); updated.add(node); }
+      if (!same(outcome, this.results.get(node))) {
+        this.results.set(node, outcome); changed.add(node); updated.add(node);
+        if (anyChanged(inputs, written, false)) written.add(node);
+      }
       let value: unknown = undefined, write = false;
       if (field.kind === 'initial' && this.armed.has(node) && outcome.state !== 'pending') {
         this.armed.delete(node);
         if (outcome.state === 'ready' && !this.locked(row, field.field)) { value = wire(outcome.value, wireScale(field)); write = true; }
-      } else if (field.kind === 'applies_when' && outcome.state === 'ready' && outcome.value === false && (ownValue(row.values, field.field) ?? null) !== null
+      } else if (field.kind === 'applies_when' && !field.table && outcome.state === 'ready' && outcome.value === false && (ownValue(row.values, field.field) ?? null) !== null
         // A field locked on the saved row keeps its value; the server refuses the write instead.
         && (ownValue(this.locks.get(handle) || {}, field.field) ?? false) === false) {
         value = null; write = true;
@@ -714,6 +730,7 @@ export class FiniteDocument {
         row.values[field.field] = value;
         changed.add(target);
         updated.add(target);
+        written.add(target);
       }
     }
     this.trace = {evaluated, skipped, steps: budget.steps, changed: [...updated].map(node => this.address(node)).sort()};
@@ -878,7 +895,9 @@ export class FiniteDocument {
       for (const node of old.keys()) if (!live.has(node)) { this.results.delete(node); this.counts.delete(node); this.misses.delete(node); }
       for (const node of live.keys()) if (!old.has(node)) fresh.add(node);
     }
-    const updated = this.settle(new Set([...batch.sources, ...batch.membership]), fresh, batch.touched,
+    // A write (a value set, a row changed) replaces the touched fields; host inputs alone keep the last write's.
+    if (batch.touched.size || batch.structure || [...batch.sources].some((key: string) => !key.startsWith('@'))) this.touched = batch.touched;
+    const updated = this.settle(new Set([...batch.sources, ...batch.membership]), fresh, this.touched,
       new Set([...fresh].filter(node => node.endsWith(':initial'))));
     if (!updated.size && !batch.sources.size && !batch.structure) return [];
     if (batch.structure || [...batch.sources].some((key: string) => !key.startsWith('@'))) this.pristine = false;
@@ -914,7 +933,7 @@ export class FiniteDocument {
     return () => { const items = this.observers.get(node); if (items?.includes(listener)) items.splice(items.indexOf(listener), 1); };
   }
 
-  // Call listener(ruleStates(handle)) after each batch that changes one of this row's rule results.
+  // Call listener(ruleStates(handle)) after each batch that changes one of this row's rule results (its Tables' too).
   observeRules(handle: string, listener: (states: Record<string, RuleState>) => void) {
     this.usable();
     this.row(handle);
@@ -949,15 +968,28 @@ export class FiniteDocument {
     return own(saved, field) && saved[field] !== false;
   }
 
-  // {field: {applies, required, locked}} for fields of this row that declare rules.
+  // {field: {applies, required, locked, visible}} for fields of this row that declare rules.
   // Undecided rules (pending, error or null) fail closed: the field applies, is required and is locked.
+  // visible is whether it shows: it applies and its visible_when is not false (undecided shows it).
   ruleStates(handle: string): Record<string, RuleState> {
     const row = this.row(handle), states: Record<string, RuleState> = {};
     for (const [, entry] of this.templates.get(row.path.join('/')) || []) {
-      if (!RULES.includes(entry.kind) || own(states, entry.field)) continue;
+      if (!RULES.includes(entry.kind) || entry.table || own(states, entry.field)) continue;
       const name = entry.field, applies = this.decided(row, name, 'applies_when', true) !== false;
       const required = Boolean(this.schema.get(row.path.join('/')).fields[name].required || this.decided(row, name, 'required_when', true));
-      states[name] = {applies, required: applies && required, locked: this.locked(row, name)};
+      states[name] = {applies, required: applies && required, locked: this.locked(row, name),
+        visible: applies && this.decided(row, name, 'visible_when', true) !== false};
+    }
+    return Object.fromEntries(Object.keys(states).sort().map(name => [name, states[name]]));
+  }
+
+  // {table: {applies, visible}} for the Tables of this row that declare rules. Undecided shows and keeps them.
+  tableStates(handle: string): Record<string, TableState> {
+    const row = this.row(handle), states: Record<string, TableState> = {};
+    for (const [, entry] of this.templates.get(row.path.join('/')) || []) {
+      if (!entry.table || own(states, entry.field)) continue;
+      const name = entry.field, applies = this.decided(row, name, 'applies_when', true) !== false;
+      states[name] = {applies, visible: applies && this.decided(row, name, 'visible_when', true) !== false};
     }
     return Object.fromEntries(Object.keys(states).sort().map(name => [name, states[name]]));
   }

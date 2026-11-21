@@ -4,8 +4,8 @@ import re
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from .fields import ACTIVE, Field, Image, Link, MISSING, RULES, Reference, active_layer
-from .declarations import STATE_FIELD, Table, ReactiveQuery, DEFAULT_TABLE_ROWS
+from .fields import ACTIVE, Field, Image, Link, MISSING, RULES, Reference, active_layer, check_help_references, help_references
+from .declarations import STATE_FIELD, Table, ReactiveQuery, DEFAULT_TABLE_ROWS, Ref
 from .identity import RecordId
 from .naming import standard
 from .audit import COLUMNS as AUDIT
@@ -137,6 +137,44 @@ def declared_hooks(cls, name, meta, fields, tables, row):
     return tuple(derives)
 
 
+def check_search_meta(name, meta, fields):
+    """Meta.search_fields and Meta.option, checked when the class is defined. view_for() checks the rest when the
+    app builds its schema (each search field must be a visible short text field)."""
+    if meta is None:
+        return
+    search = getattr(meta, 'search_fields', None)
+    if search is not None:
+        if not isinstance(search, (tuple, list)) or len(search) > 8 or len(set(search)) != len(search) \
+                or any(type(item) is not str or item not in fields for item in search):
+            raise ValueError(f'{name}.Meta.search_fields: name up to eight distinct fields of {name}, such as ("code", "email"), '
+                             f'not {search!r}')
+    option = getattr(meta, 'option', None)
+    if option is not None:
+        from .declarations import Option
+        if not isinstance(option, Option):
+            raise ValueError(f'{name}.Meta.option takes an Option(title=, subtext=, hook=)')
+        if option.refs():
+            raise ValueError(f'{name}.Meta.option: Ref() reads the form a Link is on; declare it in that Link\'s option=')
+
+
+def check_totals(name, fields, tables):
+    """Table(totals=...): each name is a shown field of the owning model, listed once, under one Table."""
+    owners = {}
+    for table_name, table in tables.items():
+        for field in getattr(table, 'totals', ()):
+            where = f'{name}.{table_name}: totals names {field!r}'
+            if field in tables:
+                raise ValueError(f'{where}, which is a Table; name fields of {name}')
+            if field not in fields:
+                raise ValueError(f'{where}, which is not a field of {name}')
+            if fields[field].hidden:
+                raise ValueError(f'{where}, which is hidden=True; a total shows on the form')
+            if field in owners:
+                raise ValueError(f'{where} twice' if owners[field] == table_name
+                                 else f'{where}, which is already in the totals of {owners[field]}')
+            owners[field] = table_name
+
+
 class ModelType(type):
     def __new__(mcls, name, bases, namespace):
         fields = {}
@@ -201,6 +239,7 @@ class ModelType(type):
         cls.__app_fields__ = MappingProxyType(fields)
         cls.__app_stored__ = MappingProxyType({key: value for key, value in fields.items() if value.stored})
         cls.__tables__ = MappingProxyType(tables)
+        check_totals(name, fields, tables)
         if getattr(cls, '__transient__', False) and any(getattr(table, 'sections', False) for table in tables.values()):
             raise ValueError(f'{name}: section rows (Table(..., sections=True)) are for Tables of saved records, '
                              'not dialogs, reports or slips')
@@ -225,6 +264,9 @@ class ModelType(type):
                 raise ValueError(f'{name}: {removed} was removed in 0.4.6; declare a State with rules and a release step '
                                  '(docs/states-actions.md)')
         cls.__ledger__ = ledger
+        # Meta.abstract = True: a base other models inherit; read from the class's own Meta only, never inherited.
+        own_meta = namespace.get('Meta')
+        cls.__abstract__ = bool(isinstance(own_meta, type) and vars(own_meta).get('abstract', False))
         # Meta.image names the Image field shown as the record's avatar or thumbnail.
         image = getattr(meta, 'image', None)
         if image is not None and (type(image) is not str or not isinstance(fields.get(image), Image)):
@@ -232,6 +274,7 @@ class ModelType(type):
             raise ValueError(f'{name}.Meta.image: name an Image field of {name}, not {image!r}'
                              + (f' (it has {", ".join(images)})' if images else '; it declares none'))
         cls.__image__ = image
+        check_search_meta(name, meta if 'Meta' in namespace else None, fields)
         if ledger:
             cls.__append_only__, cls.__timestamps__, cls.__indexes__ = ledger_options
         elif getattr(cls, '__row__', False) and '__internal_fields__' not in namespace and 'evlet_position' not in fields:
@@ -250,7 +293,7 @@ class ModelType(type):
         if ledger:
             pass  # Trusted code writes ledger rows through the session; nothing is declarative.
         elif recorded or states or sources or tables or 'permissions' in namespace or cls.__derives__ or cls.__hooks__ or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
-                or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
+                or any(getattr(field, key, None) is not None for key in (*RULES, 'visible_when')) for field in fields.values()):
             cls.__declaration_mode__ = True
         reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values', 'before', 'is_new', 'release'}
         if isinstance(fields.get('source'), Reference) and not tables:
@@ -262,6 +305,18 @@ class ModelType(type):
             quoted = ', '.join(f'"{field}"' for field in clashes)
             raise ValueError(f'{owned}: {quoted} {"is" if len(clashes) == 1 else "are"} reserved on documents '
                              f'({", ".join(sorted(reserved))}); rename the field')
+        # Reactive help text: {field} names a field of this model; {parent.field} one of the record that owns a
+        # row's Table, checked here for every Table this class declares.
+        row = getattr(cls, '__row__', False)
+        for field in fields.values():
+            check_help_references(cls, field, fields)
+            if not row and any(ref.startswith('parent.') for ref in help_references(field.help_text)):
+                raise ValueError(f'{name}.{field.name}: help_text names a parent. field, but {name} is not a Table row '
+                                 '(only Child rows have a parent record)')
+        for table in tables.values():
+            if isinstance(table.child, type) and issubclass(table.child, Model):
+                for field in table.child.__app_fields__.values():
+                    check_help_references(table.child, field, table.child.__app_fields__, parent=cls)
         return cls
 
     # The fields of a model: those its class declares, plus the instance fields (x_) of the database in
@@ -361,6 +416,10 @@ class Model(metaclass=ModelType):
         return instance
 
 
+def abstract_refusal(model, instead):
+    return f'{model.__name__} is abstract (Meta.abstract = True) and has no table; {instead}'
+
+
 @dataclass(frozen=True)
 class ChildTable:
     parent: type
@@ -371,13 +430,15 @@ class ChildTable:
 
 
 class Registry:
-    def __init__(self, *models):
+    def __init__(self, *models, extensions=()):
         from .fields import Integer
         from .calc import CalcError, LIMITS, uses_finite, root_language
         self.children = []
         for model in models:
             if isinstance(model, type) and issubclass(model, Child):
                 raise ValueError(f'{model.__name__} is a Child row model. Declare row models inside their document with Table(...)')
+            if isinstance(model, type) and getattr(model, '__abstract__', False):
+                raise ValueError(abstract_refusal(model, 'register the models built from it'))
         expanded = list(models)
 
         def finite(model, seen=()):
@@ -456,6 +517,8 @@ class Registry:
                     if target is None:
                         raise ValueError(f'Unresolved Link {model.__name__}.{field.name}: {field.target}')
                     field.target = target
+                if isinstance(field, Link) and getattr(field.target, '__abstract__', False):
+                    raise ValueError(f'Link {model.__name__}.{field.name}: ' + abstract_refusal(field.target, 'link a model built from it'))
                 if isinstance(field, Link) and field.target not in models:
                     raise ValueError(f"Link target for {model.__name__}.{field.name} is not registered")
         for model in models:
@@ -507,6 +570,12 @@ class Registry:
         from .ui.metadata import compile_layouts
         layouts, self.layout_warnings = compile_layouts(self)
         self.layouts = MappingProxyType(layouts)
+        # Model scripts (Meta.script and the hooks that name its methods, evlet/ui/scripts.py), checked at start-up.
+        from .ui.scripts import compile_extensions, compile_scripts
+        scripts, self.script_roots = compile_scripts(self)
+        self.scripts = MappingProxyType(scripts)
+        # Additions apps make to another app's models (evlet.Extend), in app install order.
+        self.extensions = MappingProxyType(compile_extensions(self, extensions))
         # What a released record's stored results read, which a move out of the released set may not change.
         posted_reads = step('posted_reads')
         self.posted_reads = MappingProxyType({model: posted_reads(self, model, plans.get(model)) for model in models
@@ -588,6 +657,8 @@ class Registry:
         return name
 
     def resolve(self, value):
+        if isinstance(value, type) and getattr(value, '__abstract__', False):
+            raise ValueError(abstract_refusal(value, 'use a model built from it'))
         if isinstance(value, type):
             self.name_for(value)
             return value
@@ -640,13 +711,46 @@ def check_currency_source(model, field):
                          f'({field.currency} is not one on {owner.__name__})')
 
 
+def check_option(registry, model, option, where):
+    """The fields an Option reads exist: F("field") or F("link.field") on model, and each aggregate's related
+    model, its Link back to model, its field and its where= fields (evlet/search.py)."""
+    from .calc import Expr
+    for part in (*(option.title or ()), *(option.subtext or ())):
+        if isinstance(part, str):
+            continue
+        if isinstance(part, Expr):
+            name, _, rest = part.meta['name'].partition('.')
+            field = model.__fields__.get(name)
+            if field is None or rest and not isinstance(field, Link):
+                raise ValueError(f'{where}: {model.__name__} has no {"Link " if rest else ""}field {name}')
+            if rest:
+                target = registry.resolve(field.target)
+                if rest not in target.__fields__:
+                    raise ValueError(f'{where}: {target.__name__} has no field {rest}')
+            continue
+        related = registry.resolve(part.model)
+        link = related.__fields__.get(part.link)
+        if not isinstance(link, Link) or registry.resolve(link.target) is not model:
+            raise ValueError(f'{where}: {related.__name__}.{part.link} must be a Link to {model.__name__}')
+        for name in (*([part.field] if part.field else []), *(part.where or {})):
+            if name not in related.__fields__ or not related.__fields__[name].stored:
+                raise ValueError(f'{where}: {related.__name__} has no stored field {name}')
+        if part.function == 'sum' and getattr(related.__fields__[part.field], 'sql_type', '') != 'INTEGER':
+            raise ValueError(f'{where}: Sum needs a number field; {part.field} is a {related.__fields__[part.field].kind} field')
+
+
 def resolve_sources(registry, definition):
     from .query import SqlQuery
     for field in definition.__declared_fields__.values():
         if isinstance(field, Link):
             field.target = registry.resolve(field.target)
-            for name in field.filters:
-                if name not in field.target.__fields__: raise ValueError('Link filters must name stored target fields')
+            for name, value in field.filters.items():
+                # "field" or "field__op" (the list route's operators): a stored field of the target, compared with a
+                # literal or with a value of this form (Ref).
+                if name.split('__', 1)[0] not in field.target.__fields__: raise ValueError('Link filters must name stored target fields')
+                if '__' in name: SqlQuery(registry, field.target).where({name: None if isinstance(value, Ref) else value})
+            if field.option is not None:
+                check_option(registry, field.target, field.option, f'{definition.__name__}.{field.name}: option')
         elif field.filters: raise ValueError('Selection filters require a Link field')
         if field.fetch:
             link_name, target_name = field.fetch.split('.')
@@ -662,4 +766,7 @@ def resolve_sources(registry, definition):
             if set(source.fields) - set(target.__fields__): raise ValueError('Query output names must be stored target fields')
             source.fields = {name: target.__fields__[name] for name in source.fields}
             for name in source.filters: SqlQuery(registry, target).where({name: None})
+    option = getattr(getattr(definition, 'Meta', None), 'option', None)
+    if option is not None:
+        check_option(registry, definition, option, f'{definition.__name__}.Meta.option')
     for table in definition.__tables__.values(): resolve_sources(registry, table.child)

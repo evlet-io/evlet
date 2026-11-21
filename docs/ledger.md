@@ -186,9 +186,12 @@ model.
   adds a `Meta.indexes` entry, with `unique=True` when it is unique. An entry may name `id`.
 - `SetAppendOnly('pointmove', True)` turns append only on, also for a table that has rows: it only
   adds the triggers. `SetAppendOnly('pointmove', False)` turns it off and is the only way to.
-- On an append-only model, `RenameField`, `RetireField`, `DropField` and `AlterField` raise
-  `SchemaError`, because they rewrite stored rows. Turn append only off in an earlier migration
-  first.
+- On an append-only model, `RenameField`, `RetireField` and `AlterField` change the schema, not what the
+  rows recorded: `migrate` lifts the append-only triggers around each one, inside the migration's
+  transaction, and adds them back at once, so a migration needs no `SetAppendOnly` around them and a
+  `RunData` step after them still cannot update or delete rows. `DropField` and an `AlterField` with
+  `fill=` would change what the rows recorded, so they raise `SchemaError`: turn append only off in
+  an earlier migration first.
 - Switching an existing normal model to `ledger = True`, or back, is refused in this version.
   Create a new ledger model and move the rows with a `RunData` step.
 

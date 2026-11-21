@@ -1,5 +1,7 @@
 """Prompts (one transient form) and bound records, shown with a Quotation that confirms into Customer Orders."""
 
+from datetime import date
+
 import pytest
 
 from evlet import (Application, Child, Currency, Database, Date, Decimal, Link, LocalAuth, Main, Model, Outcome, Prompt,
@@ -13,9 +15,14 @@ ALL = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('r
        'viewer': Rule(('read',))}
 
 
+def note_on(self):
+    return SourceNote
+
+
 class Customer(Model):
     permissions = ALL
     customer_name = Text(required=True)
+    note = action('Note')(note_on)
 
     @action('Rename', inputs={'new_name': Text(required=True, max_length=60)})
     def rename(self, new_name):
@@ -52,6 +59,12 @@ class Quotation(Model):
                State.Rule(('submitted', 'partial'), 'confirmed', key='full', by=()),
                State.Rule('confirmed', 'partial', key='reopen_part', by=()),
                State.Rule(('partial', 'confirmed'), 'submitted', key='reopen_all', by=())))
+
+    note = action('Note')(note_on)
+
+    @action('Reschedule')
+    def reschedule(self):
+        return Reschedule(from_start='2026-02-02')
 
     @action('Confirm', available_when=(F('docstate') == 'submitted') | (F('docstate') == 'partial'))
     def confirm(self):
@@ -100,6 +113,7 @@ class CustomerOrder(Model):
 
     lines = Table(Line, required=True)
     total = Currency(currency='AED', compute=lines.sum('amount'))
+    note = action('Note')(note_on)
     docstate = State(State.Step('draft', 'Draft'), State.Step('submitted', 'Submitted', release=True),
                      State.Step('cancelled', 'Cancelled', final=True),
                      rules=(State.Rule('draft', 'submitted', 'Submit', key='submit', primary=True),
@@ -154,6 +168,35 @@ class QuickNote(Prompt):
 
     def submit(self):
         return Outcome('Noted', data={'customer': self.customer, 'text': self.text})
+
+
+class Reschedule(Prompt):
+    """Four dates that suggest today: load() sets one, the starting values another, code a third."""
+    from_load = Date(initial=today())
+    from_start = Date(initial=today())
+    from_code = Date(initial=today())
+    untouched = Date(initial=today())
+
+    def load(self, quotation):
+        self.from_load = quotation.quote_date
+
+    def submit(self):
+        return Outcome(data={name: str(getattr(self, name)) for name in ('from_load', 'from_start', 'from_code', 'untouched')})
+
+
+class SourceNote(Prompt):
+    """One prompt opened from three models: it reads which through self.source.model."""
+    answer = Text(required=True)
+
+    def submit(self):
+        model = self.source.model
+        if self.answer == 'open':
+            return Outcome(open=(model.__name__.lower(), self.source.id))
+        if self.answer == 'new':
+            return Outcome(new=('customer', {'customer_name': f'From {model.__name__}'}))
+        if self.answer == 'unknown':
+            return Outcome(new=('nosuchmodel', {}))
+        return Outcome(data={'model': model.__name__})
 
 
 def quick_note(context):
@@ -260,6 +303,8 @@ def test_an_action_returns_a_prompt_with_a_ticket_and_writes_nothing(app):
     model = surface['models'][0]
     assert model['name'] == '_prompt.confirm_quotation' and model['children'][0]['model'] == '_prompt.confirm_quotation.lines'
     assert [block['kind'] for block in model['record_layout']['blocks']] == ['section', 'table']
+    # load() filled the lines, so the table takes no new rows: max_rows is the rows it has, and the grid offers no Add.
+    assert model['children'][0]['max_rows'] == 2
     # The finite plan ships, so the browser calculates as on a record.
     assert model['calculation']['plan']['tables']['$root']['model'] == '_prompt.confirm_quotation'
     assert read(app, Quotation, quotation_id)._detail == before._detail
@@ -422,6 +467,46 @@ def test_tools_get_the_prompt_and_answer_it_by_ticket(app):
     assert read(app, Quotation, quotation_id).docstate == 'partial'
 
 
+def test_an_assistant_is_asked_once_for_an_action_that_opens_a_prompt(app):
+    """Over MCP, running Confirm only opens its prompt (its body is `return ConfirmQuotation`): a read, no approval.
+    Approval is asked once, on the submit that writes."""
+    from evlet import qb
+    from evlet.auth import KeyAccess
+    from evlet.tools import ApprovalNeeded
+    from evlet.prompts import opens_prompt
+    assert opens_prompt(Quotation.confirm) and opens_prompt(Quotation.reschedule) and opens_prompt(Quotation.note)
+
+    def writes_first(self):
+        self.valid_until = None
+        return ConfirmQuotation
+
+    def computes(self):
+        return ConfirmQuotation(customer_po=self.create_order([], None))
+    assert not opens_prompt(writes_first) and not opens_prompt(computes) and not opens_prompt(Quotation.create_order)
+    quotation_id = quotation(app, '2')
+    changes = [{'kind': 'setting', 'key': 'mcp.allow_writes', 'value': True}]
+    assert client(app)('POST', '/api/_controls/overrides', {'changes': changes})[0] == 200
+    assistant = User(1, 'admin', 'admin', access=KeyAccess(True, None, None, 0))
+    tools = app.business.tools
+
+    def approvals():
+        with app.database._connection() as connection:
+            return connection.run(qb.select('evlet_tool_approvals', 'id', 'tool', 'status').order_by('id')).all()
+    ran = tools.execute(assistant, 'run_action', {'model': 'quotation', 'id': str(quotation_id), 'action': 'confirm'})
+    prompt = ran['_outcome']['prompt']
+    assert prompt['models'][0]['name'] == '_prompt.confirm_quotation' and approvals() == []
+    row = prompt['values']['children']['lines'][0]['_key']
+    values = {'order_date': '2026-11-20', 'children': {'lines': [{'_key': row, 'confirm_qty': '1'}]}}
+    with pytest.raises(ApprovalNeeded):
+        tools.execute(assistant, 'answer_prompt', {'ticket': prompt['ticket'], 'values': values})
+    assert [(item['tool'], item['status']) for item in approvals()] == [('answer_prompt', 'pending')]
+    with app.database.transaction() as tx:
+        tx.connection.run(qb.update('evlet_tool_approvals', status='approved'))
+    done = tools.execute(assistant, 'answer_prompt', {'ticket': prompt['ticket'], 'values': values})
+    assert done['open']['model'] == 'customerorder' and read(app, Quotation, quotation_id).docstate == 'partial'
+    assert len(approvals()) == 1
+
+
 def test_action_inputs_open_as_a_prompt_over_http(app):
     with app.business.context(ADMIN) as context:
         customer = context.create(Customer, customer_name='Acme')
@@ -441,3 +526,78 @@ def test_action_inputs_open_as_a_prompt_over_http(app):
     assert c('GET', url)[1]['customer_name'] == 'Acme LLC'
     # Values sent with the action run it at once, as before.
     assert c('POST', f'{url}/actions/rename', {'new_name': 'Acme'}, headers={b'if-match': c('GET', url)[2][b'etag']})[1]['customer_name'] == 'Acme'
+
+
+# ---------- values code sets on a new prompt are the caller's ----------
+
+def test_values_set_by_code_keep_through_submit(app):
+    quotation_id = quotation(app, '2')
+    with app.business.context(ADMIN) as context:
+        prompt = context.get(Quotation, quotation_id).reschedule()
+        prompt.from_code = '2026-03-03'
+        outcome = prompt.submit()
+    assert outcome['data'] == {'from_load': '2026-11-16', 'from_start': '2026-02-02', 'from_code': '2026-03-03',
+                               'untouched': str(date.today())}
+
+
+def test_an_attribute_set_on_a_loaded_prompt_keeps_through_submit(app):
+    quotation_id = quotation(app, '2')
+    with app.business.context(ADMIN) as context:
+        prompt = context.get(Quotation, quotation_id).confirm()
+        prompt.order_date = '2026-12-01'
+        order = prompt.submit()['open']['id']
+    assert str(read(app, CustomerOrder, order).order_date) == '2026-12-01'
+
+
+def test_values_set_by_code_keep_through_a_ticket(app):
+    quotation_id = quotation(app, '2')
+    c = client(app)
+    etag = c('GET', f'/api/quotation/{quotation_id}')[2][b'etag']
+    status, result, _ = c('POST', f'/api/quotation/{quotation_id}/actions/reschedule', {}, headers={b'if-match': etag})
+    assert status == 200, result
+    ticket = result['_outcome']['prompt']['ticket']
+    status, outcome, _ = c('POST', f'/api/_prompts/{ticket}/submit', {'values': {'from_code': '2026-03-03'}})
+    assert status == 200, outcome
+    assert outcome['data'] == {'from_load': '2026-11-16', 'from_start': '2026-02-02', 'from_code': '2026-03-03',
+                               'untouched': str(date.today())}
+
+
+# ---------- record.model, and outcomes that name a model ----------
+
+def three_sources(app):
+    quotation_id = quotation(app, '2')
+    with app.business.context(ADMIN) as context:
+        record = context.get(Quotation, quotation_id)
+        order = record.confirm({'order_date': '2026-11-20'})['open']['id']
+        return [(Customer, record.customer), (Quotation, quotation_id), (CustomerOrder, order)]
+
+
+def test_one_prompt_reads_which_model_opened_it(app):
+    for model, record_id in three_sources(app):
+        with app.business.context(ADMIN) as context:
+            record = context.get(model, record_id)
+            assert record.model is model
+            assert record.note({'answer': 'which'}) == {'data': {'model': model.__name__}}
+
+
+def test_an_outcome_names_a_model_by_name(app):
+    model, record_id = three_sources(app)[1]
+    with app.business.context(ADMIN) as context:
+        record = context.get(model, record_id)
+        assert record.note({'answer': 'open'})['open'] == {'model': 'quotation', 'id': record_id}
+        assert record.note({'answer': 'new'})['new'] == {'model': 'customer', 'values': {'customer_name': 'From Quotation'}}
+        with pytest.raises(ValueError, match='Unknown model: nosuchmodel'):
+            record.note({'answer': 'unknown'})
+    # Over HTTP the name resolves where the outcome goes into the answer.
+    c = client(app)
+    etag = c('GET', f'/api/quotation/{record_id}')[2][b'etag']
+    status, result, _ = c('POST', f'/api/quotation/{record_id}/actions/note', {}, headers={b'if-match': etag})
+    ticket = result['_outcome']['prompt']['ticket']
+    status, outcome, _ = c('POST', f'/api/_prompts/{ticket}/submit', {'values': {'answer': 'new'}})
+    assert status == 200 and outcome['new'] == {'model': 'customer', 'values': {'customer_name': 'From Quotation'}}
+
+
+def test_an_outcome_still_takes_a_class():
+    outcome = Outcome(new=(Customer, {'customer_name': 'Acme'}), open=(Customer, 7))
+    assert outcome.resolve(None) == {'open': {'model': 'customer', 'id': RecordId(7)},
+                                     'new': {'model': 'customer', 'values': {'customer_name': 'Acme'}}}

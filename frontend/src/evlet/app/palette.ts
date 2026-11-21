@@ -8,12 +8,12 @@
 import { html } from '../dom';
 import { cell, derive, effect, untrack } from '../reactive';
 import { Icon, SegmentedControl, Button } from '../ui/base';
-import { tint as safeTint, type Tint } from '../ui/core';
+import { highlighted, tint as safeTint, type Tint } from '../ui/core';
 import { openModal } from '../ui/layers';
 import { tooltip } from '../ui/tooltip';
 import { resolveTheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
-import { identity, rootModels, titleOf, type ScreenModel } from './meta';
+import { identity, rootModels, type ScreenModel } from './meta';
 import { REPORT_ICON, reportsOf } from './report-page';
 import { EXPLORER_VIEWS, hasLedgerReports, openExplorer } from './explorer';
 import { EXPLORER_ICONS, KIND_TINTS, SHELL_ICONS } from './nav-icons';
@@ -76,7 +76,8 @@ function paletteBody(ctx: AppContext, close: () => void) {
     item.run();
   };
 
-  // Records: each searchable model's list endpoint, five each, the newest query wins.
+  // Records: each searchable model's search route, five each, the newest query wins. A model with
+  // Meta.search_fields is matched fuzzily and ranked on the server; each record shows its subtext.
   const searchable = rootModels(ctx.schema).filter(model => (model.search_fields ?? []).length);
   let ticket = 0, timer: ReturnType<typeof setTimeout> | undefined;
   effect(() => {
@@ -88,9 +89,9 @@ function paletteBody(ctx: AppContext, close: () => void) {
     timer = setTimeout(async () => {
       const found = await Promise.all(searchable.map(async (model: ScreenModel) => {
         try {
-          const page = await ctx.api.list(model.name, { q: text, limit: 5 });
+          const found = await ctx.api.search(model.name, { q: text, limit: 5 });
           const { icon, tint } = identity(model);
-          return page.items.map(row => ({ icon, tint, label: titleOf(model, row), hint: model.label, record: true,
+          return found.map(row => ({ icon, tint, label: row.title, sub: row.subtext, hint: model.label, record: true,
             run: () => void ctx.router.go('record', { model: model.name, id: String(row.id) }) }) as Item);
         } catch { return [] as Item[]; }
       }));
@@ -132,7 +133,7 @@ function paletteBody(ctx: AppContext, close: () => void) {
   const row = (item: Item, at: number) => html`<div class="pal-it" class:on=${() => selected.get() === at} role="option" id=${`pal-${at}`}
     aria-selected=${() => String(selected.get() === at)} on:click=${() => runItem(item)} on:mousemove=${() => { if (selected.peek() !== at) selected.set(at); }}>
     <span class=${item.tint === 'ghost' ? 'ic ghost' : `ic b-${safeTint(item.tint)}`}>${Icon(item.icon, { size: 'sm' })}</span>
-    <span class="lbl">${item.label}${item.sub ? html`<span class="sub">${item.sub}</span>` : null}</span>${item.hint && !item.tile ? html`<span class="hint">${item.hint}</span>` : null}
+    <span class="lbl">${item.record ? highlighted(item.label, query.peek()) : item.label}${item.sub ? html`<span class="sub">${item.record ? highlighted(item.sub, query.peek()) : item.sub}</span>` : null}</span>${item.hint && !item.tile ? html`<span class="hint">${item.hint}</span>` : null}
     ${item.recent !== undefined ? html`<button type="button" class="pal-rm" aria-label=${`Remove ${item.label}`} on:click=${(event: MouseEvent) => {
       event.stopPropagation(); prefs.recentSearches.set(prefs.recentSearches.peek().filter(entry => entry !== item.recent));
     }}>${Icon('x', { size: 'xs' })}</button>` : null}</div>`;

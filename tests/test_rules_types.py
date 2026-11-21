@@ -156,11 +156,11 @@ def test_document_sessions_report_rule_states():
     document = Document(plan, {'stage': 'open', 'reason': 'dropped'})
     root = document.root.handle
     assert document.snapshot()['reason'] is None  # A value that does not apply is cleared.
-    assert document.rule_states(root)['reason'] == {'applies': False, 'required': False, 'locked': False}
+    assert document.rule_states(root)['reason'] == {'applies': False, 'required': False, 'locked': False, 'visible': False}
     # Undecided rules fail closed: no client means credit_days is unknown, so the note is required.
     assert document.rule_states(root)['note']['required'] is True
     document.set(root, 'stage', 'lost')
-    assert document.rule_states(root)['reason'] == {'applies': True, 'required': True, 'locked': False}
+    assert document.rule_states(root)['reason'] == {'applies': True, 'required': True, 'locked': False, 'visible': True}
     document.set(root, 'stage', 'won')
     # A new document has no saved state, so nothing on it is locked.
     assert document.rule_states(root)['discount']['locked'] is False

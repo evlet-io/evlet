@@ -5,7 +5,7 @@ These steps are for changing Evlet itself. To build an app, start with
 
 ## Open the Playground on macOS
 
-Install Git, Python 3.12+, and Node 24.15+ (24.x). If you use Homebrew:
+Install Git, Python 3.12+, and Node 24.15+ (24.x; 22.22.2+ on the 22 LTS line also builds). If you use Homebrew:
 
 ```bash
 brew install git python@3.12 node@24
@@ -48,7 +48,8 @@ for the API, migration operations, and current limits.
 
 ## Install for development
 
-Requires Python 3.12+ with `venv`, Node **24.15+ in the 24.x line**, and npm.
+Requires Python 3.12+ with `venv`, Node **24.15+ in the 24.x line** (or 22.22.2+ on the 22 LTS line), and npm.
+`frontend/package.json` `engines` holds the range and `.npmrc` enforces it; CI builds on both lines.
 The cloud environment was verified with Python 3.12.14 and Node 24.19.0.
 Run from the repository root:
 

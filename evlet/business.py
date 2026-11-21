@@ -57,10 +57,11 @@ class Action:
     roles: tuple = ('admin', 'editor')
 
 
-RULES = ('applies_when', 'required_when', 'locked_when')
+RULES = ('applies_when', 'required_when', 'locked_when', 'visible_when')
 # Rows a detail response embeds per owned collection; larger collections are paged through lines().
 EMBEDDED_ROWS = ROW_LIMIT
-EMPTY_EXPRESSIONS = {'compute': None, 'initial': None, 'applies_when': None, 'required_when': None, 'locked_when': None}
+EMPTY_EXPRESSIONS = {'compute': None, 'initial': None, 'applies_when': None, 'required_when': None, 'locked_when': None,
+                     'visible_when': None}
 
 
 @dataclass(frozen=True)
@@ -467,6 +468,8 @@ class Business:
                                   **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child))),
                                   # Table(copy=False): Duplicate leaves these rows out of the new record (display only).
                                   **({'copy': False} if getattr(getattr(model, '__tables__', {}).get(child.name), 'copy', True) is False else {}),
+                                  # Table(totals=...): the owner's fields shown under the table, in order (docs/ui.md).
+                                  **({'totals': list(totals)} if (totals := getattr(getattr(model, '__tables__', {}).get(child.name), 'totals', ())) else {}),
                                   # Table(sections=True): rows may include section rows {"id", "section"}; each shows the sums
                                   # of its rows for the fields the total line sums (computed by the client, never stored).
                                   **({'sections': True, 'section_sums': list(total_fields(model, child.name))}
@@ -888,6 +891,9 @@ class Business:
                 status, result, headers = self.saved_answer(tx, user, model, record.id)
                 self.remember_create(tx, retry, record.id)
             return status, result, [*headers, (b'location', f'/api/{parts[2]}/{record.id}'.encode())]
+        if len(parts) == 4 and parts[3] == 'search':
+            from .search import route
+            return route(self, scope, user, model)
         if len(parts) == 4 and parts[3] in ('aggregate', 'measures', 'list_tabs') or len(parts) == 5 and parts[4] == 'measures':
             from .measures import route
             return route(self, scope, user, model, parts)
@@ -1119,7 +1125,7 @@ class Business:
             item = owners[item].parent
         result = {}
         for entry in plan['fields']:
-            if entry['path'] != path:
+            if entry['path'] != path or entry.get('table'):
                 continue
             kind = entry.get('kind') or 'compute'
             if kind in RULES and not self.policy.expression_allowed(user, model, entry['field'], kind):
@@ -1148,6 +1154,15 @@ class Business:
         capabilities, local, withheld, intermediates = {}, True, set(), {}
         for field in plan['fields']:
             target = models.get(tuple(field['path']))
+            if field.get('table'):
+                # A Table's rule ships when its rows and every input it reads are readable. applies_when empties the
+                # Table for calculations, so withholding it would make the preview disagree: then no plan is shipped.
+                rows = models.get(tuple(field['path']) + (field['field'],))
+                shown = rows is not None and self.policy.allows(user, rows, 'read') and target is not None and self.policy.allows(user, target, 'read')
+                if not shown or not self.policy.expression_allowed(user, target, field['field'], field['kind']):
+                    withheld.add(field['target'])
+                    local = local and (not shown or field['kind'] != 'applies_when')
+                continue
             if field.get('kind'):
                 # Rules and initial suggestions over inputs this role cannot read are left out of the shipped
                 # plan (the server still applies them). Leaving out one that writes a value would make the
@@ -1501,7 +1516,12 @@ class Business:
         return [item for item in relation.order if allowed(item.lstrip('-'))] or ['-id']
 
     def related(self, scope, user, model, record_id, path):
-        """GET /api/{model}/{id}/related/{name}: one page of the records whose Link points to a readable record."""
+        """GET /api/{model}/{id}/related/{name}: one page of the records whose Link points to a readable record.
+
+        GET /api/{model}/{id}/related, without a name, counts each visible relation's records in one read.
+        """
+        if not path:
+            return self.related_counts(scope, user, model, record_id)
         relation = next((item for item in self.visible_relations(user, model) if len(path) == 1 and item.name == path[0]), None)
         if relation is None:
             raise AccessError(404, 'Relation not found')
@@ -1532,6 +1552,22 @@ class Business:
             total = connection.run(qb.select(table, qb.count()).where(*where)).value()
             items = self.policy.serialize_many(tx, user, rows)
         return 200, {'items': items, 'total': total, 'limit': limit, 'offset': offset}, []
+
+    def related_counts(self, scope, user, model, record_id):
+        """How many records each relation the role can see holds for this record: one snapshot, reads only."""
+        if scope.get('query_string', b''):
+            raise ValidationError({'query': 'Counts take no query parameters'})
+        counts = {}
+        with self.database._connection() as connection:
+            connection.snapshot()
+            tx = Session(connection, self.registry)
+            self.policy.record(tx, user, model, record_id)
+            for relation in self.visible_relations(user, model):
+                source = relation.source
+                where = [item for item in (self.policy.scope(user, source), qb.eq(f'record.{relation.link}', record_id)) if not qb.always(item)]
+                table = qb.table(self.registry.name_for(source), 'record')
+                counts[relation.name] = connection.run(qb.select(table, qb.count()).where(*where)).value()
+        return 200, {'counts': counts}, []
 
     def page(self, scope, user, model):
         self.policy.require(user, model, 'read')

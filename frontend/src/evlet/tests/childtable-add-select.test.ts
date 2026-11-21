@@ -232,6 +232,7 @@ describe('the selection bar', () => {
     host.querySelectorAll<HTMLElement>('tr.g-sec [role="checkbox"]')[1].click();
     expect(host.querySelector('.g-selinfo')!.textContent).toBe('1 selected');
     barButton(host, 'Delete')!.click();
+    document.querySelector<HTMLButtonElement>('.modal-wrap [data-primary]')!.click();
     expect(table.sections.peek().map(section => section.label)).toEqual(['Hardware', 'Services']);
     expect(table.rows.peek()).toHaveLength(122);
     expect(host.querySelector('tr.g-sec .g-sec-n')!.textContent).toBe('4 lines');
@@ -246,11 +247,32 @@ describe('the selection bar', () => {
     host.querySelectorAll<HTMLElement>('tr.g-sec [role="checkbox"]')[1].click();
     expect(host.querySelector('.g-selinfo')!.textContent).toBe('2 selected');
     barButton(host, 'Delete')!.click();
+    document.querySelector<HTMLButtonElement>('.modal-wrap [data-primary]')!.click();
     expect(table.rows.peek()).toHaveLength(119);
     expect(table.sections.peek().map(section => section.label)).toEqual(['Hardware']);
     const changes = tableChanges(table)!;
     expect(changes.delete).toEqual([first.id, 's2']);
     expect(host.querySelector('.g-selinfo')).toBeNull();
+  });
+
+  it('Enter with rows selected asks to delete them; the dialog\'s Delete has the focus, Cancel keeps them, and Undo brings them back', async () => {
+    const store = await sectionedOrder();
+    const table = store.table('lines');
+    const host = render(() => ChildTable({ table, columns: ['product', 'qty', 'amount'] }));
+    const box = rowsIn(host)[0].querySelector<HTMLElement>('[role="checkbox"]')!;
+    box.click();
+    rowsIn(host)[1].querySelector<HTMLElement>('[role="checkbox"]')!.click();
+    press(box, 'Enter');
+    expect(document.querySelector('.modal-wrap h2')?.textContent).toBe('Delete 2 rows?');
+    expect(document.activeElement?.textContent).toContain('Delete');
+    [...document.querySelectorAll<HTMLButtonElement>('.modal-wrap button')].find(button => button.textContent === 'Cancel')!.click();
+    expect(table.rows.peek()).toHaveLength(120);
+    // From a cell too, not only the checkbox.
+    press(host.querySelector('tbody tr[data-key]:not(.g-sec) td[data-col]')!, 'Enter');
+    document.querySelector<HTMLButtonElement>('.modal-wrap [data-primary]')!.click();
+    expect(table.rows.peek()).toHaveLength(118);
+    [...document.querySelectorAll<HTMLButtonElement>('.toast button')].find(button => button.textContent!.includes('Undo'))!.click();
+    expect(table.rows.peek()).toHaveLength(120);
   });
 
   it('is hidden on a locked table, with rows selected', async () => {
@@ -264,6 +286,7 @@ describe('the selection bar', () => {
     expect(barButton(host, 'Duplicate')).toBeUndefined();
     controls!.duplicateSelected();
     controls!.deleteSelected();
+    expect(document.querySelector('.modal-wrap')).toBeNull();
     expect(store.table('lines').rows.peek()).toHaveLength(120);
     expect(placeholders(host)).toHaveLength(0);
   });

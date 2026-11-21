@@ -25,6 +25,13 @@ production ready, but the rules below hold from 0.3 on.
   storage, jobs, routing and the application classes. Import them from `evlet`, not from the
   module that defines them. `AppDefinition(views=())` stays accepted for apps scaffolded
   before 0.4; a non-empty `views` or a `ui` registry is refused.
+- **Model scripts.** `Js`, the field keywords `on_change`, `tooltip=Js(...)`, `look` and
+  `control`, `Meta.script`, `Meta.on_open`, `Main(custom=)` and `Section(..., custom=)`, and the
+  browser API a script gets: the `evlet` global, `evlet.Model` with `model`, `id`, `is_new`,
+  `state`, `field`, `table`, `call`, `move`, `save`, `reload`, `api` and `ui`, the field, table
+  and row views, and the hook arguments ([model-scripts.md](model-scripts.md)). This is the only
+  public part of `frontend/`. `Extend` with `Meta.model`, `script`, `on_change` and `on_open`, and
+  `AppDefinition(extensions=)`, add checks and script hooks to another app's model.
 - **Field keywords.** The keywords every field takes (`required`, `default`, `label`,
   `help_text`, `visible_if` and the rest), which are defined once on the field base class.
 - **States and moves.** `State(*steps, rules=(), default=, show=)`, `State.Step(key, label,
@@ -94,7 +101,7 @@ production ready, but the rules below hold from 0.3 on.
 - **Ledger models and transaction locks.** The `Meta` options `ledger`, `append_only`, `timestamps`
   (`None`, `"created"`, `"modified"` or `"both"`) and `indexes`, the `created_at` and `modified_at`
   fields that timestamps add, integer ledger row ids, `Session.insert_many(model, rows)`,
-  `Session.lock(*keys, timeout=None)` with `LockTimeout`, the `SetAppendOnly` migration, `AddIndex`
+  `Session.lock(*keys, timeout=None)` with `LockTimeout`, the `SetAppendOnly` migration, `AddIndex` and `DropIndex`
   with a tuple of fields, and `evlet ledger list`. A key's lock number (BLAKE2b of its canonical
   JSON) never changes between releases ([ledger.md](ledger.md)).
 
@@ -263,7 +270,7 @@ Apps must not depend on these. They can change in any release without a deprecat
 - Methods of exported classes that the app guides do not document, such as `Policy.scope`
   or `Registry.plan_for`.
 - The stored layout of tables Evlet manages (`evlet_*`), and the browser framework in
-  `frontend/`.
+  `frontend/` beyond the model script API above.
 
 HTTP routes and `/api/schema` are described in their own guides. Their changes are noted in
 `CHANGELOG.md`, but the snapshot test covers only the Python surface.

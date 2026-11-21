@@ -12,7 +12,9 @@ import { uid } from '../ui/core';
 import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Cell, type Readable } from '../reactive';
 import type { Route } from '../router';
 import { RecordStore, type Field, type Row, type Rules } from '../model/record';
+import { loadScript, ScriptHost, type ScriptPage } from '../model/script';
 import type { FieldSchema } from '../model/schema';
+import { tooltip } from '../ui/tooltip';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildTable, type ChildTableControls } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow, type BadgeLook } from '../ui/doc';
@@ -33,9 +35,9 @@ import { cellView } from './list-page';
 import { blockFilters, declaresRelated, HtmlContent, MeasureChart, RelatedRecords, type BlockRecord } from './record-blocks';
 import { CardRow, fieldsSummary, imageSource, MoreRow, RecordImage, rowsText, valueText } from './record-compact';
 import type { LayoutBlock } from '../model/schema';
-import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } from './related-data';
+import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage, type RelatedPages } from './related-data';
 import { filterFields } from './filters';
-import { follow, openForm, takePrefill, type Outcome } from './prompts';
+import { confirmText, follow, openForm, takePrefill, type Outcome } from './prompts';
 import { openEvaPanel } from '../eva/chat';
 import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden, keepCreateAttempts, discardKeptChanges } from './unsaved';
 import { UnsavedBar } from './unsaved-bar';
@@ -63,6 +65,13 @@ function gate(field: Field, locked: Readable<boolean>, canWrite: boolean): Field
     touched: { get: () => field.touched, set: (value: boolean) => { field.touched = value; } },
   }) as FieldLike;
 }
+
+/**
+ * Under this window width a record page's side column (attachments, activity) is a drawer. It is wider than
+ * NAV_DRAWER (app/shell.ts), so as the window narrows (or zooms in) the side column folds first and the app's
+ * sidebar after it, the way the page reads, and it stays folded once the sidebar has left.
+ */
+export const SIDE_DRAWER = '(max-width: 1380px)';
 
 /** Ask before discarding unsaved changes; resolves true to leave. */
 export function confirmDiscard(reason?: string): Promise<boolean> {
@@ -213,6 +222,23 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return found;
   };
   const has = (field: string) => store.root.fields.has(field);
+  // The model script (Meta.script, model/script.ts), loaded when a record of the model opens. Its calls go through the
+  // page's own paths; the record works the same without it, and a script that fails to load is only logged.
+  // Scripts other apps add to the model (evlet.Extend) start after it, in app install order.
+  const scriptPage: ScriptPage = { api, locked: derive(() => !canWrite || locked.get()),
+    call: async (action, values) => { const ok = await store.runAction(action, values); if (ok) await followed(action); return ok; },
+    move: (key, remark) => store.move(key, remark === undefined ? {} : { remark }), save: () => save(), reload: () => store.reload(),
+    toast: text => { toast(text); }, confirm: text => confirmText(text), open: (target, id) => void router.go('record', { model: target, id }) };
+  const script = model.script ? new ScriptHost(store, scriptPage) : null;
+  const scripts = [...(script && model.script ? [{ entry: model.script, host: script }] : []),
+    ...(model.extensions ?? []).map(entry => ({ entry, host: new ScriptHost(store, scriptPage, entry) }))];
+  if (scripts.length) {
+    onCleanup(() => scripts.forEach(item => item.host.dispose()));
+    void Promise.allSettled(scripts.map(item => loadScript(item.entry.url))).then(results => results.forEach((result, at) => {
+      if (result.status === 'fulfilled') scripts[at].host.start(result.value, scripts[at].entry.on_open);
+      else console.error(`${name} script ${scripts[at].entry.url} could not load`, result.reason);
+    }));
+  }
   const sequence = sequenceField(model), numbered = numberField(model);
   const stateValue = state ? () => String(store.field(state.field).value.get() ?? '') : () => '';
   // One record view for the page and a list's side panel, responsive to its width (DocFrame), with Meta.panel hiding
@@ -639,25 +665,29 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // Meta.cards replace the summary strip (an empty tuple shows no cards).
   const cardNames = model.cards;
   const measuredCards = perRecord.some(measure => cardNames?.includes(measure.name));
-  if (perRecord.length && !isNew && (cardNames ? measuredCards : model.summary !== false)) effect(() => { options.detail.get(); void api.recordMeasures(name, store.id!).then(values => recordMeasures.set(values), () => recordMeasures.set(null)); });
+  if (perRecord.length && !isNew && (cardNames ? measuredCards : model.summary !== false)) effect(() => {
+    // The record's own values paint first; the cards' derived numbers are asked for after, and read only.
+    options.detail.get();
+    afterPaint(() => void api.recordMeasures(name, store.id!).then(values => recordMeasures.set(values), () => recordMeasures.set(null)));
+  });
   const stats: StatProps[] = summaryFields(model, new Set(factFields.map(meta => meta.name))).filter(meta => has(meta.name)).map(meta => ({
     label: meta.label, value: () => {
       const value = view(meta.name).value.get();
-      if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? '…';
+      if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? Pending();
       return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(meta.name), ctx.links)(), currencyPlaces(view(meta.name), ctx.links)()) : formatOf(meta, value);
     },
     empty: 'Not set',
     note: view(meta.name).calculated ? 'Calculated' : undefined,
   }));
-  if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : '…' });
+  if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : Pending() });
   const cardStats = (cardNames ?? []).flatMap((card): StatProps[] => {
     const measure = perRecord.find(item => item.name === card);
-    if (measure) return [{ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : '…' }];
+    if (measure) return [{ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : Pending() }];
     const meta = fieldOf(model, card);
     if (!meta || !has(card)) return [];
     return [{ label: meta.label, empty: 'Not set', value: () => {
       const value = view(card).value.get();
-      if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? '…';
+      if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? Pending();
       return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(card), ctx.links)(), currencyPlaces(view(card), ctx.links)()) : formatOf(meta, value);
     } }];
   });
@@ -677,7 +707,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const relatedShown = !ownRelated || (model.side_blocks ?? []).includes('related');
   // Nothing is asked for until a Related row shows (related-data.ts).
   const related = relatedPages(relations, (relation, page) => ctx.api.related(model.name, store.id!, relation, page), store.etag,
-    error => error instanceof ApiError ? error.message : 'Not loaded.');
+    error => error instanceof ApiError ? error.message : 'Not loaded.', () => ctx.api.relatedCounts(model.name, store.id!));
 
   // What a block reads of this record: saved values for filters, shown values for Html, and the etag to reload on.
   const blockRecord: BlockRecord = {
@@ -728,6 +758,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // A #field address (/app/invoice/7#due) opens that field's section and focuses it.
   const fromHash = () => { let target = ''; try { target = decodeURIComponent(location.hash.slice(1)); } catch { /* not a field name */ } if (target && has(target)) revealField(frame, target); };
   if (!panel) { queueMicrotask(fromHash); window.addEventListener('hashchange', fromHash); onCleanup(() => window.removeEventListener('hashchange', fromHash)); }
+  /** A block the model script draws (Main(custom=...) or Section(..., custom=...)); empty without a script. */
+  const customBlock = (block: Extract<LayoutBlock, { kind: 'custom' }>) => html`<div class="ev-script-block" data-block=${block.name}>${script ? script.mount(block.custom, el => [el]) : null}</div>`;
   /** A group of the main zone: open, with a small heading when it has a title (Main(title=...)). */
   const mainGrid = (title: string | null, grid: Child) => html`${title ? html`<h3 class="ev-cmp-mh">${title}</h3>` : null}<div class="ev-cmp-grid">${grid}</div>`;
   const lockedText = () => model.fields.some(field => (field as any).versioned === false) ? `Locked. Lines can’t change while it is ${stepLabel(model, stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
@@ -790,14 +822,18 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const focusButton = controls ? (() => {
       const button = IconButton({ icon: 'maximize-2', tip: () => controls.focused.get() ? 'Leave focus (Esc)' : 'Focus', size: 'small', active: controls.focused, onClick: () => controls.toggleFocus() });
       effect(() => { const icon = Icon(controls.focused.get() ? 'minimize-2' : 'maximize-2', { size: 'sm' }); untrack(() => button.replaceChildren(icon)); });
+      button.tabIndex = -1;
       return button;
     })() : null;
     const tools = controls ? html`<span class="ev-cmp-tools">${focusButton}${(() => {
       const button = IconButton({ icon: 'columns-3', tip: 'Columns', size: 'small', onClick: () => controls.columns(button) });
       button.setAttribute('aria-haspopup', 'dialog');
+      // Tab goes from the field before the table straight to its first cell; these two are for the mouse.
+      button.tabIndex = -1;
       return button;
     })()}</span>` : null;
-    return html`<div class="ev-cmp-table" class:is-empty=${empty} data-table-block=${child.name}>
+    // Hidden while the Table's applies_when or visible_when is false (a save removes rows that do not apply).
+    return html`<div class="ev-cmp-table" class:is-empty=${empty} hidden=${() => !table.rules.get().visible} data-table-block=${child.name}>
       ${withTitle ? html`<div class="ev-cmp-th"><h3>${child.label}</h3><span class="muted num ev-cmp-count">${() => String(count())}</span>${selectionBar()}<span class="grow"></span>${tools}</div>`
         : toolsOut ? (toolsOut.set([selectionBar(), tools]), null) : html`<div class="ev-cmp-th ev-cmp-th-tools">${selectionBar()}<span class="grow"></span>${tools}</div>`}
       ${when(empty, () => html`<div class="ev-cmp-empty"><span>${`No ${child.label.toLowerCase()} yet.`}</span></div>`)}
@@ -815,8 +851,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const grid = (fields: FieldLike[], flow?: 'rows' | 'columns') => isNew
       ? flowGrid(fields.map(field => ({ node: fieldFor({ field, links: ctx.links }), wide: Boolean(field.meta.wide ?? field.meta.type === 'longtext') })), flow)
       : FieldGrid(fields, { links: ctx.links, flow });
-    const mainParts = blocks.filter(block => (block.kind === 'section' || block.kind === 'table') && block.main).map(block => block.kind === 'section'
+    const mainParts = blocks.filter(block => (block.kind === 'section' || block.kind === 'table' || block.kind === 'custom') && block.main).map(block => block.kind === 'section'
       ? (section => mainGrid(section?.heading ? block.label : null, grid(fieldsOf(block.label), section?.flow)))(all.find(group => group.label === block.label))
+      : block.kind === 'custom' ? customBlock(block)
       : compactTable(tables.find(child => child.name === (block as { name: string }).name)!, true));
     const rows: Node[] = [];
     let index = 0;
@@ -840,9 +877,12 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
           const collapsed = block.collapsible === false ? false : block.collapsed ?? true;
           const start = folds.start(collapsed === 'empty' ? untrack(() => table.rows.get().length) === 0 : collapsed, position, []);
           // Drawn while closed too, so print shows its rows.
-          rows.push(MoreRow({ title: child.label, folds, start, wide: true, eager: true,
+          const more = MoreRow({ title: child.label, folds, start, wide: true, eager: true,
             description: child.read_only ? derivedText() : undefined, tools: () => tools.get(),
-            summary: () => rowsText(table.rows.get().length), none: 'No rows', body: () => compactTable(child, false, tools) }));
+            summary: () => rowsText(table.rows.get().length), none: 'No rows', body: () => compactTable(child, false, tools) });
+          // The whole row hides with its Table's rules.
+          effect(() => { more.hidden = !table.rules.get().visible; });
+          rows.push(more);
           break;
         }
         case 'related': {
@@ -869,21 +909,20 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         case 'chart':
           rows.push(MoreRow({ title: block.name ?? block.label ?? 'Chart', folds, start: false, summary: () => '', none: 'A chart', body: () => MeasureChart(ctx, block, blockRecord) }));
           break;
+        case 'custom':
+          rows.push(MoreRow({ title: block.label, folds, eager: true, start: folds.start(block.collapsible === false ? false : block.collapsed === true, position, []),
+            summary: () => '', body: () => customBlock(block) }));
+          break;
       }
     }
-    // Related records the layout does not list.
-    if (relations.length && relatedShown && tabShown('related')) {
-      const row = MoreRow({ title: 'Related', folds, start: false, none: 'Loading…',
-        summary: () => relations.map(relation => { const count = related(relation.name).total.get(); return count === null ? '' : `${relation.label}: ${count}`; }).filter(Boolean).join(' · '),
-        body: () => Related(ctx, model, store.id!, relations, related) });
-      whenVisible(row, () => relations.forEach(relation => related(relation.name).ensure()));
-      rows.push(row);
-    }
+    // Related records the layout does not list: a section of its own after more information.
+    const relatedGroup = relations.length && relatedShown && tabShown('related') ? RelatedSection(ctx, model, store.id!, relations, related, folds) : null;
     // The stage bar and the key cards above one white card: the state banner strip, the primary area, then more
     // information.
     return [flow, summary, html`<div class="ev-cmp-card">${lifecycle ? live(lifecycle) : null}
       <section class="ev-cmp-main" aria-label=${model.label}>${mainParts}</section>
-      ${rows.length ? html`<div class="ev-more" role="group" aria-labelledby=${`ev-more-${name}`}><h2 class="ev-more-label" id=${`ev-more-${name}`}>More information</h2>${rows}</div>` : null}</div>`];
+      ${rows.length ? html`<div class="ev-more" role="group" aria-labelledby=${`ev-more-${name}`}><h2 class="ev-more-label" id=${`ev-more-${name}`}>More information</h2>${rows}</div>` : null}
+      ${relatedGroup}</div>`];
   };
 
   // ---------- save bar ----------
@@ -923,15 +962,28 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const sideOpen = cell(false, { name: `${name} side drawer` });
   const sideId = uid('ev-side');
   const sideWhat = [model.attachments && files ? 'attachments' : null, activity && tabShown('activity') ? 'activity' : null].filter(Boolean).join(' and ') || 'side panel';
-  const sideToggle = side ? html`<span class="ev-side-toggle">${IconButton({ icon: 'panel-right', tip: () => `${sideOpen.get() ? 'Hide' : 'Show'} ${sideWhat}`,
-    active: sideOpen, onClick: () => sideOpen.set(!sideOpen.peek()) })}</span>` as HTMLElement : null;
+  // On a page the button names what it opens ("Activity"); a side panel's top line has room for the icon only.
+  const sideName = activity && tabShown('activity') ? 'Activity' : model.attachments && files ? 'Attachments' : 'Details';
+  const sideTip = () => `${sideOpen.get() ? 'Hide' : 'Show'} ${sideWhat}`;
+  // A narrow frame opens the column as a drawer; a wide one whose column was folded unfolds it.
+  const toggleSide = () => {
+    if (!frame.classList.contains('doc-narrow') && prefs.sideCollapsed.peek()) prefs.sideCollapsed.set(false);
+    else sideOpen.set(!sideOpen.peek());
+  };
+  const sideButton = (): HTMLElement => {
+    if (panel) return IconButton({ icon: 'panel-right', tip: sideTip, active: sideOpen, onClick: toggleSide });
+    const button = Button({ icon: 'panel-right', label: sideName, variant: 'ghost', size: 'small', tip: sideTip, onClick: toggleSide });
+    effect(() => { button.setAttribute('aria-pressed', String(sideOpen.get())); button.classList.toggle('on', sideOpen.get()); });
+    return button;
+  };
+  const sideToggle = side ? html`<span class="ev-side-toggle">${sideButton()}</span>` as HTMLElement : null;
   sideToggle?.firstElementChild?.setAttribute('aria-controls', sideId);
   const crumbRow = panel ? null : html`<div class="ev-crumb-row">${ctx.crumbBar?.() ?? null}${sideToggle}</div>`;
   if (panel) headTools.append(html`${panelTools(sideToggle)}`);
   // The footer under the form: who made and changed it, the record ID and its link. A side panel shows it when its
   // Record info block is on.
   const footer = isNew || (shows && !shows.block('info')) ? null : RecordFooter(ctx, model, String(store.id));
-  const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page',
+  const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page', narrowWhen: panel ? undefined : SIDE_DRAWER,
     main: [panel ? html`<div class="ev-panel-head">${panelBar()}${header}</div>` : [crumbRow, header], UnsavedBar(ctx, model, store, { isNew, draft: !options.duplicate, onSettled: () => focusFirst() }),
     options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null,
     options.duplicate ? StateBanner({ tone: 'info', icon: 'copy', title: `Copied from ${options.duplicate.from}.`, text: ['Nothing is saved until you select Create.',
@@ -942,6 +994,14 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   if (side) {
     const aside = frame.querySelector<HTMLElement>(':scope > .doc-side');
     if (aside) { aside.id = sideId; aside.tabIndex = -1; }
+    // On a wide frame the side column folds to its edge and back, from a round button on that edge, as the
+    // sidebar does (app/shell.ts); the choice is kept per user. A narrow frame uses the drawer button instead.
+    const folded = prefs.sideCollapsed;
+    const edge = html`<button type="button" class="side-edge doc-side-edge" aria-controls=${sideId} aria-expanded=${() => String(!folded.get())}
+      aria-label=${() => `${folded.get() ? 'Expand' : 'Collapse'} ${sideWhat}`} on:click=${() => folded.set(!folded.peek())}
+      ref=${(el: HTMLElement) => tooltip(el, () => folded.get() ? 'Expand' : 'Collapse')}>${() => Icon(folded.get() ? 'chevron-left' : 'chevron-right', { size: 'xs' })}</button>` as HTMLElement;
+    frame.append(edge);
+    effect(() => { frame.classList.toggle('side-collapsed', folded.get()); });
     const scrim = html`<div class="scrim ev-side-drawer-scrim" class:show=${sideOpen} on:click=${() => sideOpen.set(false)}></div>` as HTMLElement;
     frame.append(scrim);
     effect(() => { frame.classList.toggle('side-open', sideOpen.get()); if (sideOpen.get()) untrack(() => aside?.focus({ preventScroll: true })); });
@@ -1212,6 +1272,56 @@ function relatedNoun(label: string, target: ScreenModel) {
 function viewAllHref(ctx: AppContext, target: ScreenModel, link: string, id: string) {
   if (!filterFields(ctx.schema, target).some(field => field.key === link)) return null;
   return ctx.router.href('list', { model: target.name }, { f: JSON.stringify([[link, 'eq', id]]) });
+}
+
+/**
+ * Related, a section after more information with the same grey heading. Closed, each relation is a chip with its
+ * name and a count badge; the names come from the schema at once, and the counts from one read once the section
+ * first scrolls into view (a placeholder until then). Open, it lists each relation's records. A chip opens the
+ * section at its relation.
+ */
+function RelatedSection(ctx: AppContext, model: ScreenModel, id: string, relations: NonNullable<ScreenModel['relations']>, related: RelatedPages, folds: Folds): HTMLElement {
+  const title = 'Related';
+  const open = folds.open(title, false);
+  const drawn = cell(untrack(() => open.get()));
+  effect(() => { if (open.get()) drawn.set(true); });
+  const head = uid('ev-rel-h'), body = uid('ev-rel');
+  const openAt = (label: string) => {
+    folds.toggle(title, true);
+    queueMicrotask(() => group.querySelector<HTMLElement>(`.ev-related[aria-label="${CSS.escape(label)}"]`)?.scrollIntoView?.({ block: 'nearest' }));
+  };
+  const chips = relations.map(relation => {
+    const { count } = related(relation.name);
+    const badge = () => {
+      const value = count.get();
+      if (value !== null) return String(value);
+      return related.countsFailed.get() ? html`<span title="Not loaded">–</span>` : Pending();
+    };
+    return html`<li><button type="button" class="ev-rel-chip" class:is-zero=${() => count.get() === 0} on:click=${() => openAt(relation.label)}
+      aria-label=${() => `${relation.label}: ${count.get() ?? (related.countsFailed.get() ? 'not loaded' : 'loading')}`}>
+      <span class="ev-rel-name">${relation.label}</span><span class="ev-rel-n num" aria-hidden="true">${badge}</span></button></li>`;
+  });
+  const group = html`<section class="ev-more ev-rel" class:closed=${() => !open.get()} aria-labelledby=${head} data-section=${title}
+    on:ev-reveal=${() => folds.reveal(title)}>
+    <h2 class="ev-more-label ev-rel-label"><button type="button" class="ev-rel-toggle" id=${head} aria-expanded=${() => String(open.get())} aria-controls=${body}
+      on:click=${() => folds.toggle(title, !untrack(() => open.get()))}>${Icon('chevron-down', { size: 'xs', className: 'ev-more-chev' })}<span>${title}</span></button></h2>
+    <ul class="ev-rel-chips" hidden=${() => open.get()} aria-label=${`${title} records`}>${chips}</ul>
+    <div class="ev-rel-body" id=${body} hidden=${() => !open.get()}>${when(() => drawn.get(), () => Related(ctx, model, id, relations, related))}</div></section>` as HTMLElement;
+  whenVisible(group, () => related.ensureCounts());
+  return group;
+}
+
+/** A value on its way: a pulsing placeholder, read as "Loading". */
+function Pending(): Child {
+  return html`<span class="ev-sk ev-sk-val" aria-hidden="true"></span><span class="sr-only">Loading</span>`;
+}
+
+/** Runs `run` after the next frame paints, so what the record shows comes before what loads after it. */
+function afterPaint(run: () => void) {
+  if (typeof requestAnimationFrame === 'undefined') { queueMicrotask(run); return; }
+  let alive = true;
+  onCleanup(() => { alive = false; });
+  requestAnimationFrame(() => setTimeout(() => { if (alive) run(); }, 0));
 }
 
 function Related(ctx: AppContext, model: ScreenModel, id: string, relations: NonNullable<ScreenModel['relations']>, related: (name: string) => RelatedPage): Child {

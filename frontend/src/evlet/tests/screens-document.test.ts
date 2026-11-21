@@ -20,15 +20,16 @@ const routes = (detail: Recorded = invoice.invoice_draft, activity = detail === 
   ['GET', path(detail.body.id), detail],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/measures$/, invoice.invoice_record_measures],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/related\/payment\.invoice/, invoice.invoice_related_payments],
+  ['GET', /\/api\/invoice\/[0-9a-z]{13}\/related$/, { status: 200, etag: null, body: { counts: { 'payment.invoice': 1 } } }],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/activity/, activity],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/attachments$/, invoice.invoice_attachments],
   ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ['GET', new RegExp(`/api/payment/${invoice.invoice_payment.body.id}$`), invoice.invoice_payment],
 ];
 /** The record's "more information" rows, by title. */
-const rows = (host: Element) => [...host.querySelectorAll('.ev-more-row')].map(row => text(row.querySelector('.ev-more-toggle')));
+const rows = (host: Element) => [...host.querySelectorAll('.ev-more-row, .ev-rel')].map(row => text(row.querySelector(':is(.ev-more-toggle, .ev-rel-toggle)')));
 /** Open a "more information" row by its title. */
-const openRow = (host: Element, title: string) => click(host.querySelector(`.ev-more-row[data-section="${title}"] .ev-more-toggle`));
+const openRow = (host: Element, title: string) => click(host.querySelector(`[data-section="${title}"] :is(.ev-more-toggle, .ev-rel-toggle)`));
 const banner = (host: Element) => text(host.querySelector('.inv-banner > div'));
 
 describe('transaction document (recorded fixtures)', () => {
@@ -99,12 +100,37 @@ describe('transaction document (recorded fixtures)', () => {
     expect(host.querySelector('.ev-partial')).toBeNull();
     expect(text(host.querySelector('.eff-note'))).toContain('Append-only history');
     expect(host.querySelector('.composer .rt-surface')).not.toBeNull();
-    // The side column: the record's files and its activity. The Related row counts related records while closed.
+    // The side column: the record's files and its activity. The Related section counts related records while closed.
     await until(() => expect(text(byText(host, '.side-sec', /^Attachments/))).toContain('signed-copy.pdf'));
-    await until(() => expect(text(host.querySelector('.ev-more-row[data-section="Related"] .ev-more-sum'))).toContain('Payments: 1'));
+    await until(() => expect([...host.querySelectorAll('.ev-rel-chip')].map(chip => chip.getAttribute('aria-label')).join(' · ')).toContain('Payments: 1'));
     openRow(host, 'Related');
     // A payment has no text field, so its title is its id.
     await until(() => expect(text(host.querySelector('.ev-related .ev-row-link'))).toBe(String(invoice.invoice_payment.body.id)));
+  });
+
+  it('paints the record first, then fills the number cards and related counts, each with a placeholder until then', async () => {
+    let measured!: () => void, counted!: () => void;
+    const measures = new Promise<Recorded>(resolve => { measured = () => resolve(copy(invoice.invoice_record_measures)); });
+    const counts = new Promise<Recorded>(resolve => { counted = () => resolve({ status: 200, etag: null, body: { counts: { 'payment.invoice': 1 } } }); });
+    const slow = routes().map((route): Route => String(route[1]).includes('measures') ? [route[0], route[1], () => measures]
+      : String(route[1]).endsWith('related$/') ? [route[0], route[1], () => counts] : route);
+    const { host, sent } = start(slow, `/app/invoice/${draft}`);
+    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('Draft invoice'));
+    // The record's values show while the cards' derived numbers and the counts are still on their way.
+    await until(() => expect(requests(sent, 'GET', /\/measures$/)).toHaveLength(1));
+    const recordRead = sent.findIndex(item => new RegExp(`/api/invoice/${draft}$`).test(item.url));
+    expect(sent.findIndex(item => /\/measures$/.test(item.url))).toBeGreaterThan(recordRead);
+    expect(text(host.querySelector('.ev-cmp-main [data-field="customer"]'))).toContain('Al Sahra Trading');
+    expect([...host.querySelectorAll('.sum-t b')].every(value => value.querySelector('.ev-sk') && text(value) === 'Loading')).toBe(true);
+    expect(host.querySelectorAll('.sum-t')).toHaveLength(2);
+    await until(() => expect(host.querySelector('.ev-rel-chip .ev-sk')).not.toBeNull());
+    expect([...host.querySelectorAll('.ev-rel-chip')].map(chip => chip.getAttribute('aria-label'))).toEqual(['Payments: loading']);
+    measured();
+    await until(() => expect([...host.querySelectorAll('.sum-t b')].map(text)).toEqual(['1', 'AED 500.00']));
+    counted();
+    await until(() => expect(text(host.querySelector('.ev-rel-n'))).toBe('1'));
+    // Counting and the cards only read.
+    expect(sent.filter(item => item.method !== 'GET')).toEqual([]);
   });
 
   it('explains a blocked move instead of running it', async () => {

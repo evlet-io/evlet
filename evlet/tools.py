@@ -569,8 +569,19 @@ class Tools:
             return self.approved(user, origin, tool, values, run_id, client, summary, delete, revision)
         if name == 'change_state':
             return self.change_state(user, origin, tool, values, run_id, client, request, path, record, revision, summary)
-        return self.approved(user, origin, tool, values, run_id, client, {**summary, 'action': values['action']},
-                             lambda: request('POST', f"{path}/actions/{values['action']}", {}, headers)[0], revision)
+        run = lambda: request('POST', f"{path}/actions/{values['action']}", {}, headers)[0]
+        if self.opens_prompt(values['model'], values['action']):
+            return run()  # It writes nothing: a read. The prompt's submit (answer_prompt) is what asks for approval.
+        return self.approved(user, origin, tool, values, run_id, client, {**summary, 'action': values['action']}, run, revision)
+
+    def opens_prompt(self, model, action):
+        """Whether running this action only opens a prompt: its body is `return SomePrompt` (prompts.opens_prompt), or
+        it takes inputs=, which run_action leaves out, so its form opens."""
+        from .prompts import opens_prompt
+        model = self.business.registry.models.get(model)
+        method = getattr(model, action, None) if model is not None else None
+        declaration = getattr(method, '__action__', None)
+        return declaration is not None and (bool(declaration.get('inputs')) or opens_prompt(method))
 
     def change_state(self, user, origin, tool, values, run_id, client, request, path, record, revision, summary):
         """A move through POST .../moves/{rule}. A move into a final state is in the destructive group, so it

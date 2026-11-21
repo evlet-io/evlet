@@ -1,16 +1,18 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { byText, click, lastToast, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
+import { byText, click, lastToast, press, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
+import { copy } from './server';
 import { choose } from './ui-helpers';
 
 afterEach(() => stopAll());
 
 // Responses recorded from the real routes (record_prompts in scripts/generate_ui_framework_fixtures.py).
+// A test's own routes come first, so they can replace a recorded one.
 const routes = (extra: Route[] = []): Route[] => [
+  ...extra,
   ['GET', /\/api\/auth\/session$/, screen.prompt_session],
   ['GET', /\/api\/schema$/, screen.prompt_schema],
   ['GET', /\/api\/account\/0000000000001$/, screen.prompt_record],
   ['POST', /\/api\/account\/0000000000001\/actions\/plan_visit$/, screen.prompt_open],
-  ...extra,
 ];
 const sheet = () => document.querySelector<HTMLElement>('.modal.prompt');
 const field = (name: string) => sheet()!.querySelector<HTMLElement>(`[data-field="${name}"]`);
@@ -61,5 +63,28 @@ describe('prompts', () => {
     expect(sentSubmits[1].body.values).not.toHaveProperty('account');
     expect(sentSubmits[1].body.values).not.toHaveProperty('hours');
     expect(sentSubmits[1].body.values.children).toEqual({ stops: [] });
+  });
+
+  it('offers no way to add a row to a table load() filled', async () => {
+    // As the server answers when load() fills the stops: their rows, and max_rows at their count.
+    const body = copy(screen.prompt_open.body);
+    body._outcome.prompt.values.children = { stops: [{ _key: 'k1', place: 'Dock', hours: '1.0' }, { _key: 'k2', place: 'Yard', hours: '2.0' }] };
+    body._outcome.prompt.models[0].children[0].max_rows = 2;
+    await openVisit([['POST', /\/api\/account\/0000000000001\/actions\/plan_visit$/, { ...screen.prompt_open, body }]]);
+    const rows = () => sheet()!.querySelectorAll('.prompt-table tbody tr[data-key]').length;
+    await until(() => expect(rows()).toBe(2));
+    expect(byText(sheet()!, '.prompt-table button', /Add row/)).toBeNull();
+    // Enter on the last cell after typing does not add a row either.
+    const last = [...sheet()!.querySelectorAll<HTMLElement>('.prompt-table td[data-col="hours"]')].pop()!;
+    click(last);
+    const input = last.querySelector('input');
+    if (input) { input.value = '3'; input.dispatchEvent(new Event('input', { bubbles: true })); press(input, 'Enter'); }
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(rows()).toBe(2);
+    // Nor does Duplicate on a selected row: a copy is a new row.
+    click(sheet()!.querySelector<HTMLElement>('.prompt-table tbody tr[data-key] [role="checkbox"]'));
+    await until(() => expect(byText(sheet()!, '.prompt-table button', 'Duplicate')).not.toBeNull());
+    click(byText(sheet()!, '.prompt-table button', 'Duplicate'));
+    expect(rows()).toBe(2);
   });
 });

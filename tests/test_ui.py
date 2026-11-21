@@ -118,3 +118,16 @@ def test_app_definitions_still_accept_an_empty_views_argument():
     for options in ({'views': (object(),)}, {'ui': object()}):
         with pytest.raises(ValueError, match='removed in Evlet 0.4'):
             AppDefinition(**options)
+
+
+def test_a_prompts_field_grid_narrows_with_the_dialogs_own_width():
+    # A prompt modal is not inside a record page's .doc frame, so its grid steps down by a container query on the
+    # dialog's body, at the record page's main column steps (DOC_MAIN_STEPS: 640, 520, 360). At 390 px wide a
+    # prompt's two fields measured 69 px each before this, and 316 px after (Chromium, the built stylesheet).
+    from pathlib import Path
+    css = (Path(__file__).resolve().parents[1] / 'frontend/src/evlet/app/screens.css').read_text().replace(' ', '')
+    steps = (Path(__file__).resolve().parents[1] / 'frontend/src/evlet/ui/doc.ts').read_text()
+    assert '.prompt.modal-b{container-type:inline-size;}' in css
+    assert 'DOC_MAIN_STEPS = { m: 640, s: 520, xs: 360 }' in steps
+    for width, columns in (('639px', 'repeat(3,minmax(0,1fr))'), ('519px', 'repeat(2,minmax(0,1fr))'), ('359px', '1fr')):
+        assert f'@container(max-width:{width}){{.prompt.ev-cmp-grid.fs-g{{grid-template-columns:{columns}' in css

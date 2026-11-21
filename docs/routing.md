@@ -5,7 +5,7 @@ table. Dispatch, the allowed browser origins and `evlet routes` all read that ta
 It is never cached to disk.
 
 An instance with no `routes.py` serves the same URLs as before: the desk shell at
-`/`, `/login`, `/docs`, `/app/...`, `/reports/<name>` and `/assets/...`. `/settings/accounts` redirects (301) to `/controls/users`.
+`/`, `/login`, `/docs`, `/app/...`, `/reports/<name>` and `/assets/...`. `/settings/accounts` redirects (301) to `/controls/users`, and `/app` alone redirects (302) to `/`, which opens the person's start page.
 
 ## Frontends
 
@@ -132,7 +132,7 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
   | `GET/POST /api/<model>`, `GET/PATCH/DELETE /api/<model>/<id>` | the model in `models` |
   | `POST /api/<model>/<id>/actions/<name>`, `.../moves/<key>` | `(Model, "<name>")` or `(Model, "<rule key>")` in `actions` |
   | `/api/<model>/measures`, `/api/<model>/aggregate`, `/api/<model>/<id>/measures` | `"measures"` in `extras` |
-  | `/api/<model>/<id>/related/...` | `"related"` in `extras` |
+  | `/api/<model>/<id>/related` and `/related/...` | `"related"` in `extras` |
   | `/api/<model>/<id>/lines/...` | `"lines"` in `extras` |
   | `/api/<model>/<id>/attachments...` | `"attachments"` in `extras` |
   | `POST /api/_draft/<model>` | `"drafts"` in `extras` |

@@ -66,6 +66,51 @@ export function compact(value: number): string {
   return String(Math.round(value));
 }
 
+/**
+ * Where typed text matches a value, as the search ranks it (evlet/search.py): the text itself, ignoring case,
+ * or else its characters in order (spaces dropped), in the shortest stretch that holds them. [start, end) pairs.
+ */
+export function matchRanges(value: string, typed: string): Array<[number, number]> {
+  const text = typed.trim().toLowerCase(), lower = value.toLowerCase();
+  if (!text || !value) return [];
+  const at = lower.indexOf(text);
+  if (at >= 0) return [[at, at + text.length]];
+  const chars = text.replace(/\s+/g, '');
+  let best: number[] | null = null;
+  for (let start = lower.indexOf(chars[0]); start >= 0; start = lower.indexOf(chars[0], start + 1)) {
+    const hits = [start];
+    for (const character of chars.slice(1)) {
+      const next = lower.indexOf(character, hits[hits.length - 1] + 1);
+      if (next < 0) break;
+      hits.push(next);
+    }
+    if (hits.length < chars.length) break;
+    if (!best || hits[hits.length - 1] - hits[0] < best[best.length - 1] - best[0]) best = hits;
+  }
+  const ranges: Array<[number, number]> = [];
+  for (const hit of best ?? []) {
+    const last = ranges[ranges.length - 1];
+    if (last && last[1] === hit) last[1] = hit + 1; else ranges.push([hit, hit + 1]);
+  }
+  return ranges;
+}
+
+/** A value with the parts typed text matches in <mark class="hit">, for search results. */
+export function highlighted(value: string, typed: string): Node[] {
+  const nodes: Node[] = [];
+  let from = 0;
+  for (const [start, end] of matchRanges(value, typed)) {
+    if (start > from) nodes.push(document.createTextNode(value.slice(from, start)));
+    const mark = document.createElement('mark');
+    mark.className = 'hit';
+    mark.textContent = value.slice(start, end);
+    nodes.push(mark);
+    from = end;
+  }
+  if (from < value.length) nodes.push(document.createTextNode(value.slice(from)));
+  return nodes;
+}
+
 /** A text node bound to an accessor: for branches of when() that show changing text. */
 export function textOf(value: () => string): Text {
   const node = document.createTextNode('');

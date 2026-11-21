@@ -6,7 +6,7 @@ import { html, when, type Child } from '../dom';
 import { cell, derive, effect, untrack, type Readable } from '../reactive';
 import { Icon, StatCard, type StatProps } from '../ui/base';
 import { uid } from '../ui/core';
-import { isBlank, isEmpty, type Folds } from '../ui/fold';
+import { isEmpty, type Folds } from '../ui/fold';
 import { moneyMeta, type FieldLike, type LinkSource } from '../ui/fields';
 import { formatOf } from './meta';
 import { plainOf } from '../richtext/html';
@@ -46,10 +46,10 @@ export function valueText(field: FieldLike, links: LinkSource | null): string {
   return text + unit;
 }
 
-/** "Label: value · Label: Not set · ..." over the fields that apply, in their order. A number at a zero default reads
- * Not set (isBlank). */
+/** "Label: value · Label: Not set · ..." over the fields that apply, in their order. Only an empty value (null or '')
+ * reads Not set: a stored 0.00 (a paid invoice's outstanding) and No are values. */
 export function fieldsSummary(fields: FieldLike[], links: LinkSource | null): string {
-  return fields.filter(field => field.rules.get().applies).map(field => `${field.meta.label}: ${(!isBlank(field) && valueText(field, links)) || 'Not set'}`).join(' · ');
+  return fields.filter(field => field.rules.get().visible).map(field => `${field.meta.label}: ${valueText(field, links) || 'Not set'}`).join(' · ');
 }
 
 /** "3 rows", "1 row" or "No rows". */

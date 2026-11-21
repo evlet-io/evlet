@@ -24,15 +24,15 @@ import { currencyDecimalsTable, todayGst } from './format';
 import { Session } from './session';
 import { isCalculated, isSectionRow, SchemaIndex, type AppSchema, type ChildSchema, type FieldSchema, type ModelSchema } from './schema';
 
-export type Rules = { applies: boolean; required: boolean; locked: boolean };
+// visible: whether the field shows (it applies and its visible_when is not false). A hidden field keeps its value.
+export type Rules = { applies: boolean; required: boolean; locked: boolean; visible: boolean };
+export type TableRules = { applies: boolean; visible: boolean };
 export type Outcome = { state: 'ready' } | { state: 'pending' | 'error'; code: string };
 const READY: Outcome = { state: 'ready' };
 const KEY = /^[A-Za-z0-9_-]{1,64}$/;
 const NUMERIC = new Set(['decimal', 'currency', 'integer', 'percent', 'duration']);
-const sameRules = (a: Rules, b: Rules) => a.applies === b.applies && a.required === b.required && a.locked === b.locked;
+const sameRules = (a: Rules, b: Rules) => a.applies === b.applies && a.required === b.required && a.locked === b.locked && a.visible === b.visible;
 const sameOutcome = (a: Outcome, b: Outcome) => a.state === b.state && (a as any).code === (b as any).code;
-/** How long the person must pause before the form asks the server for derived values. */
-export const PREVIEW_PAUSE_MS = 600;
 
 /** Whether derive() fills this field: "name" on the record, "table.name" on a Table's rows (derived=True). */
 export function derivedField(model: ModelSchema, path: string[], name: string): boolean {
@@ -70,7 +70,7 @@ export class Field {
   readonly error: Cell<string | null>;
   /** Why the form changed this value itself, such as "Cleared because Company changed". */
   readonly note: Cell<string | null>;
-  /** applies_when, required_when and locked_when as they stand now. */
+  /** applies_when, required_when, locked_when and visible_when as they stand now. */
   readonly rules: Cell<Rules>;
   /** For calculated fields: ready, or pending/error with a code such as COMPUTE_INPUT_MISSING. */
   readonly result: Cell<Outcome>;
@@ -88,7 +88,7 @@ export class Field {
     this.server = cell(value, { name: `${name} (saved)` });
     this.error = cell<string | null>(null, { name: `${name} (error)` });
     this.note = cell<string | null>(null, { name: `${name} (note)` });
-    this.rules = cell<Rules>({ applies: true, required: meta.required, locked: false }, { name: `${name} (rules)`, equals: sameRules });
+    this.rules = cell<Rules>({ applies: true, required: meta.required, locked: false, visible: true }, { name: `${name} (rules)`, equals: sameRules });
     this.result = cell<Outcome>(READY, { name: `${name} (result)`, equals: sameOutcome });
     this.calculated = isCalculated(meta);
     this.derived = derived;
@@ -236,6 +236,8 @@ export class Table {
   readonly total = cell(0);
   readonly partial = cell(false);
   readonly error = cell<string | null>(null);
+  /** The Table's applies_when and visible_when as they stand now: hidden unless visible; rows that do not apply are removed on save. */
+  readonly rules = cell<TableRules>({ applies: true, visible: true }, { equals: (a, b) => a.applies === b.applies && a.visible === b.visible });
   /** Saved rows in server order. */
   saved: Row[] = [];
   // Rows a partial response left out, kept by id so the page that brings them back reuses them.
@@ -576,8 +578,11 @@ export class RecordStore {
   // Link filter checks in flight: the latest ticket per field, and their promises for idle().
   private checks = new WeakMap<Field, number>();
   private checking = new Set<Promise<void>>();
-  // The server preview of derived values: the pending timer and the latest request's ticket.
-  private previewTimer: ReturnType<typeof setTimeout> | null = null;
+  // The server preview of derived values: a request queued for the end of this turn, the one in flight, whether the
+  // draft changed while it was, and the latest request's ticket.
+  private previewQueued = false;
+  private previewRun: Promise<void> | null = null;
+  private previewAgain = false;
   private previewTicket = 0;
   private readonly stop: () => void;
 
@@ -924,27 +929,38 @@ export class RecordStore {
 
   /**
    * The draft changed. A model whose derive() fills values the browser cannot work out (derived=True, such as the
-   * day's exchange rate or a tax table) asks the server for a preview once the person pauses, so they show before
-   * the save. Formulas the browser runs need no server call; a model without derived values never asks.
+   * day's exchange rate or a tax table) asks the server for a preview at once, so they show before the save: the
+   * form changes the draft only when an edit is committed (never on each keystroke), so there is no pause to wait
+   * for. Changes in the same turn of the event loop go as one request. Formulas the browser runs need no server
+   * call; a model without derived values never asks.
    */
   noteChange() {
     this.editVersion.update(version => version + 1);
     if (!this.meta.derives?.length) return;
     // An answer still on its way was worked out from the draft before this change: drop it, the next one follows.
     this.previewTicket++;
-    if (this.previewTimer !== null) clearTimeout(this.previewTimer);
-    this.previewTimer = setTimeout(() => { this.previewTimer = null; void this.refreshDerived(); }, PREVIEW_PAUSE_MS);
+    if (this.previewQueued) return;
+    this.previewQueued = true;
+    queueMicrotask(() => { this.previewQueued = false; void this.refreshDerived(); });
   }
 
-  /** Ask the server for the derived values of the draft as it stands, and show them. A failed or stale answer is
-   * dropped: the save works them out again and reports any problem. */
-  async refreshDerived() {
-    if (!this.ready.peek() || this.saving.peek() || !this.current.peek()) return;
+  /** Ask the server for the derived values of the draft as it stands, and show them. One request at a time: asked
+   * again while one is in flight, it sends once more when that returns. A failed or stale answer is dropped: the save
+   * works them out again and reports any problem. Resolves once the requests it led to have answered. */
+  refreshDerived(): Promise<void> {
+    if (!this.ready.peek() || this.saving.peek() || !this.current.peek()) return Promise.resolve();
+    if (this.previewRun) { this.previewAgain = true; return this.previewRun; }
     const ticket = ++this.previewTicket;
-    let result: DraftResult;
-    try { result = await this.preview(); } catch { return; }
-    if (ticket !== this.previewTicket || !this.ready.peek() || this.saving.peek()) return;
-    this.applyDerived(result.values as Record<string, any>);
+    const run = this.preview().then(result => {
+      if (ticket === this.previewTicket && this.ready.peek() && !this.saving.peek()) this.applyDerived(result.values as Record<string, any>);
+    }, () => {}).finally(() => {
+      this.previewRun = null;
+      if (!this.previewAgain) return;
+      this.previewAgain = false;
+      return this.refreshDerived();
+    });
+    this.previewRun = run;
+    return run;
   }
 
   private applyDerived(values: Record<string, any>) {
@@ -1023,7 +1039,7 @@ export class RecordStore {
   }
 
   private detach() {
-    if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
+    this.previewAgain = false;
     this.previewTicket++;
     this.ready.set(false);
     this.session?.stop();

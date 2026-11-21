@@ -30,7 +30,10 @@ export function docWidthClasses(frame: number, main: number): string[] {
  * follows the first measure. A record
  * page and a list's side panel use the same frame; the panel variant only changes its padding and title size.
  */
-export function DocFrame(props: { tint: Tint; main: Child; side?: Child; sidePosition?: Prop<'left' | 'right' | 'off'>; density?: Prop<'comfortable' | 'compact'>; variant?: 'page' | 'panel' }): HTMLElement {
+export function DocFrame(props: { tint: Tint; main: Child; side?: Child; sidePosition?: Prop<'left' | 'right' | 'off'>; density?: Prop<'comfortable' | 'compact'>; variant?: 'page' | 'panel';
+  /** A media query under which the frame is narrow whatever its width: a page folds its side column before the app's
+   * sidebar leaves, and keeps it folded once the frame widens into the sidebar's place. */
+  narrowWhen?: string }): HTMLElement {
   const position = () => read(props.sidePosition ?? 'right');
   const accent = tint(props.tint);
   const frame = html`<div class="doc" class:doc-panel=${props.variant === 'panel'} class:no-side=${() => position() === 'off' || !props.side} class:side-left=${() => position() === 'left'}
@@ -41,19 +44,25 @@ export function DocFrame(props: { tint: Tint; main: Child; side?: Child; sidePos
     const main = frame.firstElementChild as HTMLElement;
     const widths = { frame: 0, main: 0 };
     let applied: string[] = [];
-    const observer = new ResizeObserver(entries => {
-      for (const entry of entries) widths[entry.target === frame ? 'frame' : 'main'] = Math.round(entry.contentRect.width);
+    const query = props.narrowWhen ? (() => { try { return window.matchMedia?.(props.narrowWhen!) ?? null; } catch { return null; } })() : null;
+    const update = () => {
       const next = docWidthClasses(widths.frame, widths.main);
+      if (query?.matches && widths.frame > 0 && !next.includes('doc-narrow')) next.unshift('doc-narrow');
       // After the first width, changes may animate (a drawer sliding out, say), not the first layout itself.
       if (widths.frame > 0 && !frame.classList.contains('doc-sized')) requestAnimationFrame(() => frame.classList.add('doc-sized'));
       if (next.join() === applied.join()) return;
       frame.classList.remove(...applied);
       frame.classList.add(...next);
       applied = next;
+    };
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) widths[entry.target === frame ? 'frame' : 'main'] = Math.round(entry.contentRect.width);
+      update();
     });
     observer.observe(frame);
     observer.observe(main);
-    onCleanup(() => observer.disconnect());
+    query?.addEventListener?.('change', update);
+    onCleanup(() => { observer.disconnect(); query?.removeEventListener?.('change', update); });
   }
   return frame;
 }

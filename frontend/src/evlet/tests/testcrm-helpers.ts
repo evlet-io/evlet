@@ -4,7 +4,7 @@
 // Requests the recording does not have are kept in `misses` and answered 404, so a test can show them.
 import fixture from './testcrm-fixture.json';
 import { start, type Route } from './screens-helpers';
-import type { Recorded, Sent } from './server';
+import { listUrlOf, optionsOf, type Recorded, type Sent } from './server';
 
 type Phase = Record<string, Recorded | { schema: string }>;
 const data = fixture as unknown as Record<string, Phase[]> & { schemas: Record<string, Recorded>; ids: Record<string, string> };
@@ -54,6 +54,19 @@ export function scenario(name: string, { signedIn = true } = {}) {
     }
     return { status: 200, body: { items, total: items.length, limit: ids.length, offset: 0 }, etag: null };
   };
+  // The recordings predate the related counts route: it is answered from the relation pages the recording read,
+  // each page's total being what the server counts for that relation.
+  const counts = (url: string): Recorded | null => {
+    const parsed = new URL(url, 'http://testcrm.local');
+    if (!parsed.pathname.endsWith('/related') || parsed.search) return null;
+    const prefix = `GET ${parsed.pathname}/`, found: Record<string, number> = {};
+    for (let at = phase; at >= 0; at--) for (const [key, recorded] of Object.entries(phases[at])) {
+      const name = key.startsWith(prefix) ? key.slice(prefix.length).split('?')[0] : '';
+      const body = (recorded as Recorded).body as { total?: number } | undefined;
+      if (name && !(name in found) && (recorded as Recorded).status === 200 && typeof body?.total === 'number') found[name] = body.total;
+    }
+    return Object.keys(found).length ? { status: 200, body: { counts: found }, etag: null } : null;
+  };
   const reply = (sent: Sent): Recorded => {
     const key = keyOf(sent.method, sent.url);
     // testCRM runs without Eva, so the app's Eva check is answered as such a server answers it.
@@ -62,7 +75,10 @@ export function scenario(name: string, { signedIn = true } = {}) {
     if (key === 'GET /api/_inbox/count') return { status: 200, body: { unread: 0 }, etag: null };
     if (sent.method === 'GET') {
       for (let at = phase; at >= 0; at--) if (phases[at][key]) return answer(phases[at][key]);
-      const listed = batch(sent.url);
+      // The search route, answered from the list search the recordings made.
+      const asList = listUrlOf(sent.url), listKey = asList && keyOf('GET', asList);
+      if (listKey) for (let at = phase; at >= 0; at--) if (phases[at][listKey]) return optionsOf(answer(phases[at][listKey]));
+      const listed = batch(sent.url) ?? counts(sent.url);
       if (listed) return listed;
       misses.push(key);
       return notRecorded(key);

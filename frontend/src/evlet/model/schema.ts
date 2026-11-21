@@ -5,6 +5,9 @@ import type { CurrencyDisplay } from './format';
 
 export type Expression = Record<string, unknown> | null;
 
+/** How a value looks (look= on a field, or what a script's look method returns). */
+export type Look = 'strong' | 'muted' | 'success' | 'warning' | 'danger';
+
 export interface FieldSchema {
   name: string;
   type: string;
@@ -13,13 +16,22 @@ export interface FieldSchema {
   read_only: boolean;
   hidden?: boolean;
   help_text?: string;
+  /** The fields help_text names, as "per {uom}" names uom ({parent.currency}: a field of the record that owns a
+   * Table row). The browser fills them in as the values change; a Table row shows such help as subtext. */
+  help_fields?: string[];
   /** Text behind a ? icon at the right end of the input. */
   tooltip?: string;
+  /** The model script's methods for this field (docs/model-scripts.md). */
+  script?: { on_change?: string; tooltip?: string; look?: string; control?: string };
+  /** A fixed look for the value. */
+  look?: Look;
   placeholder?: string;
   /** A unit shown after the input, such as % or days. */
   suffix?: string;
   /** Integer(grouping=False): shown without thousands separators, such as a year. */
   grouping?: boolean;
+  /** Decimal(display_scale=2): shown with at most this many places and no trailing zeros (display only). */
+  display_scale?: number;
   scale?: number | null;
   /** A Currency field's code when it is fixed (on the field, or an app setting read by the server). */
   currency?: string;
@@ -36,6 +48,8 @@ export interface FieldSchema {
   /** Full width in the form, from a Controls layout. */
   wide?: boolean;
   target?: string;
+  /** A Link's form paths its Option reads (Ref in where=); the dropdown sends their values with each search. */
+  inputs?: string[];
   default?: unknown;
   default_kind?: string;
   stored?: boolean;
@@ -46,6 +60,7 @@ export interface FieldSchema {
   applies_when?: Expression;
   required_when?: Expression;
   locked_when?: Expression;
+  visible_when?: Expression;
   /** What a list filter may use on the field (evlet/query.py); empty when it cannot be filtered. */
   operators?: string[];
   /** copy=False: Duplicate leaves this value out of the new record. Absent means it is copied. */
@@ -65,7 +80,9 @@ export interface ChildSchema { name: string; model: string; label: string; link:
   /** Table(sections=True): the rows may include section rows {id, section}, headings that group the rows below them. */
   sections?: boolean
   /** Row fields each section row sums over its own rows. Absent: a section shows no sums. */
-  section_sums?: string[] }
+  section_sums?: string[]
+  /** Table(totals=...): fields of the owning record shown under the table, in order, in place of the inferred totals. */
+  totals?: string[] }
 
 /** A section row in a record's children: {id, section}. It has none of the row fields. */
 export const isSectionRow = (item: Record<string, unknown>) => typeof item.section === 'string' && Object.keys(item).every(key => key === 'id' || key === 'section' || key === '_key');
@@ -145,6 +162,10 @@ export interface ModelSchema {
   /** Every block of the record page in drawing order (Meta.layout). Absent from older servers: the first section is the
    * main zone, the other sections follow, and every Table joins the main zone. */
   record_layout?: RecordLayout;
+  /** The model script (Meta.script): its address and the method run when a record opens. */
+  script?: { url: string; on_open?: string };
+  /** Scripts other apps add (evlet.Extend), in app install order: their on_change hooks ("field" or "table.field"). */
+  extensions?: Array<{ url: string; on_open?: string; on_change?: Record<string, string> }>;
   children?: ChildSchema[];
   actions?: ActionSchema[];
   permissions?: { create: boolean; update: boolean; delete: boolean };
@@ -174,6 +195,7 @@ export type LayoutBlock = { name?: string } & (
   | { kind: 'table'; name: string; main?: boolean; collapsible?: boolean; collapsed?: boolean | 'empty' }
   | { kind: 'related'; model: string; link: string; label: string; filters: LayoutCondition[]; fields: string[]; limit: number; order: string[] }
   | { kind: 'html'; html: string }
+  | { kind: 'custom'; name: string; label: string; custom: string; main?: boolean; collapsible?: boolean; collapsed?: boolean | 'empty' }
   | { kind: 'chart'; type: 'bar' | 'line' | 'stat'; model: string; link: string; x: string | null; y: string[]; label: string | null; filters: LayoutCondition[] });
 
 /** The record layout: blocks marked main are the main zone, drawn open first (without one, the first section is),

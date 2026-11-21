@@ -811,6 +811,14 @@ dd.editing .input,.ff-v .input{width:100%}
 .sw i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--knob);box-shadow:var(--shadow-xs);transition:transform .15s}
 .sw.on{background:var(--accent)}
 .sw.on i{transform:translateX(12px)}
+/* A switch on its own (a Boolean field): as wide as the switch, and the focus ring goes round the switch, not a box. */
+.sw-wrap.sw-only{align-self:flex-start;gap:0;padding:0;border-radius:9px;min-height:30px}
+.sw-wrap.sw-only:focus-visible{outline:none}
+.sw-wrap.sw-only:focus-visible .sw{outline:2px solid var(--accent);outline-offset:2px}
+.sw-wrap.sw-only:disabled{cursor:not-allowed}
+.sw-wrap.sw-only:disabled .sw{opacity:.5}
+.iv-sw{display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+.iv-sw[aria-busy="true"]{opacity:.6}
 
 /* ---------- layout control ---------- */
 .fab{position:fixed;right:calc(20px + env(safe-area-inset-right,0px));bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:35;display:flex;flex-direction:column;align-items:flex-end;gap:10px}
@@ -965,6 +973,11 @@ th:hover>.rz::after{background:var(--border-strong)}
 .rz:hover::after,.resizing .rz:hover::after{background:var(--accent)}
 .grid.resizing,.dt.resizing{cursor:col-resize;user-select:none}
 .g-ph{color:var(--fg-3)}
+/* A cell's subtext: its field's reactive help text ("per Box") under the value, inside the same 35px row. */
+.g-cv{display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:15px}
+.g-cv-v,.g-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-sub{font-size:11px;line-height:13px;font-weight:400;color:var(--fg-3)}
+.g-sub[hidden]{display:none}
 .g tr.g-xrow td{padding:0;height:auto;background:var(--bg-subtle);white-space:normal;overflow:visible}
 .g-x{position:sticky;left:0;width:var(--gw,100%);padding:12px 14px 14px;box-shadow:inset 3px 0 0 var(--accent);animation:slidein .18s ease}
 .g-x-h{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap}
@@ -983,6 +996,17 @@ th:hover>.rz::after{background:var(--border-strong)}
 .g-sum span{font-size:11.5px;color:var(--fg-3)}
 .g-sum b{font-size:13px;font-weight:600}
 .g-sum .gt b{font-size:15px}
+.g-totals{display:flex;flex-direction:column;gap:6px;min-width:min(320px,100%)}
+.g-tl{display:grid;grid-template-columns:1fr minmax(0,160px);gap:2px 16px;align-items:center}
+.g-tl[hidden]{display:none}
+.g-tl>span:first-child{color:var(--fg-3)}
+.g-tl>b{font-weight:600;text-align:right;font-size:13px}
+.g-tl .input{height:28px;text-align:right}
+.g-tl .err{grid-column:1/-1;text-align:right;color:var(--t-rose);display:none}
+.g-tl.invalid .err{display:block}
+.g-tl.gt{border-top:1px solid var(--border);padding-top:6px}
+.g-tl.gt>span:first-child{color:var(--fg);font-weight:600}
+.g-tl.gt>b{font-size:15px}
 .g td.g-empty{height:auto;padding:28px 0}
 .g-empty-in{display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--fg-3);position:sticky;left:0;width:var(--gw,100%)}
 .cols-pop{width:284px}
@@ -1031,7 +1055,7 @@ th:hover>.rz::after{background:var(--border-strong)}
   .stat-card.has-ic .stat-ic{display:none}
   .stat-card.has-ic .stat-dot{display:inline-block}
   .fs-g{grid-template-columns:1fr}
-  .g-sum{width:100%;justify-content:flex-end}
+  .g-sum,.g-totals{width:100%;justify-content:flex-end}
   .g-x-f .fld.wide{grid-column:1/-1}
   .fab-btn span:not(.fab-n){display:none}
   .table-wrap{max-height:none}
@@ -1181,6 +1205,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 .in-link-box{position:relative;min-width:0;--link-at:11px}
 .fld .in-link-box{--link-at:15px}
 .g td.editing .in-link-box{--link-at:10px}
+.g td .g-go{--link-at:0px;display:flex;align-items:center;min-width:0}
 .link-go{position:absolute;left:var(--link-at);top:50%;width:20px;height:20px;margin-top:-10px;display:grid;place-items:center;border-radius:var(--r-sm);
   color:var(--accent);background:var(--surface);opacity:0;pointer-events:none;transition:opacity .15s ease}
 .link-go>svg{color:inherit;transition:transform .15s ease}
@@ -1206,6 +1231,13 @@ th:hover>.rz::after{background:var(--border-strong)}
 .link-list{display:flex;flex-direction:column;max-height:260px;overflow-y:auto}
 .link-list .mi{gap:9px}
 .link-list .mi .muted{margin-left:auto;font-size:12px}
+.link-list .mi:has(.link-sub){height:auto;min-height:32px;padding-block:6px}
+.link-opt{display:flex;flex-direction:column;gap:2px;min-width:0;line-height:1.3}
+.link-title,.link-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.link-sub{font-size:12px;color:var(--fg-3)}
+/* The part of a search result the typed text matches: a light accent tint, the text's own colour. */
+mark.hit{background:color-mix(in srgb,var(--accent) 15%,transparent);color:inherit;border-radius:2px}
+.link-create{color:var(--accent)}
 .link-status{font-size:12px;padding:0 4px}
 .link-status:empty{display:none}
 .link-search hr{border:0;border-top:1px solid var(--divider);margin:2px 0}
@@ -1468,3 +1500,11 @@ th:hover>.rz::after{background:var(--border-strong)}
 .money-img{display:inline;height:.8em;width:auto;vertical-align:baseline;user-select:all}
 .money-img.tint{object-position:-9999px 0;background:currentColor;-webkit-mask:var(--money-mask) center/contain no-repeat;mask:var(--money-mask) center/contain no-repeat}
 .in-box>.money-img{height:1em}
+/* Model scripts (model/script.ts): a field's look (look= or a script's look method), multi-line script tooltips, drawn blocks. */
+[data-look=strong]{font-weight:650}
+[data-look=muted] :is(input,.fval,.g-cv-v),td[data-look=muted]{color:var(--fg-3)}
+[data-look=success] :is(input,.fval,.g-cv-v),td[data-look=success]{color:var(--t-green)}
+[data-look=warning] :is(input,.fval,.g-cv-v),td[data-look=warning]{color:var(--t-amber)}
+[data-look=danger] :is(input,.fval,.g-cv-v),td[data-look=danger]{color:var(--t-rose)}
+.tip{white-space:pre}
+.ev-script{display:block;min-width:0}

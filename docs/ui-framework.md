@@ -238,13 +238,14 @@ await record.save();                       // the server's answer replaces the d
   draft. `runAction()` and `move()` require a clean record. `preview()` asks the server to
   evaluate the draft for plans it does not ship.
 - A model with `derived=True` fields or Tables lists them in its schema as `derives` (only names the role can read).
-  Each change to the draft (a field set, a row added, removed or moved) restarts a 600 ms timer
-  (`PREVIEW_PAUSE_MS`); when the person pauses, `refreshDerived()` sends the draft to
-  `POST /api/_draft/{model}`, the same route and permission checks as any preview, and shows what
-  `derive()` set: derived fields, `"table.field"` values on rows (matched by id or `_key`) and the
-  rows of a derived Table. Derived fields are never editable, never an unsaved change and never sent.
-  An answer that a later change overtook is dropped, and only one answer per pause is shown. A model
-  without derived values never asks, and formulas the browser runs need no request.
+  A change to the draft (a field set, a row added, removed or moved) happens only when an edit is
+  committed, never on each keystroke, so `refreshDerived()` sends the draft to
+  `POST /api/_draft/{model}` at once (the same route and permission checks as any preview) and shows
+  what `derive()` set: derived fields, `"table.field"` values on rows (matched by id or `_key`) and the
+  rows of a derived Table. Changes in the same turn of the event loop go as one request; at most one
+  is in flight, and if the draft changed meanwhile it sends once more when that one returns. An answer
+  the draft has moved past is dropped. Derived fields are never editable, never an unsaved change and
+  never sent. A model without derived values never asks, and formulas the browser runs need no request.
 - `formatMoney('25200')` is `AED 25,200.00` (exact, half up). Money and numbers take decimal
   strings or safe integers only; a JavaScript fraction or text that is not a plain decimal
   shows `Invalid amount`. `formatDate('2026-11-01')` is `01-11-2026`; impossible dates show
@@ -287,7 +288,7 @@ mark only.
 | `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, StatCard (also exported as Stat), Sparkline, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
 | `tooltip.ts` | `tooltip(element, text)`: one page-wide tooltip on hover and focus, never on touch |
 | `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `SplitButton` (a main button with a chevron for the alternatives), `openModal`, `openDrawer`, `toast` (with Undo), `copyText`, `DialogFooter`, `primaryAction(panel)`: the footer's main action, which a dialog without a field focuses and Mod+S presses; the arrow keys move between footer actions and Mod+Shift+D cancels |
-| `shortcuts.ts` | `isMac`, `keyMatches(event, 'Mod+S')`, `formatKeys(combo)` (⌘S or Ctrl+S), `withShortcut(label, combo)` for tooltips, `ariaKeys(combo)` for `aria-keyshortcuts`, `isTyping`, `commitTyped` ([keyboard shortcuts](ui.md#keyboard-shortcuts)) |
+| `shortcuts.ts` | `isMac`, `keyMatches(event, 'Mod+S')`, `formatKeys(combo)` (⌘S or Ctrl+S), `withShortcut(label, combo)` for tooltips, `ariaKeys(combo)` for `aria-keyshortcuts`, `isTyping`, `commitTyped`, `commitWithin(host, commit)` for a control that commits by hand ([keyboard shortcuts](ui.md#keyboard-shortcuts)) |
 | `../app/shortcuts.ts` | `useShortcuts({ root, inner, area, actions, help })`: a screen binds Save, Delete, New and Duplicate; one document listener runs the action of the screen holding the focus. `openShortcutSheet(everywhere)` is the ? sheet |
 | `../app/duplicate.ts` | `duplicateOf(model, row, from)`: what More > Duplicate copies of a saved record (writable, visible, stored fields and every table's rows without ids; not the name, number, State, calculated or unique fields, nor fields and tables with `copy: false`); `duplicateAllowed(model)` reads `duplicate: false`; `holdDuplicate` and `takeDuplicate` hand it in memory to the next new record of the model ([Duplicate](ui.md#duplicate)) |
 | `fields.ts`, `kinds.ts` | BaseField and one component per field type (RichTextField and RichTextView for rich text), `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
@@ -299,7 +300,7 @@ mark only.
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
 | `childtable.ts` | ChildTable over a record store `Table` |
 | `split.ts` | SplitView: a main area and a resizable side panel |
-| `doc.ts` | DocFrame (page or panel variant, responsive to its own width: DOC_NARROW, docWidthClasses), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
+| `doc.ts` | DocFrame (page or panel variant, responsive to its own width: DOC_NARROW, docWidthClasses; `narrowWhen` adds a media query under which it is narrow anyway), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
 | `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
 | `theme.ts` | `applyTheme`, `resolveTheme`, `systemScheme`, `currentTheme`, `THEMES`, `isTheme` ([Themes](#themes)) |
 | `time.ts` | `RelativeTime`, `relativeTime`, `exactTime`, `zoneLabel`, `RELATIVE_STEPS`, `minuteClock` ([Relative times](#relative-times)) |
@@ -462,7 +463,10 @@ search boxes focus the same way; child table cells show the active cell's 2 px a
 Buttons and other controls keep the page-wide `:focus-visible` outline, a solid 2 px accent line. The label is
 14 px, weight 500, 6 px above the input, and the required `*` is the accent blue (its
 `required_when` tooltip stays). `help_text` reads under the input in grey and is linked with
-`aria-describedby`; an error replaces it while there is one. A field with `tooltip` gets a ? icon
+`aria-describedby`; an error replaces it while there is one. A help text that names fields (`"per {uom}"`,
+`help_fields` in the schema) is filled in from the record as it changes (`helpTextOf(field, links)`), and a
+child table cell shows it as a small subtext line under the value (`.g-sub`, inside the 35 px row)
+([model-engine.md](model-engine.md#reactive-help-text)). A field with `tooltip` gets a ? icon
 at the right end of the input (before a Select's or Link's chevron, between the input and a unit
 box) that shows the text on hover and focus. Compact places keep their sizes: the record side
 panel (`.fields`), child table cells, list filters and quick add. IBM Plex Sans is the font everywhere.
@@ -541,6 +545,16 @@ person's `/api/schema` (the server leaves out models the role cannot read) or is
 No value, or `null`: no link and no arrow. It is display only. The record's route still checks the
 account, tenant and row, so a record the person can't see shows the page's normal 404 or 403. Pass
 `goto: false` to `FieldControl` to leave it out.
+
+`LinkSource.search(meta, text, filters, context)` finds the options. `apiLinks` asks the search route
+(`api.search(model, { q, link, values, limit })`, `GET /api/{model}/search`); on a form, `context` names
+the Link (`<model>.<field>`) and holds the form values its filters and option read
+(`linkContext(field)` in `model/links.ts`), so the server applies the filters and builds each option's
+subtext. Each option is a `LinkOption` (`id`, `title`, `subtitle`): the dropdown shows the title with the
+subtitle below it, smaller and muted. `apiLinks(api, schema, { quickCreate })` adds **Create new**:
+`canCreate(meta)` is true when the target is in the schema with `permissions.create`, is not a child
+table's model and is not read-only, and `create(meta, text, values)` runs the app's quick form
+(`app/quick-create.ts`). A LinkSource without `create` offers no Create new.
 
 ### Stat cards
 
@@ -648,7 +662,11 @@ mount(document.querySelector('#app')!, () => DocFrame({
   date-time keeps its seconds. A refused save keeps the input open with the server's message;
   a conflict says "Someone else changed this record. Reload to see their changes." and offers
   Reload, which reads the record again and keeps the typed value to save again. A saved value
-  confirms with a toast that has Undo.
+  confirms with a toast that has Undo. A Boolean is just its switch, at rest and while editing:
+  no Yes or No text, no edit button and no input box. Click, Space or Enter flips it and saves at
+  once (with Undo); the focus ring goes round the switch. A value that can't change shows the
+  switch disabled, with the reason on hover. A Boolean in a form or a table cell editor is the
+  same bare switch; a table cell at rest still reads Yes or No.
 - **ChildTable** binds to a record `Table`: click or Enter edits a cell, Tab and Shift Tab move
   across editable cells and wrap rows (from a cell being edited or not; past the last cell Tab
   goes on to the Add row placeholder), Enter moves down (in a new last row, after typing, Enter adds the next row), Esc cancels, arrow keys move between cells. One cell is
@@ -715,7 +733,10 @@ mount(document.querySelector('#app')!, () => DocFrame({
   handle, so rows and sections still reorder by touch. The footer and the totals under it come from the parent's calculated
   sums over the table (`total = lines.sum("amount")`). A column's sum shows once: in the total line while
   the column shows, and under the table only while it is hidden; totals built from those sums (a grand
-  total) stay under the table. Only rows in view are in the DOM.
+  total) stay under the table. A table whose schema entry has `totals` (`Table(totals=...)`) shows those fields
+  of the parent instead, as a stack (`.g-totals`, one `.g-tl[data-field]` line each, the last `.gt`): each is a
+  read-only value or, while `field.editable` holds, its `FieldControl` with its error, and is hidden while its
+  applies rule is false. Only rows in view are in the DOM.
 - **DataTable** sorts (exact for decimals), resizes (double click resets), reorders columns
   (drag a header, or Alt and an arrow, within the pinned or the scrolling range), pins columns on
   the left (`pinned`, default 1, or the saved range), selects rows, moves with the arrow keys and
@@ -956,7 +977,8 @@ page in a new browser tab.
 | `Meta.list_fields` | List columns (up to eight, without `id`); without it the first eight visible fields that are not `column=False` |
 | `column=False` on a field | Out of the list's default columns and the Table grid's default columns (it starts hidden in the Columns menu, and Reset columns hides it again); still on the form and the row editor, and still read for each row, for example as a currency source |
 | `Meta.title_field` | The record title (edited in place) and the pinned first list column |
-| `Meta.search_fields` | The list search box and record search in the palette |
+| `Meta.search_fields` | The list search box; Link dropdowns, record pickers and the palette search the title and these fields fuzzily, ranked ([model-engine.md](model-engine.md#record-search-and-link-options)) |
+| `Meta.option`, `Link(option=)` | Each Link option's title and the muted subtext line below it, built on the server |
 | `Meta.layout` | The record page in two zones, from `record_layout` in the schema: every block marked `main` (`Main` groups of fields, a titled one under a small heading, and `Main` Tables) drawn open first, in order, never collapsing; then every other block (sections, `TableSection`s, Related lists, Html and charts) as "more information" rows that start closed. Without a main block the first section is the main zone. Readable fields the layout leaves out follow under Other, and Tables it leaves out after it; the row editor follows the same rules over the row model's layout ([ui.md](ui.md#record-layouts)) |
 | `Meta.open_in` | `"page"` (default) opens a record from the list on its own page; `"panel"` opens it in a side panel beside the narrowed list. The Controls list view and the person's layout menu can change it (see [Side panel](#side-panel)) |
 | `Meta.list_tabs`, `Meta.list_tab` | The list's tabs: All and one per value of a State, Select or Link field (the State without `list_tabs`, none with `list_tabs = None`), with counts from `GET /api/{model}/list_tabs`, and the tab the list opens on (`"all"` by default). A Link shows its 8 most used values, labelled by title ([ui.md](ui.md#list-tabs)) |
@@ -975,8 +997,8 @@ page in a new browser tab.
 | `Meta.key_fields` (Phase 10) | The header's subtitle (the first two with a value); the fields themselves show in the form. Never the summary strip |
 | `Meta.cards`, `Main`, `Section(description=...)`, `TableSection` | The compact record page: key cards, the main zone, collapsible "more information" rows ([ui.md](ui.md#compact-record-page)) |
 | Calculated fields, per-record measures | The summary strip, at most four: calculated values the header facts don't show, then per-record measures. No strip when nothing is left; `Meta.summary = False` turns it off |
-| `Meta.relations` (Phase 10) | The Related row of "more information": closed, a count per relation; open, every relation, an empty one as one line with no table or 0. Rows load when shown, five at a time with a pager, and View all opens the filtered list ([ui.md](ui.md)) |
-| `Meta.side_blocks` | `files` keeps the attachments in the side column (without it they go); `related` keeps the automatic Related row when the layout lists related records itself. `key_fields` and `info` are accepted and change nothing |
+| `Meta.relations` (Phase 10) | The Related section after "more information": closed, a chip per relation with a count badge (one read counts them all); open, every relation, an empty one as one line with no table or 0. Rows load when shown, five at a time with a pager, and View all opens the filtered list ([ui.md](ui.md)) |
+| `Meta.side_blocks` | `files` keeps the attachments in the side column (without it they go); `related` keeps the automatic Related section when the layout lists related records itself. `key_fields` and `info` are accepted and change nothing |
 | `panel=False` on a field, `Section` or `Table`; `Meta.panel_summary = False`; `Meta.panel` | What a record opened in a list's side panel leaves out, or (`Meta.panel`) the only parts it keeps, in order. The schema carries `panel` only when something is hidden; the full page ignores it ([Side panel](#side-panel)) |
 | `copy=False` on a field or `Table`; `Meta.duplicate = False` | What a record's Duplicate leaves out of the new record, or (`Meta.duplicate`) no Duplicate action at all. Duplicate shows only with `permissions.create`; the schema carries `copy` and `duplicate` only when off ([ui.md](ui.md#duplicate)) |
 | `attachments` | The Attachments block of the side column, with upload and a remove button on each file (asks first) for roles that can update while the record is not locked |

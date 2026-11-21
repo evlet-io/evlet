@@ -7,6 +7,7 @@ import pytest
 
 from evlet.audit import COLUMNS as AUDIT_COLUMNS
 from evlet.framework import version as framework_version
+from evlet.migrations import describe
 
 from evlet import (AddTable, Child, CreateModel, Database, Integer, Migration, Model, Registry, SchemaError, Table, Text,
                    User)
@@ -629,3 +630,370 @@ def test_relax_explains_a_defensive_sqlite_build(monkeypatch):
     connection.setconfig(sqlite3.SQLITE_DBCONFIG_DEFENSIVE, True)
     with pytest.raises(SchemaError, match='does not allow changing column constraints'):
         connection.set_required('t', 'a', False)
+
+
+# DropIndex: a removed or changed index migrates (finance v1's Party).
+
+def party(indexes=(), *, code=None, kind=True):
+    """A Party model: `indexes` is its Meta.indexes, `code` the code field's flags."""
+    attributes = {'__module__': __name__, 'code': Text(required=True, max_length=20, **(code or {})),
+                  'title': Text(max_length=120)}
+    if kind:
+        attributes['kind'] = Text(max_length=20)
+    if indexes:
+        attributes['Meta'] = type('Meta', (), {'indexes': list(indexes)})
+    return type('Party', (Model,), attributes)
+
+
+def suggested(plan):
+    namespace = {}
+    exec(plan.suggestion, namespace)
+    return namespace['migration']
+
+
+def index_shape(database, table):
+    with database.transaction() as tx:
+        # The standard name column's own unique index is left out.
+        return sorted((found.columns, found.unique) for found in tx.connection.inspect(table).indexes
+                      if not found.partial and found.columns != ('name',))
+
+
+def test_party_unique_index_change_migrates_an_instance_that_ran_0001(tmp_path):
+    from evlet import DropIndex
+    path = tmp_path / 'finance.sqlite3'
+    first = [Migration('0001_initial', CreateModel(party([(('kind', 'code'), {'unique': True})])))]
+    database = Database(path, Registry(party([(('kind', 'code'), {'unique': True})])), migrations=first)
+    database.migrate(first)
+    Party = database.registry.models['party']
+    database.create(Party, code='ACME', kind='customer')
+    database.create(Party, code='GULF', kind='customer')
+    # The models now make the code unique on its own and index the kind separately.
+    target = Registry(party([(('code',), {'unique': True}), ('kind',)]))
+    plan = Database(path, target).plan(first)
+    assert "Meta.indexes differ" in plan.text()
+    migration = suggested(Database(path, target).plan(first))
+    assert migration.operations[0] == DropIndex('party', ('kind', 'code'), unique=True)
+    assert "DropIndex('party', ('kind', 'code'), unique=True)" in plan.suggestion
+    assert plan.suggestion.index('DropIndex(') < plan.suggestion.index('AddIndex(')
+    migrations = [*first, Migration('0002_changes', *migration.operations)]
+    assert Database(path, target).migrate(migrations) == ['0002_changes']
+    database = Database(path, target, migrations=migrations)
+    database.initialize()
+    assert index_shape(database, 'party') == [(('code',), True), (('kind',), False)]
+    assert Database(path, target).plan(migrations).text().endswith('The migrations produce the current models.')
+
+
+def test_drop_index_removes_a_unique_composite_index(tmp_path):
+    path = tmp_path / 'parties.sqlite3'
+    first = [Migration('0001', CreateModel(party([(('kind', 'code'), {'unique': True})])))]
+    Database(path, Registry(party([(('kind', 'code'), {'unique': True})])), migrations=first).migrate(first)
+    target = Registry(party())
+    migrations = [*first, Migration('0002', *suggested(Database(path, target).plan(first)).operations)]
+    assert [describe(op) for op in migrations[1].operations] == ['drop unique index on party (kind, code)']
+    database = Database(path, target, migrations=migrations)
+    database.migrate(migrations)
+    assert index_shape(database, 'party') == []
+    database.create(target.models['party'], code='A', kind='x')
+    database.create(target.models['party'], code='A', kind='x')
+
+
+def test_changing_an_index_unique_flag(tmp_path):
+    from evlet import AddIndex, DropIndex
+    path = tmp_path / 'flags.sqlite3'
+    composite = [Migration('0001', CreateModel(party([('kind', 'code')], code={'index': True})))]
+    Database(path, Registry(party([('kind', 'code')], code={'index': True})), migrations=composite).migrate(composite)
+    # The composite entry and the field-level index both become unique.
+    target = Registry(party([(('kind', 'code'), {'unique': True})], code={'unique': True}))
+    migration = suggested(Database(path, target).plan(composite))
+    assert set(migration.operations) == {DropIndex('party', ('kind', 'code')), AddIndex('party', ('kind', 'code'), unique=True),
+                                         DropIndex('party', 'code'), AddIndex('party', 'code', unique=True)}
+    kinds = [type(op).__name__ for op in migration.operations]
+    assert kinds == sorted(kinds, key=lambda name: name != 'DropIndex')
+    migrations = [*composite, Migration('0002', *migration.operations)]
+    database = Database(path, target, migrations=migrations)
+    database.migrate(migrations)
+    database.initialize()
+    assert index_shape(database, 'party') == [(('code',), True), (('kind', 'code'), True)]
+    # And back: DropIndex(unique=True) clears the field's unique flag.
+    back = Registry(party([('kind', 'code')]))
+    migration = suggested(Database(path, back).plan(migrations))
+    assert set(migration.operations) == {DropIndex('party', 'code', unique=True), DropIndex('party', ('kind', 'code'), unique=True),
+                                         AddIndex('party', ('kind', 'code'))}
+    migrations = [*migrations, Migration('0003', *migration.operations)]
+    database = Database(path, back, migrations=migrations)
+    database.migrate(migrations)
+    database.initialize()
+    assert index_shape(database, 'party') == [(('kind', 'code'), False)]
+
+
+def test_drop_index_refuses_an_index_the_plan_does_not_have(tmp_path):
+    from evlet import DropIndex
+    path = tmp_path / 'missing.sqlite3'
+    first = [Migration('0001', CreateModel(party()))]
+    Database(path, Registry(party()), migrations=first).migrate(first)
+    for operation, message in ((DropIndex('party', ('kind', 'code')), r"party: there is no index \('kind', 'code'\) to drop"),
+                               (DropIndex('party', 'code', unique=True), 'party.code: there is no unique index to drop')):
+        with pytest.raises(SchemaError, match=message):
+            Database(path, Registry(party())).migrate([*first, Migration('0002', operation)])
+    with pytest.raises(SchemaError, match='DropIndex names distinct fields'):
+        Migration('0002', DropIndex('party', ('code', 'code'))).checksum()
+
+
+def test_drop_index_is_done_on_an_instance_created_after_the_index_left_the_models(tmp_path):
+    """0001 made a unique (kind, code) index; the models dropped it without a migration, and an instance
+    created from those models never had it. A later DropIndex migrates that instance and the one that ran 0001."""
+    from evlet import AddField, DropIndex
+    indexed = party([(('kind', 'code'), {'unique': True})], code={'index': True})
+    first = [Migration('0001_initial', CreateModel(indexed)), Migration('0002_note', AddField('party', 'note', Text()))]
+    attributes = {'__module__': __name__, 'code': Text(required=True, max_length=20), 'title': Text(max_length=120),
+                  'kind': Text(max_length=20), 'note': Text()}
+    target = Registry(type('Party', (Model,), attributes))
+    migrations = [*first, Migration('0003_drop', DropIndex('party', ('kind', 'code'), unique=True),
+                                    DropIndex('party', 'code'))]
+    # The old instance ran 0001 with the index and 0002 later.
+    old = tmp_path / 'old.sqlite3'
+    Database(old, Registry(indexed), migrations=first[:1]).migrate(first[:1])
+    with pytest.raises(SchemaError, match='Meta.indexes differ'):
+        Database(old, target).migrate(first)
+    assert Database(old, target).plan(migrations).text().endswith('The migrations produce the current models.')
+    assert Database(old, target).migrate(migrations) == ['0002_note', '0003_drop']
+    # The fresh instance was created from the models at 0002, which no longer have either index.
+    fresh = tmp_path / 'fresh.sqlite3'
+    Database(fresh, target, migrations=first).migrate(first)
+    assert index_shape(Database(fresh, target), 'party') == []
+    assert Database(fresh, target).plan(migrations).text().endswith('The migrations produce the current models.')
+    assert Database(fresh, target).migrate(migrations) == ['0003_drop']
+    for path in (old, fresh):
+        database = Database(path, target, migrations=migrations)
+        database.initialize()
+        assert index_shape(database, 'party') == []
+        database.create(target.models['party'], code='A', kind='x')
+        database.create(target.models['party'], code='A', kind='x')
+    # An index no applied migration ever made is still refused.
+    with pytest.raises(SchemaError, match=r"party: there is no index \('kind', 'title'\) to drop"):
+        Database(fresh, target).migrate([*migrations, Migration('0004', DropIndex('party', ('kind', 'title')))])
+
+
+def test_finance_v1_0009_drop_index_runs_on_an_instance_created_at_0008(tmp_path):
+    """finance_v1's shipped 0009, unchanged: DropIndex("party", ("kind", "record_id"), unique=True). An
+    instance created at 0008 from models without that index migrates, as does one that ran 0001."""
+    from evlet import AddField, DropIndex
+
+    def finance_party(indexed):
+        attributes = {'__module__': __name__, 'title': Text(max_length=120), 'kind': Text(max_length=20),
+                      'record_id': Integer()}
+        if indexed:
+            attributes['Meta'] = type('Meta', (), {'indexes': [(('kind', 'record_id'), {'unique': True})]})
+        return type('Party', (Model,), attributes)
+
+    first = Migration('0001_initial', CreateModel(finance_party(True)))
+    middle = [Migration(f'{number:04d}_step', AddField('party', f'note_{number}', Text())) for number in range(2, 9)]
+    upto_0008 = [first, *middle]
+    attributes = {'__module__': __name__, 'title': Text(max_length=120), 'kind': Text(max_length=20), 'record_id': Integer(),
+                  **{f'note_{number}': Text() for number in range(2, 9)}}
+    target = Registry(type('Party', (Model,), attributes))
+    shipped = [*upto_0008, Migration('0009_seed_and_index', DropIndex('party', ('kind', 'record_id'), unique=True))]
+    created_at_0008 = tmp_path / 'created-0008.sqlite3'
+    Database(created_at_0008, target, migrations=upto_0008).migrate(upto_0008)
+    assert Database(created_at_0008, target).migrate(shipped) == ['0009_seed_and_index']
+    ran_0001 = tmp_path / 'ran-0001.sqlite3'
+    Database(ran_0001, Registry(finance_party(True)), migrations=[first]).migrate([first])
+    assert index_shape(Database(ran_0001, Registry(finance_party(True))), 'party') == [(('kind', 'record_id'), True)]
+    assert Database(ran_0001, target).migrate(shipped) == [migration.name for migration in shipped[1:]]
+    for path in (created_at_0008, ran_0001):
+        database = Database(path, target, migrations=shipped)
+        database.initialize()
+        assert index_shape(database, 'party') == []
+
+
+def test_drop_index_by_old_names_after_a_rename_drops_the_database_index(tmp_path):
+    """0001 made a unique (kind, record_id) index; 0002 renamed kind to role_kind (SQLite renames the column inside the
+    index, which keeps its old name). A later DropIndex naming the old columns drops the database index too, whether
+    the instance ran 0002 earlier or runs them together, and the plan reports no drift."""
+    import sqlite3
+    from evlet import DropIndex, RenameField
+
+    def finance_party(indexed, kind):
+        attributes = {'__module__': __name__, 'title': Text(max_length=120), kind: Text(max_length=20), 'record_id': Integer()}
+        if indexed:
+            attributes['Meta'] = type('Meta', (), {'indexes': [((kind, 'record_id'), {'unique': True})]})
+        return type('Party', (Model,), attributes)
+
+    first = Migration('0001_initial', CreateModel(finance_party(True, 'kind')))
+    renamed = Migration('0002_rename', RenameField('party', 'kind', 'role_kind'))
+    dropped = Migration('0003_drop', DropIndex('party', ('kind', 'record_id'), unique=True))
+    target = Registry(finance_party(False, 'role_kind'))
+    migrations = [first, renamed, dropped]
+    stepwise, together = tmp_path / 'stepwise.sqlite3', tmp_path / 'together.sqlite3'
+    for path in (stepwise, together):
+        Database(path, Registry(finance_party(True, 'kind')), migrations=[first]).migrate([first])
+    Database(stepwise, Registry(finance_party(True, 'role_kind'))).migrate([first, renamed])
+    with sqlite3.connect(stepwise) as connection:
+        assert connection.execute("SELECT sql FROM sqlite_master WHERE name = 'evlet_party_kind_record_id_unique'").fetchone()[0] \
+            .replace('"', '').endswith('(role_kind, record_id)')
+    assert Database(stepwise, target).migrate(migrations) == ['0003_drop']
+    assert Database(together, target).migrate(migrations) == ['0002_rename', '0003_drop']
+    for path in (stepwise, together):
+        database = Database(path, target, migrations=migrations)
+        database.initialize()
+        assert index_shape(database, 'party') == []
+        with sqlite3.connect(path) as connection:
+            assert not connection.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND sql LIKE '%record_id%'").fetchall()
+        assert Database(path, target).plan(migrations).text().endswith('The migrations produce the current models.')
+        database.create(target.models['party'], role_kind='customer', record_id=1)
+        database.create(target.models['party'], role_kind='customer', record_id=1)
+
+
+def test_drop_index_by_its_first_names_after_a_rename_and_a_new_field_under_the_old_name(tmp_path):
+    """0001 made a unique (kind, record_id) index; 0002 renamed kind to role_kind and added a new kind field; 0003
+    drops the index by the names it had when 0001 made it. kind now names the new field, which no index covers, so
+    the DropIndex matches the renamed entry: an instance created at 0001 migrates, its database index is gone and the
+    plan reports no drift. An index made later on the new field's names is still the one a DropIndex by them drops."""
+    from evlet import AddField, AddIndex, DropIndex, RenameField
+
+    def party_model(indexed, *fields):
+        attributes = {'__module__': __name__, 'title': Text(max_length=120), 'record_id': Integer(),
+                      **{name: Text(max_length=20) for name in fields}}
+        if indexed:
+            attributes['Meta'] = type('Meta', (), {'indexes': [(indexed, {'unique': True})]})
+        return type('Party', (Model,), attributes)
+
+    first = Migration('0001_initial', CreateModel(party_model(('kind', 'record_id'), 'kind')))
+    reshaped = Migration('0002_reshape', RenameField('party', 'kind', 'role_kind'),
+                         AddField('party', 'kind', Text(max_length=20)))
+    dropped = Migration('0003_drop', DropIndex('party', ('kind', 'record_id'), unique=True))
+    target = Registry(party_model(None, 'role_kind', 'kind'))
+    migrations = [first, reshaped, dropped]
+    path = tmp_path / 'fresh.sqlite3'
+    Database(path, Registry(party_model(('kind', 'record_id'), 'kind')), migrations=[first]).migrate([first])
+    plan = Database(path, target).plan(migrations)
+    assert plan.text().endswith('The migrations produce the current models.')
+    assert Database(path, target).migrate(migrations) == ['0002_reshape', '0003_drop']
+    database = Database(path, target, migrations=migrations)
+    database.initialize()
+    assert index_shape(database, 'party') == []
+    with sqlite3.connect(path) as connection:
+        assert not connection.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND sql LIKE '%record_id%'").fetchall()
+    database.create(target.models['party'], role_kind='customer', record_id=1)
+    database.create(target.models['party'], role_kind='customer', record_id=1)
+
+    # The same with 0002 applied in an earlier upgrade: the rename comes from the applied migrations.
+    stepwise = tmp_path / 'stepwise.sqlite3'
+    Database(stepwise, Registry(party_model(('kind', 'record_id'), 'kind')), migrations=[first]).migrate([first])
+    Database(stepwise, Registry(party_model(('role_kind', 'record_id'), 'role_kind', 'kind'))).migrate([first, reshaped])
+    assert Database(stepwise, target).migrate(migrations) == ['0003_drop']
+    database = Database(stepwise, target, migrations=migrations)
+    database.initialize()
+    assert index_shape(database, 'party') == []
+    assert Database(stepwise, target).plan(migrations).text().endswith('The migrations produce the current models.')
+
+    # An index on the new field's names wins over the renamed one: the DropIndex drops the index it names now.
+    both = party_model(None, 'role_kind', 'kind')
+    both.Meta = type('Meta', (), {'indexes': [(('role_kind', 'record_id'), {'unique': True})]})
+    later = [first, reshaped, Migration('0003_new', AddIndex('party', ('kind', 'record_id'), unique=True)),
+             Migration('0004_drop', DropIndex('party', ('kind', 'record_id'), unique=True))]
+    other = tmp_path / 'later.sqlite3'
+    Database(other, Registry(party_model(('kind', 'record_id'), 'kind')), migrations=[first]).migrate([first])
+    kept = Registry(party_model(('role_kind', 'record_id'), 'role_kind', 'kind'))
+    assert Database(other, kept).migrate(later) == ['0002_reshape', '0003_new', '0004_drop']
+    database = Database(other, kept, migrations=later)
+    database.initialize()
+    assert index_shape(database, 'party') == [(('role_kind', 'record_id'), True)]
+
+
+def test_drop_field_takes_its_composite_index_out_of_the_plan(tmp_path):
+    from evlet import DropField, RetireField
+    path = tmp_path / 'drop.sqlite3'
+    indexed = party([(('kind', 'code'), {'unique': True})])
+    first = [Migration('0001', CreateModel(indexed))]
+    Database(path, Registry(indexed), migrations=first).migrate(first)
+    database = Database(path, Registry(indexed), migrations=first)
+    database.create(indexed, code='A', kind='x')
+    # Written before either ran: retire the kind, then drop it; the composite index goes with the field.
+    target = Registry(party(kind=False))
+    migrations = [*first, Migration('0002', RetireField('party', 'kind')), Migration('0003', DropField('party', 'kind'))]
+    database = Database(path, target, migrations=migrations)
+    database.migrate(migrations, allow_destructive=True)
+    database.initialize()
+    assert index_shape(database, 'party') == []
+    database.create(target.models['party'], code='A')
+    assert Database(path, target).plan(migrations).text().endswith('The migrations produce the current models.')
+
+
+# Seed data: RunData(..., seed=True) reaches a new instance.
+
+def seed_units(session):
+    Unit = session.registry.models['unit']
+    for code in ('PCS', 'KG'):
+        if not session.list(Unit, filters=[['code', 'eq', code]]):
+            session.create(Unit, code=code)
+
+
+def mark_existing(session):
+    Unit = session.registry.models['unit']
+    session.create(Unit, code='OLD')
+
+
+def unit_models():
+    return Registry(type('Unit', (Model,), {'__module__': __name__, 'code': Text(required=True, max_length=10)}))
+
+
+def unit_migrations():
+    from evlet import RunData
+    Unit = type('Unit', (Model,), {'__module__': __name__, 'code': Text(required=True, max_length=10)})
+    return [Migration('0001_unit', CreateModel(Unit), RunData(mark_existing)),
+            Migration('0002_units', RunData(seed_units, seed=True))]
+
+
+def unit_codes(database):
+    return sorted(record.code for record in database.list(database.registry.models['unit']))
+
+
+def test_seed_steps_reach_a_fresh_migrate(tmp_path):
+    database = Database(tmp_path / 'fresh.sqlite3', unit_models(), migrations=unit_migrations())
+    assert database.migrate(unit_migrations()) == ['0001_unit', '0002_units']
+    # The seed ran; the other data step, written for an older schema, did not.
+    assert unit_codes(database) == ['KG', 'PCS']
+
+
+def test_seed_steps_reach_a_fresh_startup(tmp_path):
+    database = Database(tmp_path / 'startup.sqlite3', unit_models(), migrations=unit_migrations())
+    database.initialize()
+    assert unit_codes(database) == ['KG', 'PCS']
+    database.initialize()
+    assert unit_codes(database) == ['KG', 'PCS']
+
+
+def test_seed_steps_reach_a_baseline_database(tmp_path):
+    path = tmp_path / 'baseline.sqlite3'
+    Database(path, unit_models()).initialize()
+    database = Database(path, unit_models(), migrations=unit_migrations())
+    assert database.migrate(unit_migrations()) == ['0001_unit', '0002_units']
+    assert unit_codes(database) == ['KG', 'PCS']
+
+
+def test_seed_steps_run_once_in_order_on_an_existing_database(tmp_path):
+    path = tmp_path / 'existing.sqlite3'
+    migrations = unit_migrations()
+    Database(path, unit_models(), migrations=migrations[:1]).migrate(migrations[:1])
+    database = Database(path, unit_models(), migrations=migrations[:1])
+    assert unit_codes(database) == []
+    database.create(database.registry.models['unit'], code='KG')
+    # Upgrading runs the seed in sequence like any data step; it finds the KG the instance already has.
+    assert database.migrate(migrations) == ['0002_units']
+    assert unit_codes(database) == ['KG', 'PCS']
+    assert database.migrate(migrations) == []
+    Database(path, unit_models(), migrations=migrations).initialize()
+    assert unit_codes(database) == ['KG', 'PCS']
+
+
+def test_seed_is_part_of_the_checksum_and_not_a_maintenance_step():
+    from evlet import RunData
+    assert Migration('a', RunData(seed_units)).checksum() != Migration('a', RunData(seed_units, seed=True)).checksum()
+    # Migrations written before seed= keep their checksum.
+    assert 'seed' not in RunData(seed_units).signature()
+    assert describe(RunData(seed_units, seed=True)) == 'run seed step seed_units'
+    with pytest.raises(SchemaError, match='seed'):
+        RunData(seed_units, seed=True, maintenance=True).signature()
+    with pytest.raises(SchemaError, match='RunData seed is True or False'):
+        RunData(seed_units, seed=1).signature()

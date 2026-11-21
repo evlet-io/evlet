@@ -3,7 +3,7 @@
 import ipaddress
 import re
 from http.cookies import CookieError, SimpleCookie
-from urllib.parse import parse_qs, parse_qsl, quote
+from urllib.parse import parse_qs, parse_qsl, quote, urlsplit
 
 from ..auth import has_role
 from ..business import Download
@@ -30,6 +30,18 @@ def dispatch(application, scope):
             return 302, Download(b''), [(b'location', target.encode())]
         found = application.routes.match(host, path)
         if found is None: raise HTTPError(404, 'Route not found')
+        if path.startswith('/assets/'):
+            # Model scripts (evlet/ui/scripts.py) load their own folder's files; Evlet's bundled ones are not theirs to import.
+            from .scripts import PREFIX, script_response
+            if path.startswith(PREFIX):
+                response = script_response(application.registry, path)
+                if response is None: raise HTTPError(404, 'Route not found')
+                return response
+            if path.endswith('.js') and urlsplit(dict(scope.get('headers', [])).get(b'referer', b'').decode('latin-1')).path.startswith(PREFIX):
+                raise HTTPError(404, 'Route not found')
+        if found[0] == 'evlet.desk' and found[1] != '/' and found[2] in ('', '/'):
+            # The desk's base alone (/app) names no screen: its root sends a signed-in person to their start page.
+            return 302, Download(b''), [(b'location', b'/')]
         if path == '/settings/accounts' and application.routes.scopes(host) is None:
             return 301, Download(b''), [(b'location', b'/controls/users')]
         if not found[0].startswith('evlet.'):

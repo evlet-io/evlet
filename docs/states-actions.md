@@ -195,6 +195,9 @@ class PriceList(Model):
   script. Only the `by` check is left out. Everything else applies: update permission and row
   scope of the context's user, the guard, the hooks, calculations, validation, a closed period,
   the Activity's `moved` entry and the one transaction.
+* Code may give it a remark, `context.move(Delivery, id, "undo", remark="Receipt entered twice")`,
+  whether or not the rule declares one; the `moved` entry keeps it as it keeps a person's. A
+  rule with `remark="required"` refuses the move without one, as it does for a person.
 
 The [Background Playground](jobs-realtime.md#background-playground) declares these rules.
 
@@ -272,7 +275,7 @@ replaces a base's hook by defining a method of the same name. Each is a method t
 
 | Hook | Runs | `self` |
 | --- | --- | --- |
-| `@validate` | every save (create, update, move) and every draft preview, on documents, `Table` rows and forms (Prompt, Report filters) | read only; assigning raises |
+| `@validate` | every save (create, update, move), once per save, before `@release`, and every draft preview, on documents, `Table` rows and forms (Prompt, Report filters) | read only; assigning raises |
 | `@state("a", "b")` | when a move enters one of the states | the draft; `self.context.session` is open |
 | `@state.exit("a")` | when a move leaves one of the states | the draft; `self.context.session` is open |
 | `@release` | on every move into the released set: from a step that is not `release=True` to one that is ([Releases](#releases-and-versions)) | the draft, with `self.release.number` and `self.release.previous`; the session is open |
@@ -282,8 +285,12 @@ replaces a base's hook by defining a method of the same name. Each is a method t
   saved, read only (`None` on create). `self.context` is the operation's context.
 * `@validate` checks; it does not change values. Raise `ValidationError({"field": "message"})`;
   a plain `ValueError` becomes a `_form` error. A row's errors are keyed under its row. It runs
-  last in the settle, after calculations, so it sees the final values. A record built outside
+  last in the settle, after calculations, so it sees the final values. It runs once per save,
+  before `@release`, so a check that reads what `@release` posts (an invoice's outstanding before a
+  payment settles it) sees the state before the posting. A record built outside
   the document pipeline (a `Session` write) runs its `@validate` checks too.
+* `@validate` has no `self.context.session`, so a check moved back from the ledger (or from `@release`)
+  into `@validate` reads stored values: what is already saved, never the rows this save is about to post.
 * `@state` and `@state.exit` are trusted code, like an action: they change the record through
   `self` and may write other rows through `self.context.session`
   ([below](#the-transaction-session-in-hooks-and-actions)). A `ValidationError` or `ValueError`
@@ -337,7 +344,8 @@ The order of a move:
    saved results instead, and is refused if it changed versioned content
    ([Moves within the release](#moves-within-the-release)).
 8. Document numbers due in the new state are assigned.
-9. On entering the released set: `@release` runs, then calculations and `@validate` again. A
+9. On entering the released set: `@release` runs, then calculations and field checks again
+    (required, locks, Links, `min_rows`; not `@validate`, which already passed). A
     new version is stored when the versioned content changed since the last one.
 10. A closed period is checked, unless the move stays within the release.
 11. The record is written, and the Activity gets its `moved`
@@ -456,6 +464,11 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
 * A field declared `versioned=False` stays editable by ordinary writes, on the record and on its
   rows: it says where the document is in its process, not what it says. Its own `locked_when`
   still applies. Calculated fields cannot be `versioned=False`.
+* A Table declared `append_when_released=True` is a log of what follows the release, such as
+  the arrivals on a sent stock transfer. Trusted code (an action, a hook, a job, a script through
+  `context`) may append rows at its end while the record is locked; the saved rows stay as they
+  are, and no request (browser, API, MCP, Eva) may add a row. Its rows are not part of the
+  released content, so appending one makes no new version.
 * A locked record keeps its saved results. An ordinary write changes only the `versioned=False`
   fields; every calculated value, at every depth, keeps the value it had when the record was
   locked, even if a linked record or today's date changed since. Moves and actions settle

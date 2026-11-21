@@ -28,9 +28,15 @@ DEFAULT_TABLE_ROWS = 100
 class Table:
     """Owned rows. `min_rows` is checked on save (`required=True` means at least one row);
     `max_rows` (default 100, at most 1,000) bounds the collection in both runtimes. `sections=True` lets
-    the Table hold section rows: headings that group the rows below them (evlet/sections.py)."""
+    the Table hold section rows: headings that group the rows below them (evlet/sections.py).
+
+    `applies_when` and `visible_when` are finite Booleans on the record that owns the rows, as on a field:
+    while applies_when is false the Table is hidden, calculations read it as empty and a save removes
+    its rows; while visible_when is false it is only hidden (docs/finite-calculations.md#field-rules).
+    `totals` names fields of the owning model shown under the table, in order (checked when the model is defined)."""
     def __init__(self, child, *, required=False, min_rows=None, max_rows=DEFAULT_TABLE_ROWS, label=None,
-                 storage_name=None, owner_field='evlet_owner', panel=True, copy=True, sections=False, derived=False):
+                 storage_name=None, owner_field='evlet_owner', panel=True, copy=True, sections=False, derived=False,
+                 applies_when=None, visible_when=None, totals=(), append_when_released=False):
         for name, value in (('min_rows', min_rows), ('max_rows', max_rows)):
             if value is not None and (type(value) is not int or value < 0):
                 raise ValueError(f'Table {name} must be a nonnegative integer')
@@ -62,6 +68,24 @@ class Table:
         if type(derived) is not bool:
             raise ValueError('Table derived must be True or False')
         self.derived = derived
+        # A log of what happened after the document was released (arrivals on a sent transfer): trusted code may
+        # append rows to it while the record is locked; no request may, and its rows are not released content.
+        if type(append_when_released) is not bool:
+            raise ValueError('Table append_when_released must be True or False')
+        self.append_when_released = append_when_released
+        if not isinstance(totals, (tuple, list)) or not all(type(name) is str for name in totals):
+            raise ValueError('Table totals must be a tuple of field names of the owning model')
+        self.totals = tuple(totals)
+        from .fields import _finite_option
+        self.applies_when = _finite_option(applies_when, 'applies_when')
+        self.visible_when = _finite_option(visible_when, 'visible_when')
+        if applies_when is not None and self.required:
+            raise ValueError('A Table that may not apply cannot require rows; drop required/min_rows or applies_when')
+        if applies_when is not None and derived:
+            raise ValueError('derive() builds the rows of a derived Table; applies_when is for rows people enter')
+        if visible_when is not None and self.required:
+            raise ValueError('A Table that requires rows must stay visible, so it cannot have visible_when; '
+                             'drop required/min_rows, or use applies_when without them')
         if sections and 'section' in {*getattr(child, '__declared_fields__', {}), *getattr(child, '__tables__', {})}:
             # {"section": label} marks a section row, so the rows cannot have a field of that name.
             raise ValueError('A Table with sections=True needs a row model without a field named section')
@@ -117,6 +141,67 @@ class ReactiveQuery:
 Query = ReactiveQuery
 
 
+# Parts of an Option: literal text, F("field") or F("link.field") of the option's record, and a per-record
+# Count, Sum, Min or Max over a related model (model= and link=), whose where= is {field: value or Ref("path")}.
+OPTION_FUNCTIONS = ('count', 'sum', 'min', 'max')
+MAX_OPTION_PARTS, MAX_OPTION_LITERAL = 8, 200
+
+
+class Option:
+    """What a record shows as an option in Link dropdowns, record pickers and the search bar: its title and
+    a muted subtext line below it, built in the search query (evlet/search.py, docs/model-engine.md).
+
+        Option(subtext=("In stock: ", Sum("qty", model=StockMove, link="item", where={"warehouse": Ref("warehouse")}),
+                        " ", F("stock_uom")))
+
+    title and subtext are one part or a tuple of parts, joined as text. A Ref in where= reads the form the
+    Link is on, so it is allowed only in a Link's own option=, not in Meta.option. hook(context, options, values)
+    is trusted app code for what the parts can't say: it gets the options read for this person (dicts with id,
+    title, subtext and record) and the Link's form values ({path: value}), and returns them with title or
+    subtext changed."""
+    __slots__ = ('title', 'subtext', 'hook')
+
+    def __init__(self, *, title=None, subtext=None, hook=None):
+        if title is None and subtext is None and hook is None:
+            raise ValueError('Option() takes title=, subtext= or hook=')
+        if hook is not None and not callable(hook):
+            raise ValueError('Option(hook=) takes a function (context, options, values)')
+        self.title, self.subtext, self.hook = _option_parts(title, 'title'), _option_parts(subtext, 'subtext'), hook
+
+    def __repr__(self):
+        return f'Option(title={self.title!r}, subtext={self.subtext!r}, hook={self.hook!r})'
+
+    def refs(self):
+        """The form paths the option reads (Ref values in where=)."""
+        from .calc import Expr
+        return tuple(dict.fromkeys(value.path for part in (*(self.title or ()), *(self.subtext or ())) if not isinstance(part, (str, Expr))
+                                   for value in (part.where or {}).values() if isinstance(value, Ref)))
+
+
+def _option_parts(value, what):
+    if value is None:
+        return None
+    parts = value if isinstance(value, tuple) else (value,)
+    if not parts or len(parts) > MAX_OPTION_PARTS:
+        raise ValueError(f'Option {what}= takes 1 to {MAX_OPTION_PARTS} parts')
+    from .calc import Expr
+    for part in parts:
+        if isinstance(part, str):
+            if len(part) > MAX_OPTION_LITERAL:
+                raise ValueError(f'Option {what}: literal text has at most {MAX_OPTION_LITERAL} characters')
+        elif isinstance(part, Expr):
+            if part.op != 'ref' or part.meta.get('scope') != 'self' or part.meta['name'].count('.') > 1:
+                raise ValueError(f'Option {what}: use F("field") or F("link.field"), not {part.op} expressions')
+        elif getattr(part, 'function', None) in OPTION_FUNCTIONS and getattr(part, 'model', None) is not None:
+            where = part.where or {}
+            if not isinstance(where, dict) or any(not isinstance(key, str) or isinstance(item, (dict, list, tuple, set))
+                                                 for key, item in where.items()):
+                raise ValueError(f'Option {what}: where= of {type(part).__name__} is {{field: value or Ref("path")}}')
+        else:
+            raise ValueError(f'Option {what}: use text, F("field"), or Count, Sum, Min or Max with model= and link=, not {part!r}')
+    return parts
+
+
 def depends(*paths):
     for path in paths:
         Ref(path.replace('.*.', '.'))
@@ -131,7 +216,7 @@ NAME = r'[A-Za-z][A-Za-z0-9_]*'
 # Context.action(model, record_id, name, **inputs) takes these names itself.
 RESERVED_INPUTS = ('self', 'model', 'record_id', 'name')
 INPUT_OPTIONS = ('compute', 'query', 'fetch', 'initial', 'applies_when', 'required_when', 'locked_when',
-                 'visible_if', 'required_if', 'read_only_if')
+                 'visible_when', 'visible_if', 'required_if', 'read_only_if')
 
 
 def guard_expression(value, name):
@@ -410,3 +495,54 @@ def check_rules(field, rules):
         if rule.key in keys:
             raise ValueError(f'Two rules have the key {rule.key!r}; give one its own key=')
         keys.add(rule.key)
+
+
+class Extend:
+    """Additions one app makes to a model of another (docs/model-scripts.md#extending-a-model-from-another-app).
+
+        class AcmeQuotation(Extend):
+            @validate
+            def po_needed(self): ...
+
+            class Meta:
+                model = "quotation"
+                script = "acme_quotation.js"
+                on_change = {"customer": "check_blacklist"}
+                on_open = "opened"
+
+    Additive only: @validate checks that run after the model's own, on_change hooks on existing fields ("field" or
+    "table.field") and its own script. It cannot add, remove or change fields, formulas, states, actions or the
+    model's hooks. Register it with AppDefinition(extensions=(...)); the registry checks the names at start-up."""
+
+    OPTIONS = ('model', 'script', 'on_change', 'on_open')
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        meta = vars(cls).get('Meta')
+        if meta is None or not isinstance(getattr(meta, 'model', None), str):
+            raise ValueError(f'{cls.__name__}: name the model it extends, Meta.model = "quotation"')
+        unknown = sorted(key for key in vars(meta) if not key.startswith('_') and key not in Extend.OPTIONS)
+        if unknown:
+            raise ValueError(f'{cls.__name__}.Meta supports {", ".join(Extend.OPTIONS)}, not {", ".join(unknown)}')
+        for name, value in vars(cls).items():
+            if name.startswith('__') or name == 'Meta':
+                continue
+            if not (inspect.isfunction(value) and any(kind == 'validate' for kind, _ in getattr(value, '__evlet_hook__', ()))):
+                raise ValueError(f'{cls.__name__}.{name}: an Extend adds only @validate checks and script hooks; it cannot add '
+                                 'or change fields, formulas, states, actions or other methods')
+        on_change = getattr(meta, 'on_change', {})
+        if not isinstance(on_change, dict) or not all(isinstance(key, str) for key in on_change):
+            raise ValueError(f'{cls.__name__}.Meta.on_change maps field names to script methods, {{"customer": "check_blacklist"}}')
+        from .fields import script_method
+        for key, method in on_change.items():
+            script_method(method, f'{cls.__name__}.Meta.on_change[{key!r}]')
+        if getattr(meta, 'on_open', None) is not None:
+            script_method(meta.on_open, f'{cls.__name__}.Meta.on_open')
+        if (on_change or getattr(meta, 'on_open', None)) and getattr(meta, 'script', None) is None:
+            raise ValueError(f'{cls.__name__}: its hooks name methods of a script; declare Meta.script')
+
+    @classmethod
+    def checks(cls):
+        """Its @validate methods, in declaration order."""
+        return tuple(value for value in vars(cls).values()
+                     if inspect.isfunction(value) and any(kind == 'validate' for kind, _ in getattr(value, '__evlet_hook__', ())))

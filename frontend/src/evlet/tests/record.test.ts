@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createClient } from '../api';
 import { effect, scope } from '../reactive';
 import { buildChanges } from '../model/changes';
-import { PREVIEW_PAUSE_MS, RecordStore, sameValue, STALE_FORMULAS } from '../model/record';
+import { RecordStore, sameValue, STALE_FORMULAS } from '../model/record';
 import { CalcError } from '../model/finite';
 import type { AppSchema } from '../model/schema';
-import { copy, id, responses, server, type Sent } from './server';
+import { copy, id, responses, server, withTableRules, type Sent } from './server';
 
 const schema = responses.schema.body as AppSchema;
 const stores: RecordStore[] = [];
@@ -125,6 +125,42 @@ describe('opening a record', () => {
   });
 });
 
+describe('visible_when and Table rules', () => {
+  it('hide a field and a Table live: the field keeps its value, the Table reads as empty while it does not apply', async () => {
+    const stub = server([
+      ['GET', /\/api\/order\/0000000000001$/, 'detail'],
+      ['GET', /\/api\/order\/0000000000001\/lines\/lines\?limit=100&offset=100$/, 'lines_page'],
+      ['GET', /\/api\/customer\/0000000000001$/, { ...responses.customer, status: 200 }],
+      ['GET', /\/api\/product\/0000000000001$/, { ...responses.product, status: 200 }],
+    ]);
+    const store = new RecordStore({ api: createClient({ fetch: stub.fetch }), schema: withTableRules(schema), model: 'order', today: () => '2026-11-01' });
+    stores.push(store);
+    await store.open(id(1));
+    await store.idle();
+    const remark = store.field('remark'), lines = store.table('lines');
+    expect(remark.rules.peek()).toEqual({ applies: true, required: false, locked: false, visible: true });
+    expect(lines.rules.peek()).toEqual({ applies: true, visible: true });
+    remark.set('Call first');
+    store.field('stage').set('won');
+    // Hidden, but its value stays and is sent with the save.
+    expect(remark.rules.peek().visible).toBe(false);
+    expect(remark.value.peek()).toBe('Call first');
+    expect(buildChanges(store.root)).toMatchObject({ remark: 'Call first', stage: 'won' });
+    expect(lines.rules.peek()).toEqual({ applies: true, visible: true });
+    expect(store.field('total').value.peek()).toBe('300.00');
+    store.field('stage').set('lost');
+    expect(lines.rules.peek()).toEqual({ applies: false, visible: false });
+    // The rows stay in the draft until the save removes them; calculations already read the Table as empty.
+    expect(lines.rows.peek()).toHaveLength(120);
+    expect(store.field('total').value.peek()).toBe('0.00');
+    expect(store.field('line_count').value.peek()).toBe(0);
+    store.field('stage').set('open');
+    expect(lines.rules.peek()).toEqual({ applies: true, visible: true });
+    expect(remark.rules.peek().visible).toBe(true);
+    expect(store.field('total').value.peek()).toBe('300.00');
+  });
+});
+
 describe('editing', () => {
   it('a quantity edit recalculates its amount and the total, and notifies only those readers', async () => {
     const { store } = backend();
@@ -191,9 +227,9 @@ describe('editing', () => {
     const { store } = backend();
     await store.open(id(1));
     const reason = store.field('reason'), remark = store.field('remark');
-    expect(reason.rules.peek()).toEqual({ applies: false, required: false, locked: false });
+    expect(reason.rules.peek()).toEqual({ applies: false, required: false, locked: false, visible: false });
     store.field('stage').set('lost');
-    expect(reason.rules.peek()).toEqual({ applies: true, required: true, locked: false });
+    expect(reason.rules.peek()).toEqual({ applies: true, required: true, locked: false, visible: true });
     expect(reason.editable.peek()).toBe(true);
     store.field('stage').set('won');
     // The server checks locked_when on the record as saved (stage open), so remark stays editable until saved.
@@ -455,7 +491,7 @@ describe('values the server derives (derived=True)', () => {
       ['GET', /\/api\/order\/0000000000001\/lines\/lines\?limit=100&offset=100$/, 'lines_page'],
       ['GET', /\/api\/customer\/0000000000001$/, { ...responses.customer, status: 200 }],
       ['GET', /\/api\/product\/0000000000001$/, { ...responses.product, status: 200 }],
-      ['POST', /\/api\/_draft\/order$/, sent => ({ status: 200, etag: null, body: reply(sent) })],
+      ['POST', /\/api\/_draft\/order$/, async sent => ({ status: 200, etag: null, body: await reply(sent) })],
     ]);
     const store = new RecordStore({ api: createClient({ fetch: stub.fetch }), schema: derivedSchema(derives) as AppSchema, model: 'order', today: () => '2026-11-01' });
     stores.push(store);
@@ -464,8 +500,11 @@ describe('values the server derives (derived=True)', () => {
   const drafts = (sent: Sent[]) => sent.filter(item => item.url.includes('/api/_draft/'));
   afterEach(() => { vi.useRealTimers(); });
 
-  it('asks once the person pauses, and shows the derived values without making them unsaved changes', async () => {
-    vi.useFakeTimers();
+  // A reply held until the test lets it go, to keep a request in flight.
+  const gate = () => { let open!: () => void; const held = new Promise<void>(resolve => { open = resolve; }); return { held, open }; };
+  const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+  it('asks as soon as a committed change lands, one request per turn, and shows the derived values without making them unsaved changes', async () => {
     const values = copy(responses.draft.body.values);
     const { store, sent } = deriving(['remark', 'lines.rate'], () => ({ values: { ...values, remark: 'Rate of 01-11-2026',
       children: { lines: [{ id: id(1), _key: id(1), rate: '9.99' }] } }, errors: {}, states: {}, revision: null }));
@@ -476,20 +515,39 @@ describe('values the server derives (derived=True)', () => {
     store.field('title').set('A');
     store.field('title').set('AB');
     store.field('title').set('ABC');
-    await vi.advanceTimersByTimeAsync(PREVIEW_PAUSE_MS - 50);
+    // No pause: the three changes of this turn go as one request at its end.
     expect(drafts(sent)).toHaveLength(0);
-    await vi.advanceTimersByTimeAsync(100);
-    await store.idle();
+    await Promise.resolve();
+    expect(drafts(sent)).toHaveLength(1);
+    await vi.waitFor(() => expect(store.field('remark').value.peek()).toBe('Rate of 01-11-2026'));
     expect(drafts(sent)).toHaveLength(1);
     expect(drafts(sent)[0].body).toMatchObject({ id: id(1), values: { title: 'ABC' } });
-    expect(store.field('remark').value.peek()).toBe('Rate of 01-11-2026');
     expect(line(store, 1).field('rate').value.peek()).toBe('9.99');
     expect(store.field('remark').dirty.peek()).toBe(false);
     expect(buildChanges(store.root)).toEqual({ title: 'ABC' });
   });
 
+  it('keeps one request in flight: ten changes meanwhile send exactly one more, with the latest draft', async () => {
+    const values = copy(responses.draft.body.values), first = gate();
+    let asked = 0;
+    const { store, sent } = deriving(['remark'], async request => {
+      if (++asked === 1) await first.held;
+      return { values: { ...values, remark: `for ${request.body.values.title}` }, errors: {}, states: {}, revision: null };
+    });
+    await store.open(id(1));
+    await store.idle();
+    store.field('title').set('t0');
+    await tick();
+    expect(drafts(sent)).toHaveLength(1);
+    for (let at = 1; at <= 10; at++) { store.field('title').set(`t${at}`); await tick(); }
+    expect(drafts(sent)).toHaveLength(1);
+    first.open();
+    await vi.waitFor(() => expect(store.field('remark').value.peek()).toBe('for t10'));
+    expect(drafts(sent)).toHaveLength(2);
+    expect(drafts(sent)[1].body.values.title).toBe('t10');
+  });
+
   it('drops an answer that a later change overtook', async () => {
-    vi.useFakeTimers();
     let answers = 0;
     const values = copy(responses.draft.body.values);
     const { store } = deriving(['remark'], () => ({ values: { ...values, remark: `answer ${++answers}` }, errors: {}, states: {}, revision: null }));
@@ -502,30 +560,37 @@ describe('values the server derives (derived=True)', () => {
     expect(store.field('remark').value.peek()).toBe('answer 2');
   });
 
-  it('drops an answer for a draft the person has changed since, and asks again after the next pause', async () => {
-    vi.useFakeTimers();
-    const values = copy(responses.draft.body.values);
-    const { store, sent } = deriving(['remark'], sent => ({ values: { ...values, remark: `for ${sent.body.values.title}` }, errors: {}, states: {}, revision: null }));
+  it('never shows an answer for a draft the person has changed since', async () => {
+    const values = copy(responses.draft.body.values), first = gate();
+    let asked = 0;
+    const shown: unknown[] = [];
+    const { store, sent } = deriving(['remark'], async request => {
+      if (++asked === 1) await first.held;
+      return { values: { ...values, remark: `for ${request.body.values.title}` }, errors: {}, states: {}, revision: null };
+    });
     await store.open(id(1));
     await store.idle();
+    // Every value the field shows, from here on.
+    const stop = scope(() => effect(() => { shown.push(store.field('remark').value.get()); }));
     store.field('title').set('Old');
-    const pending = store.refreshDerived();
+    await tick();
     store.field('title').set('New');
-    await pending;
-    expect(store.field('remark').value.peek()).not.toBe('for Old');
-    await vi.advanceTimersByTimeAsync(PREVIEW_PAUSE_MS + 10);
-    await store.idle();
-    expect(store.field('remark').value.peek()).toBe('for New');
-    expect(drafts(sent).length).toBeGreaterThanOrEqual(2);
+    await tick();
+    first.open();
+    await vi.waitFor(() => expect(store.field('remark').value.peek()).toBe('for New'));
+    stop();
+    expect(drafts(sent).map(item => item.body.values.title)).toEqual(['Old', 'New']);
+    expect(shown).not.toContain('for Old');
+    expect(shown.at(-1)).toBe('for New');
   });
 
   it('never asks the server for a model that derives nothing', async () => {
-    vi.useFakeTimers();
     const { store, sent } = backend();
     await store.open(id(1));
     await store.idle();
     store.field('title').set('No preview');
-    await vi.advanceTimersByTimeAsync(PREVIEW_PAUSE_MS * 3);
+    await tick();
+    await tick();
     expect(paths(sent).filter(path => path.includes('_draft'))).toEqual([]);
   });
 });

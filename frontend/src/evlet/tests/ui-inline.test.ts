@@ -182,3 +182,66 @@ describe('one click opens the picker', () => {
     expect(document.querySelector('.pop')).toBeNull();
   });
 });
+
+describe('a Boolean is just its switch', () => {
+  const stock = (value: boolean | null, rules = {}) => localField({ name: 'is_stock', type: 'boolean', label: 'Is stock' }, value, rules);
+
+  it('shows only the switch at rest, with no text, edit button or input box, and saves when flipped', async () => {
+    const field = stock(true);
+    const save = vi.fn(() => true);
+    const host = render(() => InlineValue({ field, save, confirm: false }));
+    const toggle = host.querySelector<HTMLButtonElement>('[role="switch"]')!;
+    expect(toggle.classList.contains('sw-only')).toBe(true);
+    expect(toggle.getAttribute('aria-checked')).toBe('true');
+    expect(toggle.getAttribute('aria-label')).toBe('Is stock');
+    expect(host.textContent!.trim()).toBe('');
+    expect(host.querySelector('.fval')).toBeNull();
+    expect(host.querySelector('.pen')).toBeNull();
+    expect(host.querySelector('.fval-edit')).toBeNull();
+    toggle.click();
+    await flush();
+    expect(field.value.peek()).toBe(false);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    // Still the same switch, so the keyboard focus stays on it.
+    expect(host.querySelector('[role="switch"]')).toBe(toggle);
+    expect(host.querySelector('.fval-edit')).toBeNull();
+  });
+
+  it('keeps the focus on the switch while its save runs, though the record reads as locked then', async () => {
+    const field = stock(true);
+    let disabledDuringSave: boolean | null = null;
+    const host = render(() => InlineValue({ field, confirm: false, save: async () => {
+      field.rules.set({ ...field.rules.peek(), locked: true });
+      await flush();
+      disabledDuringSave = host.querySelector<HTMLButtonElement>('[role="switch"]')!.disabled;
+      field.rules.set({ ...field.rules.peek(), locked: false });
+      return true;
+    } }));
+    const toggle = host.querySelector<HTMLButtonElement>('[role="switch"]')!;
+    toggle.focus();
+    toggle.click();
+    await flush(); await flush();
+    expect(disabledDuringSave).toBe(false);
+    expect(document.activeElement).toBe(toggle);
+    expect(field.value.peek()).toBe(false);
+  });
+
+  it('shows the switch disabled when the value can not change', () => {
+    const field = stock(false, { locked: true });
+    const host = render(() => InlineValue({ field, save: () => true, confirm: false }));
+    const toggle = host.querySelector<HTMLButtonElement>('[role="switch"]')!;
+    expect(toggle.disabled).toBe(true);
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    expect(host.textContent!.trim()).toBe('');
+  });
+
+  it('keeps the switch and shows the message when the save is refused', async () => {
+    const field = stock(false);
+    const host = render(() => InlineValue({ field, save: () => false, confirm: false }));
+    host.querySelector<HTMLButtonElement>('[role="switch"]')!.click();
+    await flush();
+    expect(host.querySelector('[role="alert"]')!.textContent).toContain('not saved');
+    expect(host.querySelector('[role="switch"]')).not.toBeNull();
+  });
+});

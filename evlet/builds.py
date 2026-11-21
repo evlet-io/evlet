@@ -11,7 +11,7 @@ import subprocess
 import sys
 import tempfile
 
-from .models import Model, Registry
+from .models import Child, Model, Registry
 from .permissions import Policy, Rule
 
 VERSION = 1
@@ -51,7 +51,8 @@ def discover(package, modules=None):
     from .migrations import Migration
     from .forms import Report
     from .workspaces import Workspace
-    models, migrations, seen, reports, endpoints, tasks, schedules, workspaces = [], [], set(), [], [], [], [], []
+    from .declarations import Extend
+    models, migrations, seen, reports, endpoints, tasks, schedules, workspaces, extensions = [], [], set(), [], [], [], [], [], []
     collected_ids = set()
     for name in modules if modules is not None else module_names(package):
         module = import_module(name)
@@ -74,10 +75,14 @@ def discover(package, modules=None):
                     reports.append(value)
                     continue
                 if getattr(value, '__transient__', False): continue
+                if getattr(value, '__abstract__', False): continue  # A shared base: no table, schema entry or migration.
+                if issubclass(value, Child): continue  # A row model, reached through a document's Table(...).
                 if name == package.name or name.startswith(package.name + '.models.') or name == package.name + '.models':
                     value.__resource_id__ = resource_identity(package, value)
                     value.__declaration_mode__ = True
                     models.append(value)
+            elif isinstance(value, type) and issubclass(value, Extend) and value is not Extend and value.__module__ == name:
+                extensions.append(value)
             if isinstance(value, Migration) and name.startswith(package.name + '.migrations') and id(value) not in seen:
                 seen.add(id(value))
                 migrations.append(value)
@@ -96,7 +101,7 @@ def discover(package, modules=None):
             rules[role, model] = declarations.get(role, Rule(()))
         if set(declarations) - {'admin', 'editor', 'viewer'}:
             raise ValueError(f'Unknown permission role in {model.__resource_id__}')
-    return AppDefinition(models=models, reports=reports, apis=endpoints, tasks=tasks, schedules=schedules,
+    return AppDefinition(models=models, reports=reports, apis=endpoints, tasks=tasks, schedules=schedules, extensions=extensions,
                          permissions=rules, migrations=sorted(migrations, key=lambda migration: migration.name), workspaces=workspaces)
 
 
@@ -215,7 +220,8 @@ def describe(packages):
     from .instances import load_definitions
     modules = {package.name: module_names(package) for package in packages if package.layout == 'flat'}
     definitions = load_definitions(packages, modules=modules)
-    registry = Registry(*(model for _, definition in definitions for model in definition.models))
+    registry = Registry(*(model for _, definition in definitions for model in definition.models),
+                        extensions=tuple(extension for _, definition in definitions for extension in definition.extensions))
     policy = Policy(registry, rules={key: value for _, definition in definitions for key, value in definition.permissions.items()})
     from .forms import Forms, metadata as form_metadata
     from types import SimpleNamespace

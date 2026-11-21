@@ -24,11 +24,11 @@ def plural_for(label):
 
 OPEN_IN = ('page', 'panel')
 # The options a model's Meta may declare; each is public (docs/api-stability.md).
-META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
+META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'option', 'layout',
                           'calculation_language', 'numeric_profile', 'measures', 'key_fields', 'relations', 'attachments',
                           'activity', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'autosave',
                           'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'panel_summary', 'ledger', 'append_only', 'timestamps', 'indexes',
-                          'focus', 'cards', 'duplicate', 'image'))
+                          'focus', 'cards', 'duplicate', 'image', 'script', 'on_open', 'abstract'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -61,16 +61,18 @@ class Section:
     the full page still shows it. `description` is an optional line of text under the title. A wrong option is
     ignored with a warning when the app loads."""
 
-    __slots__ = ('title', 'fields', 'collapsible', 'collapsed', 'flow', 'panel', 'description', 'unknown')
+    __slots__ = ('title', 'fields', 'collapsible', 'collapsed', 'flow', 'panel', 'description', 'custom', 'unknown')
 
-    def __init__(self, title, fields, *, collapsible=True, collapsed=True, flow='rows', panel=True, description=None, **unknown):
+    def __init__(self, title, fields=(), *, collapsible=True, collapsed=True, flow='rows', panel=True, description=None, custom=None, **unknown):
         self.title, self.fields, self.collapsible, self.collapsed, self.flow = title, fields, collapsible, collapsed, flow
-        self.panel, self.description, self.unknown = panel, description, unknown
+        # custom="method": the model script draws the section's content instead of fields (docs/model-scripts.md).
+        self.panel, self.description, self.custom, self.unknown = panel, description, custom, unknown
 
     def __repr__(self):
         return (f'Section({self.title!r}, {self.fields!r}, collapsible={self.collapsible!r}, collapsed={self.collapsed!r}'
                 + (f', flow={self.flow!r}' if self.flow != 'rows' else '')
                 + (f', description={self.description!r}' if self.description is not None else '')
+                + (f', custom={self.custom!r}' if self.custom is not None else '')
                 + (', panel=False)' if self.panel is False else ')'))
 
     def options(self, warn):
@@ -120,14 +122,16 @@ class Main:
     and its number ("Invoice 2"). Main("lines") is one Table. The form Main(fields, "lines", ...) of 0.4.9 and before
     reads as Main(fields) followed by Main("lines") for each Table named."""
 
-    __slots__ = ('fields', 'tables', 'title', 'unknown')
+    __slots__ = ('fields', 'tables', 'title', 'custom', 'unknown')
 
-    def __init__(self, fields, *tables, title=None, **unknown):
-        self.fields, self.tables, self.title, self.unknown = fields, tables, title, unknown
+    def __init__(self, fields=(), *tables, title=None, custom=None, **unknown):
+        # Main(custom="method"): a block the model script draws (docs/model-scripts.md).
+        self.fields, self.tables, self.title, self.custom, self.unknown = fields, tables, title, custom, unknown
 
     def __repr__(self):
         return (f'Main({self.fields!r}' + ''.join(f', {name!r}' for name in self.tables)
-                + (f', title={self.title!r}' if self.title is not None else '') + ')')
+                + (f', title={self.title!r}' if self.title is not None else '')
+                + (f', custom={self.custom!r}' if self.custom is not None else '') + ')')
 
 
 # At most this many blocks in a layout.
@@ -192,6 +196,10 @@ def layout_blocks(model, layout, visible, label):
     where = f'{model.__name__}.Meta.layout'
     known = getattr(model, '__tables__', {})
     warnings, blocks, placed, names = [], [], set(), set()
+    # A field in a Table's totals shows under that Table (Table(totals=...)), so it counts as placed.
+    totals = {field: table for table, item in known.items() for field in getattr(item, 'totals', ()) if field in visible}
+    placed.update(totals)
+    kept_totals = set()
 
     def warn(item, text):
         warnings.append(f'{where}: {item!r} {text}; it is ignored')
@@ -220,6 +228,14 @@ def layout_blocks(model, layout, visible, label):
         for name in listed:
             if type(name) is str and name in known:
                 warn(item, f'names the Table {name!r} among its fields; give it its own block')
+            elif type(name) is str and name in totals:
+                # Kept in the group, so a role that cannot read the Table still sees it here (the browser drops it
+                # while the Table shows).
+                warn(item, f'names {name!r}, which shows in the totals of the Table {totals[name]!r} '
+                           '(only a role that cannot read that Table sees it here)')
+                if name not in kept_totals:
+                    kept_totals.add(name)
+                    kept.append(name)
             elif type(name) is not str or name not in visible:
                 warn(item, f'names {name!r}, which is not a visible field of {model.__name__}')
             elif name in placed:
@@ -249,6 +265,15 @@ def layout_blocks(model, layout, visible, label):
             placed.add(name)
             blocks.append({'kind': 'table', 'name': name, 'main': main, 'block': item, **(options or {})})
 
+    def custom(item, name, method, main, options):
+        from ..fields import script_method
+        try:
+            script_method(method, 'custom=')
+        except ValueError as error:
+            return warn(item, str(error))
+        if name is not None:
+            blocks.append({'kind': 'custom', 'name': name, 'main': main, 'block': item, 'custom': method, **options})
+
     if layout is not None and not isinstance(layout, (tuple, list)):
         warn(layout, 'is not a tuple of blocks, such as (Main(...), Section(...), Related(...))')
         layout = ()
@@ -257,8 +282,9 @@ def layout_blocks(model, layout, visible, label):
             raise ValueError(f'{where}: Tab was removed, record pages have no tabs; use Main(...) and Section(...)')
     for block in (layout or ())[MAX_BLOCKS:]:
         warn(block, f'is past the limit of {MAX_BLOCKS} blocks')
+    details = (('Details', shown),) if (shown := tuple(name for name in visible if name not in totals)) else ()
     main_group = {'collapsible': False, 'collapsed': False, 'flow': 'rows', 'main': True}
-    for block in (('Details', tuple(visible)),) if layout is None else layout[:MAX_BLOCKS]:
+    for block in details if layout is None else layout[:MAX_BLOCKS]:
         say = lambda text, block=block: warn(block, text)
         if isinstance(block, Main):
             for key in block.unknown:
@@ -266,6 +292,9 @@ def layout_blocks(model, layout, visible, label):
             title = block.title
             if title is not None and (type(title) is not str or not title.strip()):
                 title = say(f'title must be nonempty text, not {title!r}')
+            if block.custom is not None:
+                custom(block, named(block, title) if title else numbered(label), block.custom, True, {})
+                continue
             if isinstance(block.fields, str):
                 table(block, block.fields, True)
             elif block.fields or not block.tables:
@@ -277,6 +306,8 @@ def layout_blocks(model, layout, visible, label):
             item = block if isinstance(block, Section) else Section(*block, collapsible=False)
             if type(item.title) is not str or not item.title.strip():
                 say('needs a title')
+            elif item.custom is not None:
+                custom(block, named(block, item.title), item.custom, False, fold_options(item, say))
             else:
                 section(block, named(block, item.title), item.fields, item.options(say))
         elif isinstance(block, (TableSection, str)):
@@ -548,7 +579,8 @@ def list_tabs_for(model, meta, fields=None):
 # Filter operators that may compare with a field of the record (Ref('field')).
 REF_OPERATORS = ('eq', 'ne', 'gt', 'gte', 'lt', 'lte')
 # Columns a Related block shows at most, and the rows it shows a page by default and at most.
-RELATED_FIELDS = 6
+# The most fields a Related block lists as columns: as many as the app names, up to this.
+RELATED_FIELDS = 12
 RELATED_ROWS, RELATED_MAX = 5, 20
 
 
@@ -675,13 +707,14 @@ def record_layout(registry, model):
     meta = getattr(model, 'Meta', None)
     blocks, warnings = layout_blocks(model, getattr(meta, 'layout', None), form_fields(model, meta), view_for(model)['label'])
     where = f'{model.__name__}.Meta.layout'
-    names = {block['name'] for block in blocks if block['kind'] == 'section'}
+    names = {block['name'] for block in blocks if block['kind'] in ('section', 'custom')}
     result = []
     for block in blocks:
         if block['kind'] == 'section':
             result.append({'kind': 'section', 'name': block['name'], 'label': block['name'], 'main': block['main']})
-        elif block['kind'] == 'table':
-            result.append({'kind': 'table', 'name': block['name'], 'main': block['main'],
+        elif block['kind'] in ('table', 'custom'):
+            result.append({'kind': block['kind'], 'name': block['name'], 'main': block['main'],
+                           **({'label': block['name'], 'custom': block['custom']} if block['kind'] == 'custom' else {}),
                            **{key: block[key] for key in ('collapsible', 'collapsed') if key in block}})
         else:
             try:
@@ -752,12 +785,25 @@ def currency_schema(field):
     return {'currency': source['code']} if 'code' in source else {'currency_source': source}
 
 
+def help_schema(field):
+    """help_fields: the fields a reactive help text names ("per {uom}" -> ["uom"]). The browser fills them in from the
+    record's values as they change, and a Table row shows it as subtext under the cell (docs/model-engine.md)."""
+    from ..fields import help_references
+    try:
+        names = help_references(field.help_text)
+    except ValueError:
+        return {}
+    return {'help_fields': list(names)} if names else {}
+
+
 def field_schema(field):
     result = {**field.metadata(), 'label': field.label or label_for(field.name),
-              'help_text': field.help_text, **({'tooltip': field.tooltip} if field.tooltip else {}), 'placeholder': field.placeholder,
+              'help_text': field.help_text, **help_schema(field), **({'tooltip': field.tooltip} if field.tooltip else {}), 'placeholder': field.placeholder,
               **({'suffix': field.suffix} if field.suffix else {}),
               # Integer(grouping=False): shown without thousands separators (display only).
               **({'grouping': False} if getattr(field, 'grouping', True) is False else {}),
+              # Decimal(display_scale=2): shown with at most that many places, without trailing zeros (display only).
+              **({'display_scale': field.display_scale} if getattr(field, 'display_scale', None) is not None else {}),
               # Forms leave out the standard title and a name no naming fills (evlet/naming.py); responses keep them.
               'hidden': field.hidden or form_hidden(field), 'read_only': field.read_only,
               **({'stored': field.stored} if field.compute is not None or field.query is not None or not field.stored else {}),
@@ -768,6 +814,11 @@ def field_schema(field):
               # Left out of the default list and Table columns (display only).
               **({'column': False} if getattr(field, 'column', True) is False else {}),
               **({'sequence': field.schema()} if field.kind == 'sequence' else {}),
+              # The model script's hooks on this field and its fixed look (docs/model-scripts.md).
+              **({'script': dict(field.hooks)} if getattr(field, 'hooks', None) else {}),
+              **({'look': field.look} if getattr(field, 'look', None) else {}),
+              # The form paths a Link's Option reads (Ref in where=): the dropdown sends their values (evlet/search.py).
+              **({'inputs': list(field.option.refs())} if getattr(field, 'option', None) is not None and field.option.refs() else {}),
               'default_kind': 'none' if field.default is MISSING else 'reference' if isinstance(field.default, Ref) else 'user' if field.default is CurrentUser
               else 'callable' if callable(field.default) else 'static'}
     if result['default_kind'] == 'static':
@@ -786,6 +837,8 @@ def ui_schema(registry):
     api = getattr(registry, 'api', {})
     return {'version': 1, 'ui_version': 1, 'models': [
         {'name': name, **view_for(model), **({'record_layout': registry.layouts[model]} if model in getattr(registry, 'layouts', {}) else {}),
+         **({'script': registry.scripts[model]} if model in getattr(registry, 'scripts', {}) else {}),
+         **({'extensions': [entry for _, entry in registry.extensions[model] if entry]} if any(entry for _, entry in getattr(registry, 'extensions', {}).get(model, ())) else {}),
          'fields': [field_schema(field) for field in model.__app_fields__.values()],
          **({'api': 'read'} if api.get(model) == 'read' else {}), **behavior(model, registry)}
         for name, model in registry.models.items() if api.get(model, 'full') is not None

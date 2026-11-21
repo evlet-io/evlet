@@ -272,6 +272,9 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "inputs": [
+            "customer"
+          ],
           "default_kind": "none"
         },
         {
@@ -5396,8 +5399,21 @@
             ],
             "name": "Reports in the same department",
             "main": false
+          },
+          {
+            "kind": "custom",
+            "name": "Profile",
+            "main": false,
+            "label": "Profile",
+            "custom": "profile",
+            "collapsible": true,
+            "collapsed": true
           }
         ]
+      },
+      "script": {
+        "url": "/assets/scripts/1ee022acfce2b824/playground/employee.js",
+        "on_open": "opened"
       },
       "fields": [
         {
@@ -5412,6 +5428,9 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "script": {
+            "tooltip": "name_tip"
+          },
           "default_kind": "none"
         },
         {
@@ -5426,6 +5445,9 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "script": {
+            "on_change": "email_changed"
+          },
           "default_kind": "none"
         },
         {
@@ -5535,6 +5557,192 @@
         "skill_levels.skills",
         "skill_levels.evlet_owner",
         "skill_levels.evlet_position"
+      ],
+      "sources": {}
+    },
+    {
+      "name": "expense",
+      "layout": [
+        {
+          "label": "Expense",
+          "fields": [
+            "title",
+            "amount",
+            "payment",
+            "card_last4",
+            "split_total"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows",
+          "main": true
+        }
+      ],
+      "label": "Expense",
+      "plural": "Expenses",
+      "description": "Expense claims: the form shows what the payment needs.",
+      "title_field": "title",
+      "list_fields": [
+        "id",
+        "title",
+        "payment",
+        "amount"
+      ],
+      "search_fields": [
+        "title",
+        "payment",
+        "card_last4",
+        "name"
+      ],
+      "open_in": "page",
+      "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Expense",
+            "label": "Expense",
+            "main": true
+          },
+          {
+            "kind": "table",
+            "name": "splits",
+            "main": true
+          },
+          {
+            "kind": "table",
+            "name": "receipts",
+            "main": true
+          }
+        ]
+      },
+      "fields": [
+        {
+          "name": "title",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 120,
+          "label": "Title",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "amount",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 6,
+          "minimum": "0",
+          "maximum": null,
+          "label": "Amount",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "currency": "AED",
+          "default_kind": "static",
+          "default": "0.00"
+        },
+        {
+          "name": "payment",
+          "type": "select",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "cash",
+            "card",
+            "split"
+          ],
+          "label": "Payment",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "cash"
+        },
+        {
+          "name": "card_last4",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 4,
+          "label": "Card (last 4)",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "split_total",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 6,
+          "minimum": null,
+          "maximum": null,
+          "label": "Split total",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": true,
+          "currency": "AED",
+          "default_kind": "none"
+        },
+        {
+          "name": "name",
+          "type": "text",
+          "required": false,
+          "unique": true,
+          "index": false,
+          "max_length": 140,
+          "label": "Name",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        }
+      ],
+      "document_version": 1,
+      "resource": "expense",
+      "behavior": {
+        "title": {},
+        "amount": {},
+        "payment": {},
+        "card_last4": {},
+        "split_total": {
+          "finite": true
+        },
+        "name": {}
+      },
+      "order": [
+        "title",
+        "amount",
+        "payment",
+        "card_last4",
+        "split_total",
+        "name",
+        "splits.person",
+        "splits.amount",
+        "splits.evlet_owner",
+        "splits.evlet_position",
+        "receipts.reference",
+        "receipts.note",
+        "receipts.evlet_owner",
+        "receipts.evlet_position"
       ],
       "sources": {}
     },
@@ -5909,6 +6117,10 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "script": {
+            "control": "level_picker",
+            "look": "level_look"
+          },
           "default_kind": "static",
           "default": "practised"
         },
@@ -6054,6 +6266,225 @@
           "default": 0
         }
       ]
+    },
+    {
+      "name": "expense_splits",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "person",
+            "amount"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows",
+          "main": true
+        }
+      ],
+      "label": "Expense split",
+      "plural": "Expense splits",
+      "description": "",
+      "title_field": "person",
+      "list_fields": [
+        "id",
+        "person",
+        "amount"
+      ],
+      "search_fields": [
+        "person"
+      ],
+      "open_in": "page",
+      "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
+      "fields": [
+        {
+          "name": "person",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 80,
+          "label": "Person",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "amount",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 6,
+          "minimum": "0",
+          "maximum": null,
+          "label": "Amount",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "currency": "AED",
+          "default_kind": "static",
+          "default": "0.00"
+        },
+        {
+          "name": "evlet_owner",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": true,
+          "minimum": 1,
+          "maximum": null,
+          "target": "expense",
+          "label": "Evlet owner",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        },
+        {
+          "name": "evlet_position",
+          "type": "integer",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "minimum": null,
+          "maximum": null,
+          "label": "Evlet position",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "static",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "expense_receipts",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "reference",
+            "note"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows",
+          "main": true
+        }
+      ],
+      "label": "Expense receipt",
+      "plural": "Expense receipts",
+      "description": "",
+      "title_field": "reference",
+      "list_fields": [
+        "id",
+        "reference",
+        "note"
+      ],
+      "search_fields": [
+        "reference",
+        "note"
+      ],
+      "open_in": "page",
+      "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
+      "fields": [
+        {
+          "name": "reference",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 40,
+          "label": "Reference",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "note",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 120,
+          "label": "Note",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "evlet_owner",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": true,
+          "minimum": 1,
+          "maximum": null,
+          "target": "expense",
+          "label": "Evlet owner",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        },
+        {
+          "name": "evlet_position",
+          "type": "integer",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "minimum": null,
+          "maximum": null,
+          "label": "Evlet position",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "static",
+          "default": 0
+        }
+      ],
+      "document_version": 1,
+      "resource": "Expense.receipts",
+      "behavior": {
+        "reference": {},
+        "note": {},
+        "evlet_owner": {},
+        "evlet_position": {}
+      },
+      "order": [],
+      "sources": {}
     }
   ]
 }

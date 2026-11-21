@@ -63,9 +63,12 @@ A prompt has what a model has, without a table, migrations or a place in the reg
 `Child` Tables, finite-v1 formulas and field rules (`compute`, `initial`, `applies_when`, `required_when`,
 `locked_when`), the string rules, Link filters (`Ref('source.company')` reads the source), and `@validate` on
 the prompt and its rows. `Meta` takes `title` (the class name by default), `primary` (`Submit`), `layout`
-(`Main`, `Section`, `TableSection`, as on a model; [ui.md](ui.md)) and `focus`. A wrong layout or focus fails
+(`Main`, `Section`, `TableSection`, as on a model; [ui.md](ui.md)), `focus`, and `script` and `on_open` for a
+[model script](model-scripts.md#in-a-prompt) (the Playground's Plan project marks a long task with one). A wrong layout or focus fails
 when the prompt is first shown. `load(self, source)` fills it before the person sees it; read-only fields are
-filled there. A Table that `load()` fills takes no new rows.
+filled there. A value `load()`, the starting values or code (`prompt.order_date = ...`) sets is the caller's:
+an `initial=` suggestion fills only the fields nobody set, as on a new document a hook fills. A Table that `load()` fills takes no new rows: the open response gives it `max_rows` at the rows it
+has, so the modal offers no Add row, Enter on its last cell adds none and Duplicate copies none.
 
 ## Shown when returned
 
@@ -101,8 +104,15 @@ remark and the fields it asks for, and an action's typed arguments, open in the 
 Outcome('Order created', open=order)                   # a message, and a record to open: a bound record or (Model, id)
 Outcome(new=(Invoice, {'customer': 4, 'total': 70}))   # a new invoice filled with these values, to review and create
 Outcome(data={'estimate': '1200.00'})                  # data for browser code
+Outcome(new=('deliveryorder', {'customer': 4}))        # a model by name (or resource name) instead of its class
+Outcome(open=('invoice', invoice_id))                  # the same for a record to open
 return NextStep                                        # another Prompt: a wizard
 ```
+
+A model named by name is resolved, and the values serialized, where the outcome goes into the answer (the
+action's response, the prompt's `submit()` result in Python and over HTTP), as `context.create` resolves one; an
+unknown name fails there with `Unknown model: …`. So code that cannot import the model class (another app's
+model, or one that would import in a circle) names it.
 
 The JSON answer is at most 64 KiB. `submit()` may also return `None` (the screen says it is done) or any other JSON value (a dict, a list, a number or a string), which the screen receives as data.
 
@@ -164,7 +174,10 @@ customer.delete()
 
 `context.get`, `context.create` and each row of `context.list(...)['rows']` return a bound record: field values
 as attributes (Python values: `Decimal`, `date`, `RecordId`), Table rows as tuples of read-only rows, bound to
-the context that read it and to its revision. `record['field']` and `record.get('field')` give the value as the
+the context that read it and to its revision. `record.model` is its model class, as on a draft (a field named
+`model` wins), so one prompt opened from several models reads `self.source.model`. Virtual fields (`stored=False`) read as the HTTP detail shows them,
+on the record and on its rows; they are calculated on the first read of one (a full settle of that record), so a
+`context.list` calculates none up front. `record['field']` and `record.get('field')` give the value as the
 record's JSON detail carries it, like a report row.
 
 * **Actions are methods.** `record.<action>(values=None, **values)` runs `context.action(...)` with every check.
@@ -208,4 +221,5 @@ back and moves the quotation by `reopen_part` or `reopen_all`. In Python: `quota
 ...})`.
 
 The Playground shows **Plan project** (an action on a planned project) and **Quick invoice** (an `@api` prompt
-in the Sales workspace that opens a new invoice to review), in `examples/playground/prompts.py`.
+in the Sales workspace that opens a new invoice to review; its lines show the rate's help text
+`'per {uom}'` as subtext under each rate), in `examples/playground/prompts.py`.

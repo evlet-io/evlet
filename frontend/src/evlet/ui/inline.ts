@@ -5,14 +5,16 @@
 
 import { html, when, type Child } from '../dom';
 import { batch, cell, onCleanup, untrack } from '../reactive';
-import { Button, Icon } from './base';
+import { Button, Icon, Switch } from './base';
 import { uid } from './core';
 import { phrase, labeller } from './explain';
 import { flowGrid, FoldSection, type Flow, type Folds, type FoldStart } from './fold';
-import { displayValue, FieldControl, FieldHints, LinkGo, recordOf, siblingsOf, type Control, type FieldLike, type LinkSource } from './fields';
+import { displayValue, FieldControl, FieldHints, LinkGo, recordOf, siblingsOf, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
 import { kindOf } from './kinds';
 import { toast } from './layers';
+import { commitWithin } from './shortcuts';
 import { tooltip } from './tooltip';
+import { lookOf, scriptControl, scriptTip } from '../model/script';
 
 export type Save = () => Promise<boolean> | boolean;
 
@@ -163,6 +165,26 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
   };
 
   onCleanup(() => { document.removeEventListener('focusin', away, true); document.removeEventListener('mousedown', away, true); });
+  // A Boolean is its switch, at rest and while editing: no text, no edit button, no input box. Flipping it
+  // saves at once, with Undo; a value that can't change shows the switch disabled, with the reason on hover.
+  if (kind.control === 'switch' && !field.calculated && !props.display) {
+    const toggle = Switch({ on: () => field.value.get() === true, ariaLabel: props.labelledBy ? undefined : meta.label,
+      // Not while its own save runs (the record reads as locked then): a disabled button would drop the focus.
+      disabled: () => !field.editable.get() && !busy.get(),
+      onChange: next => {
+        if (busy.peek()) return;
+        before = untrack(() => field.value.get());
+        conflict.set(false);
+        if (writeValue(field, next)) void finish(false);
+      } });
+    toggle.classList.add('sw-only');
+    if (props.labelledBy) toggle.setAttribute('aria-labelledby', props.labelledBy);
+    const box = html`<div class="iv iv-sw" data-field=${meta.name} aria-busy=${() => busy.get() ? 'true' : null}>${toggle}${when(() => Boolean(field.error.get()),
+      () => html`<span class="err-inline" role="alert">${() => field.error.get()}</span>`)}${when(conflict,
+      () => Button({ label: 'Reload', icon: 'rotate-ccw', size: 'small', onClick: () => { void reload(); } }))}</div>` as HTMLElement;
+    tooltip(box, () => field.editable.get() || busy.get() ? '' : lockReason(field));
+    return box;
+  }
   const wrapper = html`<div class="iv" data-field=${meta.name}
     on:keydown=${(event: KeyboardEvent) => {
       if (!editing.peek()) return;
@@ -190,6 +212,13 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
       const go = props.display ? null : LinkGo(field, props.links ?? undefined);
       return when(field.editable, () => go ? html`<div class="in-link-box iv-go">${at}${go.arrow()}</div>` : at, () => readOnly);
     })}</div>` as HTMLElement;
+  // Mod+S while the value is being edited writes it first, so the record's save includes it.
+  commitWithin(wrapper, () => {
+    if (!editing.peek()) return undefined;
+    if (!control?.commit()) return false;
+    stop(true);
+    return true;
+  });
   return wrapper;
 }
 
@@ -197,7 +226,7 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
 export function KeyValueList(items: Array<FieldLike | { label: string; field: FieldLike }>, options: { save?: Save; links?: LinkSource | null } = {}): HTMLElement {
   return html`<dl class="fields">${items.map(item => {
     const field = 'field' in item ? item.field : item, label = 'field' in item ? item.label : item.meta.label, id = uid('kv');
-    return html`<dt id=${id} hidden=${() => !field.rules.get().applies}>${label}</dt><dd hidden=${() => !field.rules.get().applies}>${InlineValue({ field, save: options.save, labelledBy: id, links: options.links })}</dd>`;
+    return html`<dt id=${id} hidden=${() => !field.rules.get().visible}>${label}</dt><dd hidden=${() => !field.rules.get().visible}>${InlineValue({ field, save: options.save, labelledBy: id, links: options.links })}</dd>`;
   })}</dl>` as HTMLElement;
 }
 
@@ -206,9 +235,13 @@ export function FieldGrid(fields: FieldLike[], options: { save?: Save; links?: L
   const wide = (field: FieldLike) => Boolean(field.meta.wide ?? field.meta.type === 'longtext');
   const cells = fields.map(field => {
     const id = uid('ff');
-    return html`<div class="ff" class:full=${field.meta.wide ?? (field.meta.type === 'longtext' || field.meta.type === 'richtext')} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}>
-      <label id=${id}>${field.meta.label}${when(() => field.rules.get().required && !field.calculated, () => html`<span class="req" aria-hidden="true">*</span>`)}${FieldHints(field)}</label>
-      <div class="ff-v">${InlineValue({ field, save: options.save, labelledBy: id, links: options.links })}</div></div>` as Node;
+    // A model script may draw the value (control=), work out its tooltip and its look (model/script.ts).
+    const drawn = scriptControl(field), tip = scriptTip(field);
+    const value = html`<div class="ff-v">${drawn ?? InlineValue({ field, save: options.save, labelledBy: id, links: options.links })}</div>` as HTMLElement;
+    if (tip) tooltip(value, tip);
+    return html`<div class="ff" class:full=${field.meta.wide ?? (field.meta.type === 'longtext' || field.meta.type === 'richtext')} hidden=${() => !field.rules.get().visible} data-field=${field.meta.name}
+      data-look=${lookOf(field)}><label id=${id}>${field.meta.label}${when(() => field.rules.get().required && !field.calculated, () => html`<span class="req" aria-hidden="true">*</span>`)}${FieldHints(field)}</label>
+      ${value}</div>` as Node;
   });
   return flowGrid(cells.map((node, index) => ({ node, wide: wide(fields[index]) })), options.flow);
 }

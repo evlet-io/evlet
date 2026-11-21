@@ -8,7 +8,8 @@ from decimal import Decimal as D
 
 import pytest
 
-from evlet import Application, Child, Database, Decimal, Integer, Model, Registry, Rule, Table
+from evlet import Application, Boolean, Child, Database, Decimal, Integer, Model, Registry, Rule, Table, Text
+from evlet.calc import coalesce, parent
 from evlet.auth import LocalAuth, User
 from test_business import PASSWORD, client, http
 
@@ -111,11 +112,37 @@ class Exchange(Model):
                 line.amount_aed
 
 
+class Quote(Model):
+    """A line's typed rate applies only under a basis derive() sets; derive() still reads it."""
+    permissions = FULL
+
+    class Meta:
+        calculation_language = 'finite-v1'
+
+    class Line(Child):
+        qty = Decimal(scale=2, default=1)
+        typed_rate = Decimal(scale=2, applies_when=parent.pricing_basis == 'manual')
+        rate = Decimal(scale=2, derived=True)
+        amount = Decimal(scale=2, compute=qty * rate)
+        typed_amount = Decimal(scale=2, compute=qty * coalesce(typed_rate, 0))
+
+    lines = Table(Line)
+    manual = Boolean(default=False)
+    pricing_basis = Text(derived=True)
+
+    def derive(self):
+        self.pricing_basis = 'manual' if self.manual else 'standard'
+        for line in self.lines:
+            line.rate = line.typed_rate if self.pricing_basis == 'manual' and line.typed_rate is not None else D('5.00')
+            if CIRCLE:
+                line.typed_amount
+
+
 @pytest.fixture
 def app(tmp_path):
     SEEN.clear()
     CIRCLE.clear()
-    database = Database(tmp_path / 'order.sqlite3', Registry(Invoice, Bill, Exchange))
+    database = Database(tmp_path / 'order.sqlite3', Registry(Invoice, Bill, Exchange, Quote))
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
@@ -192,3 +219,29 @@ def test_the_split_is_cached_per_model(app):
     assert {(tuple(field['path']), field['field']) for field in before['fields']} == {(('lines',), 'amount'), ((), 'subtotal')}
     keys, after = registry.derive_split(Bill)
     assert after == {'tax_total': 'tax_lines', 'total': 'discount'} and {'lines.amount', 'subtotal'} <= set(keys)
+
+
+def test_derive_reads_a_field_whose_rule_waits_on_it(app):
+    app, _ = app
+    with app.business.context(ADMIN) as context:
+        manual = context.create(Quote, manual=True, children={'lines': [{'qty': '2', 'typed_rate': '7.00'}]})
+        standard = context.create(Quote, children={'lines': [{'qty': '2', 'typed_rate': '7.00'}]})
+        manual, standard = context.get(Quote, manual.id), context.get(Quote, standard.id)
+    line = manual.lines[0]
+    assert (manual.pricing_basis, line.typed_rate, line.rate, line.amount, line.typed_amount) == \
+        ('manual', D('7.00'), D('7.00'), D('14.00'), D('14.00'))
+    # The rule applies after derive(): under the standard basis the typed rate is stored empty.
+    line = standard.lines[0]
+    assert (standard.pricing_basis, line.typed_rate, line.rate, line.amount, line.typed_amount) == \
+        ('standard', None, D('5.00'), D('10.00'), D('0.00'))
+
+
+def test_a_formula_over_a_field_whose_rule_waits_on_derive_stays_blocked(app):
+    app, _ = app
+    registry = app.business.registry
+    _, blocked = registry.derive_split(Quote)
+    assert 'lines.typed_rate' not in blocked and blocked['lines.typed_amount'] == 'pricing_basis'
+    CIRCLE.append(True)
+    with app.business.context(ADMIN) as context, \
+            pytest.raises(AttributeError, match=r'derive\(\) read lines.typed_amount, which depends on pricing_basis that derive\(\) sets'):
+        context.create(Quote, manual=True, children={'lines': [{'typed_rate': '7.00'}]})

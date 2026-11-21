@@ -5,7 +5,7 @@
 // dates, date-times in UTC, times as HH:MM:SS, durations as ISO 8601 (PT1H30M), tags as lists.
 
 import { parse as parseNumber, quantize, text as numberText } from '../model/finite';
-import { currencyDecimals, decimalMark, formatDate, formatDateTime, formatMoney, formatNumber, moneyWire, plainNumber as plain, wallToUtc } from '../model/format';
+import { currencyDecimals, decimalMark, formatDate, formatDateTime, formatMoney, formatNumber, formatTrimmed, moneyWire, plainNumber as plain, wallToUtc } from '../model/format';
 import { clockText, dateOrder, parseClock, parseDay, parseDayTime, parseLength } from './dateparse';
 
 /** Typed number text as a plain decimal, or an error that names the person's decimal mark. */
@@ -200,8 +200,11 @@ export const KINDS: Record<string, Kind> = {
     suffix: meta => meta.suffix || ((meta as any).unit ?? null),
   },
   decimal: {
-    format: (value, meta) => empty(value) ? '' : formatNumber(value as string, scaleOf(meta, 2)),
-    edit: (value, meta) => empty(value) ? '' : formatNumber(value as string, scaleOf(meta, 2)),
+    // Decimal(display_scale=): at most that many places, without trailing zeros; the input shows every place it holds.
+    format: (value, meta) => empty(value) ? '' : typeof meta?.display_scale === 'number' ? formatTrimmed(value as string, meta.display_scale)
+      : formatNumber(value as string, scaleOf(meta, 2)),
+    edit: (value, meta) => empty(value) ? '' : typeof meta?.display_scale === 'number' ? formatTrimmed(value as string, scaleOf(meta, 2))
+      : formatNumber(value as string, scaleOf(meta, 2)),
     parse: decimal(meta => scaleOf(meta, 2)), align: 'right', inputMode: 'decimal', suffix: meta => meta.suffix || null,
   },
   currency: {
