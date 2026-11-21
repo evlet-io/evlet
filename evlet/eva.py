@@ -47,7 +47,7 @@ UNITS = ('aed', 'tokens', 'requests')
 MICRO = Decimal(1_000_000)
 MAX_FILE, MAX_FILES, MAX_TEXT = 1024 * 1024, 5, 20_000
 CONTEXT_CHARS, RESULT_CHARS = 120_000, 16_000
-MAX_TASKS, KEEP_EVENTS = 10, 2000
+MAX_TASKS = 10
 # A running run with no sign of life for this long has no process working on it (two provider timeouts and a retry fit).
 STALE_SECONDS = 300
 PAUSED = 'An administrator paused this task in Controls, under Jobs. Ask them to resume it.'

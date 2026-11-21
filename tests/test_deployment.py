@@ -28,7 +28,8 @@ def test_render_only_active_verified_domains_and_fixed_private_service_paths(tmp
     assert 'User=evlet' in service and 'UMask=0077' in service
     assert '--forwarded-allow-ips=127.0.0.1' in service and '--workers 1' in service
     assert 'ReadWritePaths=/var/lib/evlet' in service
-    worker = files['evlet-worker.service']
+    assert 'evlet-worker.service' not in files and 'Environment=EVLET_TENANT_JOBS=1' in service
+    worker = render_deployment(catalog, separate_worker=True)['evlet-worker.service']
     assert ' -m examples.playground.worker' in worker and 'uvicorn' not in worker
     assert 'User=evlet' in worker and 'ReadWritePaths=/var/lib/evlet' in worker
     assert 'EnvironmentFile=-/etc/evlet/server.env' in service and 'EnvironmentFile=-/etc/evlet/server.env' in worker

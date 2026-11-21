@@ -6,7 +6,7 @@ from evlet import Child, Currency, Database, Decimal, Main, Model, Percent, Prom
 from evlet.calc import F
 from evlet.prompts import schema as prompt_schema
 from evlet.ui.metadata import view_for
-from test_business import client
+from support import client
 from test_meaning import serve
 from test_rules_types import ALL, add_user
 

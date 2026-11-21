@@ -17,7 +17,7 @@ class Invoice(Model):
     posting_date = Date(required=True)
     number = Sequence("INV-{year}-{n:05}", scope=("company",), assign_on="issued", date="posting_date")
     docstate = State(State.Step("draft"), State.Step("issued", lock=True), State.Step("void", lock=True, final=True),
-                     rules=(State.Rule("draft", "issued", "Issue"), State.Rule("issued", "void", "Void", remark="required")))
+                     rules=(State.Move("draft", "issued", "Issue"), State.Move("issued", "void", "Void", remark="required")))
 
     class Meta:
         title_field = "number"
@@ -108,7 +108,7 @@ because it changes after the number is assigned. Two companies can both have
   error unless they send the saved value or run inside `tx.maintenance()` for an audited
   repair.
 * A raw `Session.create` numbers a Sequence that is due on create, like `Context.create`.
-  Without `date=`, its period is today in UTC, because a session has no instance timezone.
+  Without `date=`, its period is today in the instance timezone (`database.timezone`), the same day its naming series uses.
 * Its schema entry is `read_only: true`.
 
 ## Counters

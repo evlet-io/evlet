@@ -7,7 +7,7 @@
 // Text that can't be read, or names a day that doesn't exist (31-02), gives null: the caller
 // shows its error and leaves the text as typed. Nothing is guessed, and the server checks again.
 
-import { currentRegion, todayGst, type DateFormat } from '../model/format';
+import { currentRegion, todayDate, type DateFormat } from '../model/format';
 
 export type DateOrder = 'DMY' | 'MDY' | 'YMD';
 
@@ -56,7 +56,7 @@ export function fullYear(short: number, thisYear: number): number {
  * - today or t, tomorrow, yesterday, +3 and -3 (days from today)
  */
 export function parseDay(text: string, options: DayOptions = {}): string | null {
-  const today = options.today ?? todayGst(), order = options.order ?? dateOrder();
+  const today = options.today ?? todayDate(), order = options.order ?? dateOrder();
   const [thisYear, thisMonth] = today.split('-').map(Number);
   const value = text.trim().toLowerCase().replace(/,/g, ' ');
   if (!value) return null;

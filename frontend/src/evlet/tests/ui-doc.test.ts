@@ -302,3 +302,53 @@ describe('Library page', () => {
     expect(host.querySelectorAll('.lib-idx:not([hidden])')).toHaveLength(1);
   });
 });
+
+// A list's tabs (Tabs({ pills: true })): a coloured dot, the label and a count chip; those that don't fit wait in More.
+describe('pill tabs', () => {
+  const STEPS = ['draft', 'sent', 'paid', 'overdue', 'disputed', 'held', 'void', 'archived'];
+  const pills = (active = cell('all')) => {
+    const host = render(() => Tabs({ pills: true, active, label: 'Invoices by state', tabs: [
+      { id: 'all', label: 'All invoices', count: 13 },
+      ...STEPS.map((step, index) => ({ id: step, label: step, count: index + 1, tint: (['blue', 'green', 'amber', 'rose'] as const)[index % 4] })),
+    ] }));
+    return { host, active };
+  };
+  const shown = (host: HTMLElement) => [...host.querySelectorAll<HTMLElement>('[role="tab"]')].filter(tab => !tab.hidden).map(tab => tab.id.split('-').pop());
+
+  it('draws a dot in each tab\'s colour and a count chip, and none on a tab without a colour', () => {
+    const { host } = pills();
+    const row = host.querySelector('.pill-row')!;
+    expect(row.querySelector(':scope > [role="tablist"]')!.classList.contains('pill-tabs')).toBe(true);
+    const tabs = [...row.querySelectorAll('[role="tab"]')];
+    expect(tabs[0].querySelector('.tab-dot')).toBeNull();
+    expect(tabs[1].querySelector('.tab-dot')!.className).toBe('tab-dot dot-blue');
+    expect(tabs[2].querySelector('.tab-dot')!.className).toBe('tab-dot dot-green');
+    expect(tabs[1].querySelector('.n')!.textContent).toBe('1');
+  });
+
+  it('moves the tabs that don\'t fit into More N, opens them from its menu and keeps the chosen one in the row', () => {
+    const { host, active } = pills();
+    // Without ResizeObserver: the first tab and five more.
+    expect(shown(host)).toEqual(['all', 'draft', 'sent', 'paid', 'overdue', 'disputed']);
+    const more = host.querySelector<HTMLButtonElement>('.tab-more')!;
+    expect(more.hidden).toBe(false);
+    expect(more.textContent).toBe('More3');
+    expect(more.getAttribute('aria-label')).toBe('3 more tabs');
+    more.click();
+    const items = [...document.querySelectorAll<HTMLElement>('.tab-more-pop [role="menuitemradio"]')];
+    expect(items.map(item => item.querySelector('.tab-l')!.textContent)).toEqual(['held', 'void', 'archived']);
+    expect(items[1].querySelector('.tab-dot')!.className).toBe('tab-dot dot-amber');
+    items[1].click();
+    expect(active.peek()).toBe('void');
+    // The chosen tab takes the place of the last one that fit; that one moves into More.
+    expect(shown(host)).toEqual(['all', 'draft', 'sent', 'paid', 'overdue', 'void']);
+    expect(more.textContent).toBe('More3');
+    expect(document.querySelector('.tab-more-pop')).toBeNull();
+  });
+
+  it('shows no More when every tab fits', () => {
+    const host = render(() => Tabs({ pills: true, active: cell('a'), label: 'Few', tabs: [{ id: 'a', label: 'A' }, { id: 'b', label: 'B', tint: 'teal' }] }));
+    expect(host.querySelector<HTMLButtonElement>('.tab-more')!.hidden).toBe(true);
+    expect(shown(host)).toEqual(['a', 'b']);
+  });
+});

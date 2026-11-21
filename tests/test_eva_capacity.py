@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import pytest
 from evlet import qb
-from tests.test_business import client, hashed  # noqa: F401
+from tests.support import client
 from tests.test_eva import make, setting, Script, NEVER, ask, call
 from evlet.eva import QuotaError
 

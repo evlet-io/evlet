@@ -10,7 +10,7 @@ import pytest
 from evlet import (Application, Child, Column, Database, Date, Decimal, Link, LocalAuth, Model, NavGroup, Registry,
                    Prompt, Report, Rule, Select, Shortcut, State, Table, Text, Workspace)
 from evlet.services import Endpoint
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 EVERYTHING = Rule(('read', 'create', 'update', 'delete'))
 
@@ -169,18 +169,21 @@ def test_admin_sees_every_declared_item_with_labels_and_list_filters(app):
     assert {key: sales[key] for key in ('key', 'label', 'icon', 'app', 'source')} == {
         'key': 'sales', 'label': 'Sales', 'icon': 'receipt', 'app': 'app', 'source': 'declared'}
     clients, deals, reports = sales['groups']
-    assert clients == {'key': 'clients', 'label': 'Clients', 'icon': 'users', 'items': [
-        {'key': 'model:client', 'kind': 'model', 'label': 'Clients', 'model': 'client', 'view': 'list', 'filters': None},
+    plain = {'color': None, 'section': None, 'link': False}
+    assert clients == {'key': 'clients', 'label': 'Clients', 'icon': 'users', **plain, 'items': [
+        {'key': 'model:client', 'kind': 'model', 'label': 'Clients', 'model': 'client', 'view': 'list', 'filters': None, 'icon': None, 'badge': False},
         {'key': 'model:client:north_clients', 'kind': 'model', 'label': 'North clients', 'model': 'client', 'view': 'list',
-         'filters': [['region', 'eq', 'north']]},
+         'filters': [['region', 'eq', 'north']], 'icon': None, 'badge': False},
         {'key': 'model:client:vip_clients', 'kind': 'model', 'label': 'VIP clients', 'model': 'client', 'view': 'list',
-         'filters': [['notes', 'icontains', 'vip']]}]}
+         'filters': [['notes', 'icontains', 'vip']], 'icon': None, 'badge': False}]}
+    assert sales['home'] is None
     assert deals['icon'] is None
-    assert deals['items'][1] == {'key': 'model:deal:board', 'kind': 'model', 'label': 'Deals', 'model': 'deal', 'view': 'board', 'filters': None}
-    assert deals['items'][3] == {'key': 'api:test.quick_deal', 'kind': 'api', 'label': 'Quick deal', 'api': 'test.quick_deal'}
-    assert reports['items'] == [{'key': 'report:ClientList', 'kind': 'report', 'label': 'Client list', 'report': 'ClientList'},
-                                {'key': 'report:PointTotals', 'kind': 'report', 'label': 'Point totals', 'report': 'PointTotals'},
-                                {'key': 'url:help', 'kind': 'url', 'label': 'Help', 'url': 'https://example.com/help'}]
+    assert deals['items'][1] == {'key': 'model:deal:board', 'kind': 'model', 'label': 'Deals', 'model': 'deal', 'view': 'board', 'filters': None,
+                                 'icon': None, 'badge': False}
+    assert deals['items'][3] == {'key': 'api:test.quick_deal', 'kind': 'api', 'label': 'Quick deal', 'api': 'test.quick_deal', 'icon': None}
+    assert reports['items'] == [{'key': 'report:ClientList', 'kind': 'report', 'label': 'Client list', 'report': 'ClientList', 'icon': None},
+                                {'key': 'report:PointTotals', 'kind': 'report', 'label': 'Point totals', 'report': 'PointTotals', 'icon': None},
+                                {'key': 'url:help', 'kind': 'url', 'label': 'Help', 'url': 'https://example.com/help', 'icon': None, 'new_tab': True}]
 
 
 def test_editor_and_viewer_see_only_what_they_can_open(app):
@@ -215,8 +218,8 @@ def test_an_app_without_workspaces_gets_one_grouped_as_the_sidebar(tmp_path):
     # Documents have a State or child rows; Records are the rest; Reports without a group come first.
     assert shape([found]) == {'app': {'documents': ['model:deal'], 'records': ['model:client', 'model:payroll'],
                                       'reports': ['report:PointTotals', 'report:Overview', 'report:ClientList']}}
-    assert found['groups'][0] == {'key': 'documents', 'label': 'Documents', 'icon': None, 'items': [
-        {'key': 'model:deal', 'kind': 'model', 'label': 'Deals', 'model': 'deal', 'view': 'list', 'filters': None}]}
+    assert found['groups'][0] == {'key': 'documents', 'label': 'Documents', 'icon': None, 'color': None, 'section': None, 'link': False, 'items': [
+        {'key': 'model:deal', 'kind': 'model', 'label': 'Deals', 'model': 'deal', 'view': 'list', 'filters': None, 'icon': None, 'badge': False}]}
     # The viewer can't read the deal's State, so, as in the sidebar, the deal is a record for it (it has lines).
     assert shape(workspaces(app, 'viewer')) == {'app': {'documents': ['model:deal'], 'records': ['model:client'], 'reports': ['report:ClientList']}}
     assert shape(workspaces(app, 'editor')) == {'app': {'documents': ['model:deal'], 'records': ['model:client'],
@@ -288,8 +291,8 @@ def test_good_urls_are_kept():
     (lambda: Workspace('مبيعات', groups=(NavGroup('A', items=('client',)),)), 'so give it key='),
     (lambda: Workspace('Desk', icon='Bad Icon', groups=(NavGroup('A', items=('client',)),)), 'icon is an icon name'),
     (lambda: Workspace('Desk', groups=(NavGroup('A', icon='x y', items=('client',)),)), r"group 'A': icon is an icon name"),
-    (lambda: Workspace('Desk'), 'groups takes one or more NavGroup'),
-    (lambda: Workspace('Desk', groups=('client',)), "groups takes NavGroup, not 'client'"),
+    (lambda: Workspace('Desk'), 'groups takes one or more NavSection or NavGroup'),
+    (lambda: Workspace('Desk', groups=('client',)), "groups takes NavSection and NavGroup, not 'client'"),
     (lambda: Workspace('Desk', groups=(NavGroup('A'),)), r"group 'A': items takes one or more"),
     (lambda: Workspace('Desk', groups=(NavGroup('A', items=('client',)), NavGroup('a', items=('deal',)))), "two groups share the key 'a'"),
     (lambda: Workspace('Desk', groups=(NavGroup('A', items=(Client,)),)), 'item Client: an item is a model name or a Shortcut'),
@@ -358,7 +361,7 @@ def test_flat_apps_declare_workspaces_in_workspaces_py(project):
     create_app(project, 'tasks')
     create_instance(project, 'acme')
     install(project, 'acme', app_names=('notes', 'tasks'), trust=True)
-    app = load_runtime(project, 'acme')
+    app = load_runtime(project, 'acme', development=True)
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     found = client(app)('GET', '/api/schema')[1]['workspaces']
@@ -382,7 +385,7 @@ def installed(project, apps):
     from evlet.instances import load_runtime
     create_instance(project, 'acme')
     install(project, 'acme', app_names=tuple(apps), trust=True)
-    app = load_runtime(project, 'acme')
+    app = load_runtime(project, 'acme', development=True)
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     return [(item['key'], item['app'], item['source']) for item in client(app)('GET', '/api/schema')[1]['workspaces']]

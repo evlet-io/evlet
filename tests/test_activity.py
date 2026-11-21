@@ -13,7 +13,7 @@ from evlet.calc import F
 from evlet.identity import RecordId
 from evlet.permissions import Policy
 from finite_fixtures import FiniteMeta
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 from test_rules_types import ALL, add_user, start
 
 

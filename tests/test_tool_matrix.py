@@ -5,7 +5,7 @@ import pytest
 from evlet import Policy, Rule
 from examples.playground.models import Customer, Project, registry
 from tests.test_assistants import allow, connect, settings, tool
-from tests.test_business import client, hashed, http, secured  # noqa: F401
+from tests.support import client, http
 
 
 def outcome(status, payload):

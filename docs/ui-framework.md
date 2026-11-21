@@ -212,7 +212,9 @@ await record.save();                       // the server's answer replaces the d
   (`frontend/src/evlet/model/finite.ts`, the same evaluator as the server's fixtures)
   computes calculated fields, `initial` values and the field rules. Results flow into the
   cells; a lock is decided on the record as saved, as the server enforces it. The store
-  supplies `today()` as the date in GST and reads Link lookups (`customer.credit_days`)
+  supplies `today()` as the date in the server's zone (the schema's `timezone`, `Instance.timezone`, UTC by
+  default; `calculationToday(zone)` in `model/record.ts`), so a preview picks the day the save does, or the
+  person's day from an older server that sends no zone. It reads Link lookups (`customer.credit_days`)
   with `GET /api/{model}/{id}`, following multi-step paths. Until a lookup arrives, a saved
   result keeps its saved value.
 - A detail embeds the first 100 rows of a Table. `open` pages in the rest through the lines
@@ -251,9 +253,15 @@ await record.save();                       // the server's answer replaces the d
   shows `Invalid amount`. `formatDate('2026-11-01')` is `01-11-2026`; impossible dates show
   `Invalid date`. `formatDateTime` shows GST (Asia/Dubai, UTC+4) whatever the browser's
   zone: a timestamp with `Z` or an offset is converted, one without a zone is taken as GST
-  already. `todayGst()` is the date `today()` uses.
+  already. `todayDate()` is today in the person's time zone from Settings, the day date pickers and typed
+  relative dates use (`todayIn(zone)` for another zone; `todayGst()` is `todayIn('Asia/Dubai')`).
 
 ## Components
+
+Controls panels and personal Settings draw a setting row with `SettingRow({ drafts?, id?, title, text?, control })`
+from `ui/settings-helpers.ts`: title and text on the left, the control on the right, and with drafts the Changed
+tag, the reset button and the server's error for that draft id. `settingKit(drafts, id)` gives a panel its
+`row`, `mark` and `error` over one id scheme.
 
 `frontend/src/evlet/ui/` holds the component library of the approved design
 ([ui-design/README.md](ui-design/README.md)). Every component is a plain function that returns
@@ -651,7 +659,11 @@ mount(document.querySelector('#app')!, () => DocFrame({
 ```
 
 - **Tabs** and **TabPanel** are for screens of your own (a list's tabs use Tabs); the record page has no
-  tabs since 0.4, and `sticky` and `keepTabPlace` went with them.
+  tabs since 0.4, and `sticky` and `keepTabPlace` went with them. `Tabs({ pills: true, ... })` draws pills,
+  as a list's tabs are: a tab's `tint` puts a dot in that colour before its label, the count is a chip, and
+  the tabs that don't fit the row go in a **More N** menu at its end (measured with ResizeObserver; without it
+  the first tab and `PILL_TABS_SHOWN` (5) more stay in the row). The chosen tab always stays in the row. With
+  `pills` the returned element is the row (`.pill-row`) around the tablist, and TabPanel takes it as before.
 - **InlineValue** reads first and edits in place: click or Enter opens the field's input,
   and for a Link, Select, date, date-time or time field its picker too, in one step (a `Control`'s
   `open()`; Tab onto the value opens nothing, and Esc in the picker closes it and keeps editing).
@@ -973,7 +985,7 @@ page in a new browser tab.
 | Model | Screen |
 |---|---|
 | Fields the role can read | The only fields shown anywhere; the rest are absent, not hidden |
-| `permissions.create`, `update`, `delete` | New buttons and menu entries, editing in place, bulk Delete and the record's Delete |
+| `permissions.create`, `update`, `delete` | New buttons and menu entries, editing in place, bulk Delete and the record's Delete. Every screen asks `can(model, verb)` (`model/schema.ts`): never on `Meta.api = "read"`, and an absent permission means no. Display only; the server checks every write |
 | `Meta.list_fields` | List columns (up to eight, without `id`); without it the first eight visible fields that are not `column=False` |
 | `column=False` on a field | Out of the list's default columns and the Table grid's default columns (it starts hidden in the Columns menu, and Reset columns hides it again); still on the form and the row editor, and still read for each row, for example as a currency source |
 | `Meta.title_field` | The record title (edited in place) and the pinned first list column |

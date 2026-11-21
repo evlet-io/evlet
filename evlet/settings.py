@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from . import qb, secrets as vault
 from .adapter import Column, TableDefinition
-from .auth import (ADMINISTRATOR, ADMINISTRATOR_NAME, AccessError, User, _encode, _scrypt, client_network, hashing_slot, is_administrator,
+from .auth import (ADMINISTRATOR, ADMINISTRATOR_NAME, AccessError, User, _encode, _scrypt, hashing_slot, is_administrator,
                    password_hash)
 from .fields import MISSING, Email, Field
 from .models import ValidationError, checked_body
@@ -438,8 +438,8 @@ class Settings:
             'customize_workspaces': not portal and controls.customizes(scope, user),
             # Eva answers this session (/api/_eva): the browser asks for its status only then, so a workspace
             # without Eva makes no failing request.
-            'eva': not portal and getattr(self.business, 'eva', None) is not None and self.business.eva.available(scope, user),
-            'development': getattr(getattr(self.business, 'routes', None), 'primary', None) is None,
+            'eva': not portal and self.business.eva is not None and self.business.eva.available(scope, user),
+            'development': getattr(self.business.routes, 'primary', None) is None,
             # The built-in Administrator: only its email address can change in its profile.
             'builtin': is_administrator(user),
             'profile': {key: row[key] for key in ('full_name', 'short_name', 'title', 'phone', 'email', 'signature')} | {'photo': row['photo_file'] is not None},
@@ -555,6 +555,8 @@ class Settings:
             raise ValidationError({'photo': 'Use a PNG, JPG or WebP image.'})
         if len(content) > PHOTO_LIMIT:
             raise ValidationError({'photo': 'That photo is over 2 MB. Choose a smaller one.'})
+        from .images import check_dimensions
+        check_dimensions(content, 'photo')
         with self.database.transaction() as tx:
             old = self.profile(tx.connection, user.id)['photo_file']
             file = self.business.storage.add(tx, 'evlet_user_photo', user.id, 'photo' + {'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp'}[kind], content)
@@ -1146,9 +1148,9 @@ class Settings:
                         wrong = 'That code is not right. Try again.'
                 else:
                     tx.connection.run(qb.delete('evlet_two_step_tickets').where(token_hash=row['token_hash']))
-                    address = client_network(auth.client_address(scope))
-                    pair = hashlib.sha256(('account:' + address + ':' + account['username']).encode()).hexdigest()
-                    tx.connection.run(qb.delete('evlet_login_limits').where(qb.in_('client', (pair, limit))))
+                    # The sign-in is complete: its password attempt no longer counts against the network or the account.
+                    tx.connection.run(qb.delete('evlet_login_limits').where(client=limit))
+                    auth.signed_in(tx.connection, scope, account['username'])
                     payload, headers = auth.start_session(tx, scope, account, realm, verified=True)
                     if codes:
                         payload['backup_codes'] = codes

@@ -16,7 +16,7 @@ export function PeriodsPage(ctx: ControlsContext): HTMLElement {
   const data = cell<Periods | null>(null, { name: 'periods.data' });
   const scope = cell('', { name: 'periods.scope' }), date = cell('', { name: 'periods.date' }), error = cell<string | null>(null);
   const admin = () => ctx.state.get().me.role === 'admin';
-  const load = async () => { try { data.set(await ctx.api.periods()); } catch (failure) { toast(message(failure), { icon: 'info' }); } };
+  const load = async () => { try { data.set(await ctx.api.periods()); } catch (failure) { toast(message(failure), { tone: 'error' }); } };
   void load();
   const target = () => { const [model, id] = scope.peek().split(':'); return model && id ? { model, id } : null; };
   const save = async (value: string | null) => {

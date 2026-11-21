@@ -13,7 +13,7 @@ import pytest
 
 from evlet.instances import activate_generation
 from scripts import testcrm
-from test_business import http
+from support import http
 
 PASSWORD = 'a long local test password'
 

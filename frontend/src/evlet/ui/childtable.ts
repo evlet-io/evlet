@@ -613,9 +613,9 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       // The same rows come back, with their ids and rows of rows, where they were (not when a section went with them).
       undo: list.length && !sectionKeys.length ? () => {
         const why = blocked();
-        if (why) { toast(why, { icon: 'info' }); return; }
+        if (why) { toast(why, { tone: 'info' }); return; }
         try { for (const item of positions) table.restore(item.row, item.at); }
-        catch (error) { toast(error instanceof Error ? error.message : 'The rows could not come back.', { icon: 'info' }); }
+        catch (error) { toast(error instanceof Error ? error.message : 'The rows could not come back.', { tone: 'error' }); }
       } : undefined,
     });
   };

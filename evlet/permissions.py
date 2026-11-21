@@ -600,7 +600,7 @@ class Policy:
                          and name in self.presented(user, model) and (rule.write_fields is None or name in rule.write_fields)
                          and model.__declared_fields__[name].compute is None and name not in getattr(model, '__derives__', ())}
         if set(values) - writable:
-            raise AccessError(403, 'One or more fields cannot be written')
+            refuse_fields(set(values) - writable, self.fields(user, model))
         for name, value in values.items():
             field = model.__declared_fields__[name]
             if isinstance(field, Link) and value is not None:
@@ -725,3 +725,14 @@ class Policy:
             targets = [self.registry.models[named]] if named in self.registry.models else self.registry.models.values()
             if any(not self.allows(user, target, 'read') or self.rule(user, target).scope is not None for target in targets):
                 raise AccessError(403, 'Queries on this restricted relationship are unavailable')
+
+
+def refuse_fields(refused, readable):
+    """Refuse a write of fields that cannot be written (403), naming them. A name the person cannot read gets the
+    same answer as a misspelt one, so a write never tells whether a hidden field exists; a readable field the
+    person may not change is named as such."""
+    unknown = sorted(name for name in refused if name not in readable)[:20]
+    if unknown:
+        raise AccessError(403, ('Unknown field or not yours to write: ' if len(unknown) == 1 else
+                                'Unknown fields or not yours to write: ') + ', '.join(name[:80] for name in unknown))
+    raise AccessError(403, 'You cannot change ' + ', '.join(sorted(refused)[:20]))

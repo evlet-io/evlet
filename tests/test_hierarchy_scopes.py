@@ -9,7 +9,7 @@ from evlet import (Attachments, Boolean, Child, Database, Hierarchy, Integer, Ac
 from evlet.auth import AccessError, User
 from evlet.measures import Count, Sum
 from evlet.permissions import scope_condition
-from test_business import PASSWORD, client
+from support import PASSWORD, client
 from test_meaning import serve
 from test_rules_types import ALL
 from evlet.identity import RecordId

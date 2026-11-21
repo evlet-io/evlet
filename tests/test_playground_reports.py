@@ -1,6 +1,6 @@
 """The Playground's reports run through the report routes with the caller's permissions."""
 
-from test_business import client, hashed, secured  # noqa: F401 - fixtures
+from support import client
 
 
 def seed(api):

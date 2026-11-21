@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 import pytest
 
 import evlet.ui
-from tests.test_business import client, hashed, http, secured  # noqa: F401
+from tests.support import client, http
 
 ORIGIN = 'http://127.0.0.1:8000'
 CALLBACK = 'https://claude.ai/api/mcp/auth_callback'

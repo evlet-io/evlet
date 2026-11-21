@@ -50,13 +50,27 @@ describe('the list card', () => {
     // The breadcrumb, the title and the stat cards come before the card and scroll away; the card holds the rest.
     const before = [...list.children].slice(0, [...list.children].indexOf(card)).map(child => child.className);
     expect(before.slice(0, 2)).toEqual(['crumbs page-crumbs', 'ph']);
-    expect([...card.children].map(child => child.getAttribute('role') === 'tablist' ? 'tabs' : child.classList[0])).toEqual(
-      [...(card.querySelector(':scope > [role="tablist"]') ? ['tabs'] : []), 'toolbar', 'ev-list-body']);
+    // The tabs are pills in a row with their More button.
+    expect([...card.children].map(child => child.classList.contains('pill-row') ? 'tabs' : child.classList[0])).toEqual(
+      [...(card.querySelector(':scope > .pill-row > [role="tablist"]') ? ['tabs'] : []), 'toolbar', 'ev-list-body']);
     expect(card.querySelector('.toolbar input[type="search"], .toolbar input')).not.toBeNull();
     // The table, its pager, and the empty and loading states are inside the card's body.
     const body = card.querySelector<HTMLElement>(':scope > .ev-list-body')!;
     expect(body.querySelector(':scope > .table-wrap .dt')).not.toBeNull();
     expect(body.querySelector(':scope > .ev-pager')).not.toBeNull();
+  });
+
+  it('draws the list tabs as pills with each state\'s dot and count, and puts the search row first on phones', async () => {
+    const { host } = start(routes(), '/app/invoice');
+    await until(() => expect(host.querySelector('.ev-list-card .pill-row [role="tab"] .n')).not.toBeNull());
+    const tabs = [...host.querySelectorAll<HTMLElement>('.ev-list-card .pill-row [role="tab"]')];
+    // All has no dot; every state tab has one in its step's colour.
+    expect(tabs[0].querySelector('.tab-dot')).toBeNull();
+    for (const tab of tabs.slice(1)) expect(tab.querySelector('.tab-dot')!.className).toMatch(/^tab-dot dot-(blue|green|amber|rose|violet|teal|slate)$/);
+    expect(rule(STYLES, '.pill-tabs button.on')).toContain('background:var(--accent-soft)');
+    expect(rule(STYLES, '.tab-more')).toContain('border:1px dashed var(--border-strong)');
+    const phones = SCREENS.slice(SCREENS.indexOf('@media (max-width:760px){\n  .ev-list-card > .toolbar'));
+    expect(phones).toContain('.ev-list-card > .toolbar{order:-1}');
   });
 
   it('sticks to the top of the list\'s scrolling area and fills its height; only the table scrolls inside', () => {
@@ -110,8 +124,8 @@ describe('the record beside the list', () => {
 });
 
 describe('the shell grounds', () => {
-  it('draws a white sidebar and top bar beside a grey main area, in both themes', () => {
-    expect(rule(STYLES, '.side-body')).toMatch(/background:var\(--surface\)/);
+  it('draws a light grey sidebar and a white top bar beside a grey main area, in both themes', () => {
+    expect(rule(STYLES, '.side-body')).toMatch(/background:var\(--bg-subtle\)/);
     expect(rule(STYLES, '.topbar')).toMatch(/background:var\(--surface\)/);
     expect(rule(STYLES, '.main')).toMatch(/background:var\(--page-bg\)/);
     expect(rule(STYLES, '.sidebar')).toMatch(/border-right:1px solid var\(--border\)/);
@@ -119,6 +133,8 @@ describe('the shell grounds', () => {
     const light = STYLES.slice(STYLES.indexOf(':root{'), STYLES.indexOf('}', STYLES.indexOf(':root{')));
     const dark = STYLES.slice(STYLES.indexOf(':root[data-theme="dark"]{'), STYLES.indexOf('}', STYLES.indexOf(':root[data-theme="dark"]{')));
     for (const block of [light, dark]) expect(value(block, '--page-bg')).not.toBe(value(block, '--surface'));
+    // The sidebar's hover and its active card stand apart from its grey ground.
+    for (const block of [light, dark]) for (const name of ['--side-hover', '--side-on']) expect(value(block, name)).not.toBe(value(block, '--bg-subtle'));
   });
 });
 

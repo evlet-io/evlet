@@ -3,7 +3,7 @@
 import json
 
 from evlet import qb
-from tests.test_business import client, hashed, secured
+from tests.support import client
 
 
 def seed(app, changes):
@@ -68,7 +68,7 @@ def test_stored_reset_preserves_admin_only_settings(secured):
     c = client(secured)
     assert c('POST', '/api/_controls/roles', {'id': 'ops', 'base': 'editor'})[0] == 201
     assert c('PATCH', '/api/_controls/roles/ops', {'opens_controls': True})[0] == 200
-    from tests.test_business import PASSWORD
+    from tests.support import PASSWORD
     assert c('POST', '/api/_controls/users', {'username': 'operator', 'password': PASSWORD, 'role': 'ops'})[0] == 201
     assert save(c, [('setting', 'security.controls_two_step', False)])[0] == 200
     ops = client(secured, 'operator')

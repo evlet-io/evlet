@@ -1,8 +1,10 @@
 # Opening a record in a side panel from a list — plan
 
+> Archived: a completed or superseded plan, kept for history. It may describe code that has since changed; the current documentation is in `docs/`.
+
 Status: approved by the owner on 03-11-2026 with every proposed decision, and implemented. The
 clickable mockup is published as an Artifact (link in the PR). The user guide is "Side panel"
-in [ui-framework.md](../ui-framework.md).
+in [ui-framework.md](../../ui-framework.md).
 
 What the implementation does differently from this plan, for the owner to review:
 

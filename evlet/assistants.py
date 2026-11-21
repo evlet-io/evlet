@@ -28,6 +28,8 @@ from .models import ValidationError
 
 ACCESS_SECONDS, REFRESH_SECONDS, CODE_SECONDS, KEEP = 3600, 30 * 86400, 300, 30 * 86400
 MAX_CLIENTS, MAX_PER_USER, LIGHT_RATE = 1000, 20, 120
+# When MAX_CLIENTS is reached, a registration this old that never connected makes way for a new one.
+STALE_REGISTRATION = 600
 ACCESS = re.compile(r'evm_[A-Za-z0-9_-]{43}')
 VERIFIER = re.compile(r'[A-Za-z0-9._~-]{43,128}')
 CHALLENGE = re.compile(r'[A-Za-z0-9_-]{43}')
@@ -265,7 +267,15 @@ class Assistants:
                 qb.eq('c.oauth_client', qb.col('evlet_oauth_clients.id')), qb.is_null('c.revoked_at'))
             tx.connection.run(qb.delete('evlet_oauth_clients').where(qb.lt('created_at', now - 86400), qb.not_exists(connected)))
             if tx.connection.run(qb.select('evlet_oauth_clients', qb.count())).value() >= MAX_CLIENTS:
-                raise OAuthError('temporarily_unavailable', 'Too many registered clients. Try again tomorrow.', 503)
+                # Full: make room by removing the oldest registration that never connected, has no sign-in in
+                # progress and is at least STALE_REGISTRATION seconds old, so registrations from many networks
+                # cannot keep the table full for a day.
+                pending = qb.select(qb.table('evlet_oauth_codes', 'o'), qb.value(1)).where(
+                    qb.eq('o.oauth_client', qb.col('evlet_oauth_clients.id')), qb.gt('o.expires', now))
+                oldest = qb.select('evlet_oauth_clients', 'id').where(
+                    qb.lt('created_at', now - STALE_REGISTRATION), qb.not_exists(connected), qb.not_exists(pending)).order_by('created_at').limit(1)
+                if not tx.connection.run(qb.delete('evlet_oauth_clients').where(qb.in_('id', oldest))).rowcount:
+                    raise OAuthError('temporarily_unavailable', 'Too many registered clients. Try again later.', 503)
             tx.connection.run(qb.insert('evlet_oauth_clients', id=client_id, name=name.strip(), redirect_uris=json.dumps(uris),
                                         secret=secret and digest(secret), auth_method=method, created_at=now))
         result = {'client_id': client_id, 'client_id_issued_at': now, 'client_name': name.strip(), 'redirect_uris': uris,
@@ -457,6 +467,13 @@ class Assistants:
         if body['approve'] and not self.allowed(user.id):
             raise AccessError(403, NOT_ALLOWED)
         if not body['approve']:
+            # Registration is open to anyone, so a client that never connected could name any address as its
+            # redirect URI: cancelling its request goes back to the workspace instead of to that address
+            # (RFC 9700, section 4.11). So does cancelling for someone who may not use assistants at all.
+            with self.database._connection() as connection:
+                known = connection.run(qb.select('evlet_mcp_clients', 'id').where(oauth_client=client['id']).limit(1)).one() is not None
+            if not known or not self.allowed(user.id):
+                return {'redirect': '/'}
             return {'redirect': self.back(params, origin, error='access_denied')}
         with self.database._connection() as connection:
             active = connection.run(qb.select('evlet_mcp_clients', qb.count()).where(

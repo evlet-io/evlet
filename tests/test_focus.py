@@ -4,7 +4,7 @@ import pytest
 
 from evlet import (Application, Child, Currency, Database, Link, LocalAuth, Model, Registry, Rule, Prompt, Sequence, Table, Text)
 from evlet.prompts import check, schema
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 from test_rules_types import add_user
 
 ALL = Rule(('read', 'create', 'update', 'delete'))

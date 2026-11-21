@@ -12,7 +12,7 @@ from evlet import Application, Database, LocalAuth, Model, Policy, Registry, Rul
 from evlet.cli.main import main
 from evlet.framework import STEPS, upgrade
 import history_fixture as fixture
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 FIXTURE = Path(__file__).parent / 'fixtures' / 'sqlite-before-activity'
 HASHED = 9  # Entries of the tamper-evident Order and Tally in the fixture.

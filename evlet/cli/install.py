@@ -173,8 +173,12 @@ def install(root, name, *, app_name=None, app_names=(), trust=False, confirm=Non
                 snapshot_set(backup, stage)
             app, schedules = build_instance(config, path, packages, database_path=stage, storage_path=Path(directory) / 'private')
             # A backup of the current database is written above before any migration runs, including DropField.
-            applied = app.database.migrate(app.database.migrations, recompute_posted=recompute_posted, allow_destructive=allow_destructive,
-                                           allow_maintenance=allow_maintenance)
+            # An app new to this instance gets its tables from its models, as on a first install; its migrations are
+            # recorded without running. Changes after that need a migration (evlet makemigration).
+            from ..migrations import migrate
+            new_apps = [new_app(app, package.name) for package in packages if package.name not in before['apps']]
+            applied = migrate(app.database, app.database.migrations, recompute_posted=recompute_posted, allow_destructive=allow_destructive,
+                              allow_maintenance=allow_maintenance, new_apps=new_apps)
             # Framework steps run on the same staged copy, after the backup, before the additive startup tables.
             framework = upgrade(app.database)
             app.initialize()
@@ -201,6 +205,28 @@ def install(root, name, *, app_name=None, app_names=(), trust=False, confirm=Non
             publish_set(path, stage, after)
         return {'apps': [package.name for package in packages], 'migrations': applied, 'framework': framework, 'backup': str(backup) if backup else None,
                 'posted': getattr(applied, 'posted', 0)}
+
+
+def app_prefix(name):
+    """How an app's migrations are named in an instance's history: app5_notes__0001_changes."""
+    return f'app{len(name)}_{name}__'
+
+
+def new_app(app, name):
+    """(tables, migration names) of one app in a built instance, for migrate(new_apps=...)."""
+    tables = {table for table, model in app.registry.models.items() if getattr(model, '__resource_id__', '').startswith(name + '.')}
+    return tables, {migration.name for migration in app.database.migrations if migration.name.startswith(app_prefix(name))}
+
+
+def migration_label(name):
+    """app5_notes__0001_changes -> notes 0001_changes; framework and legacy names are kept."""
+    import re
+    match = re.fullmatch(r'app(\d+)_(.+)', name)
+    if match:
+        size, rest = int(match[1]), match[2]
+        if rest[size:size + 2] == '__':
+            return f'{rest[:size]} {rest[size + 2:]}'
+    return name
 
 
 def plan(root, name, *, trust=False, confirm=None, label='changes'):
@@ -243,7 +269,7 @@ def plan(root, name, *, trust=False, confirm=None, label='changes'):
         from ..migrations import suggest
         suggestions = {}
         for package in packages:
-            prefix = f'app{len(package.name)}_{package.name}__'
+            prefix = app_prefix(package.name)
             number = sum(1 for migration in app.database.migrations if migration.name.startswith(prefix)) + 1
             tables = {table for table, model in app.registry.models.items()
                       if getattr(model, '__resource_id__', '').startswith(package.name + '.')}
@@ -263,7 +289,9 @@ def makemigration(root, app_name, instance, *, name='changes', trust=False, conf
     result, suggestions, packages, _ = plan(root, instance, trust=trust, confirm=confirm, label=name)
     package = next((item for item in packages if item.name == app_name), None)
     if package is None:
-        raise ValueError(f'{app_name} is not installed on {instance}')
+        raise ValueError(f'{app_name} is not installed on {instance}. Install it first with evlet install {app_name} --instance {instance} '
+                         '--trust: an app new to an instance gets its tables from its models, so it needs no first migration. '
+                         'Run makemigration for changes after that')
     migration, code = suggestions[app_name]
     if not code:
         raise ValueError(f'{app_name}: the migrations already produce the current models')

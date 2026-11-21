@@ -19,11 +19,11 @@ export function TasksPage(ctx: AppContext, status: Cell<EvaStatus | null>): HTML
   const tasks = cell<Task[] | null>(null), limit = cell(10);
   ctx.crumbs.set([{ label: 'Eva', href: ctx.router.href('eva', {}) }, { label: 'Scheduled tasks' }]);
   const load = async () => {
-    try { const page = await eva.tasks(); tasks.set(page.items); limit.set(page.limit); } catch (failure) { toast(errorText(failure), { icon: 'info' }); tasks.set([]); }
+    try { const page = await eva.tasks(); tasks.set(page.items); limit.set(page.limit); } catch (failure) { toast(errorText(failure), { tone: 'error' }); tasks.set([]); }
   };
   void load();
   const toggle = async (task: Task, active: boolean) => {
-    try { await eva.changeTask(task.id, { active }); toast(active ? 'Resumed' : 'Paused'); await load(); } catch (failure) { toast(errorText(failure), { icon: 'info' }); }
+    try { await eva.changeTask(task.id, { active }); toast(active ? 'Resumed' : 'Paused'); await load(); } catch (failure) { toast(errorText(failure), { tone: 'error' }); }
   };
 
   return html`<div class="page eva-tasks">${ctx.crumbBar?.()}
@@ -49,10 +49,10 @@ export function TasksPage(ctx: AppContext, status: Cell<EvaStatus | null>): HTML
 
 function openTask(ctx: AppContext, eva: Eva, id: number, changed: () => Promise<void>) {
   const task = cell<Task | null>(null);
-  const load = async () => { try { task.set(await eva.task(id)); } catch (failure) { toast(errorText(failure), { icon: 'info' }); } };
+  const load = async () => { try { task.set(await eva.task(id)); } catch (failure) { toast(errorText(failure), { tone: 'error' }); } };
   void load();
   const act = async (step: () => Promise<unknown>, done: string) => {
-    try { await step(); toast(done); await load(); await changed(); } catch (failure) { toast(errorText(failure), { icon: 'info' }); }
+    try { await step(); toast(done); await load(); await changed(); } catch (failure) { toast(errorText(failure), { tone: 'error' }); }
   };
   openDrawer({ title: () => task.get()?.name ?? 'Task', icon: 'clock', tint: 'violet', className: 'eva-task-drawer',
     body: close => html`${() => { const t = task.get(); if (!t) return html`<p class="eva-none">Loading…</p>`;
@@ -88,7 +88,7 @@ function newTask(eva: Eva, created: () => Promise<void>) {
       const result = await eva.parse(text.peek(), zone.peek());
       parsed.set(result);
       if (result.cron) { cron.set(result.cron); instructions.set(result.instructions); if (!name.peek()) name.set(result.name); }
-    } catch (failure) { toast(errorText(failure), { icon: 'info' }); }
+    } catch (failure) { toast(errorText(failure), { tone: 'error' }); }
   };
   const input = (id: string, value: Cell<string>, extra = '') => html`<input class=${`input ${extra}`} id=${id} prop:value=${value}
     on:input=${(event: Event) => value.set((event.target as HTMLInputElement).value)}>`;
@@ -99,7 +99,7 @@ function newTask(eva: Eva, created: () => Promise<void>) {
       close();
       toast('Task created');
       await created();
-    } catch (failure) { fields.set((failure as { fields?: Record<string, string> }).fields ?? {}); toast(errorText(failure), { icon: 'info' }); }
+    } catch (failure) { fields.set((failure as { fields?: Record<string, string> }).fields ?? {}); toast(errorText(failure), { tone: 'error' }); }
     finally { busy.set(false); }
   };
   const error = (key: string) => () => fields.get()[key] ? html`<span class="ctl-err">${fields.get()[key]}</span>` : null;

@@ -34,7 +34,7 @@ Scheduling that is decent by default and open to change by apps. No dependency o
 | Need | Existing mechanism | Where |
 |---|---|---|
 | Writes, validation, locked states | The document write pipeline (`documents.operate`, `Session.update`) | states-actions.md |
-| Closed periods | `Meta.period`, `evlet_period_locks`, enforced in the storage layer | PR #100, `docs/internal/api-surface-period-lock.md` |
+| Closed periods | `Meta.period`, `evlet_period_locks`, enforced in the storage layer | PR #100, `docs/internal/archive/api-surface-period-lock.md` |
 | Read-only and hidden models | `Meta.api` (`"full"`, `"read"`, `None`) | PR #100 |
 | Row and field rules | `Rule(operations, read_fields, write_fields, scope)` and scope forms (`any_of`, `Hierarchy`, `own_customer`) | business-capabilities.md |
 | Links to any record | `Reference()` field | model-engine.md |

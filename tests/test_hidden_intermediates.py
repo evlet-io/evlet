@@ -8,7 +8,7 @@ import pytest
 from evlet import Child, Currency, Decimal, Model, Rule, Table, Text
 from evlet.auth import password_hash
 from evlet.calc import D, F, coalesce, parent
-from test_business import PASSWORD, client
+from support import PASSWORD, client
 from test_nested_documents import ALL, application
 
 FIXTURE = Path(__file__).resolve().parents[1] / 'frontend/src/evlet/tests/intermediate-fixture.json'

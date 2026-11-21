@@ -4,8 +4,15 @@ A report is a Python class that turns filters into typed rows. The browser shows
 `/reports/<name>`: a filter bar, the rows, totals, an optional chart, Export (CSV) and Print.
 The same report runs for Eva and MCP clients through the `run_report` tool.
 
+In an app, put the class in a module under `reports/` ([the app layout](app-layout.md)). Evlet
+discovers it when the app is built; run `evlet migrate acme` after adding it. In an app called
+`sales`, this one is `sales.InvoiceRegister`, at `/reports/sales.InvoiceRegister`:
+
 ```python
+# apps/sales/reports/invoices.py  (with an empty apps/sales/reports/__init__.py)
 from evlet import Chart, Column, Date, Link, Report, Select, Sum
+
+from ..models.invoice import Customer, Invoice
 
 class InvoiceRegister(Report):
     title = 'Invoice register'
@@ -30,11 +37,11 @@ class InvoiceRegister(Report):
                                  limit=self.context.limit, offset=self.context.offset)
         [everything] = self.context.aggregate(Invoice, measures={'total': Sum('total')}, filters=filters)
         return {'rows': [...], 'total': page['total'], 'totals': {'total': everything['total']}}
-
-app = Application(database, auth=auth, reports=(InvoiceRegister,))
 ```
 
-The Playground has three: **Invoice register** (a list with sorting and totals), **Invoices by
+An application assembled in Python without an app package passes its reports itself:
+`Application(database, auth=auth, reports=(InvoiceRegister,))`, and the report keeps its
+class name, `InvoiceRegister`. The Playground is built that way and has three: **Invoice register** (a list with sorting and totals), **Invoices by
 customer** (the register grouped by customer, with subtotals) and **Sales by customer** (one row
 per customer, with a chart, run as it opens). See
 `examples/playground/reports.py`.
@@ -145,7 +152,7 @@ as an attachment with `nosniff` and no caching.
   page. **Columns** hides columns and the chart; drag a header to move a column. Both are kept per
   person on the device.
 - The address holds the filters a report ran with, its sort and page:
-  `/reports/InvoiceRegister?status=sent&sort=-total&page=2`. Opening it runs the report again, as
+  `/reports/sales.InvoiceRegister?status=sent&sort=-total&page=2`. Opening it runs the report again, as
   the person opening it, so they see only their own rows. **Copy link** copies it.
 - With `group_by`, each group gets a heading (its value and row count) and a subtotal row.
 - **Save view** keeps the filters a report ran with and its sort under a name. Saved views show as

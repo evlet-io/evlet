@@ -14,7 +14,6 @@ from mcp.client.stdio import stdio_client
 from jsonschema import Draft202012Validator
 
 from tests.test_connector import approve, live_connector, signed
-from tests.test_business import hashed
 
 
 def test_official_client_can_discover_read_write_and_receive_validation(live_connector, tmp_path):
@@ -113,7 +112,7 @@ def test_official_client_signs_in_with_oauth_and_calls_tools_over_http(remote_se
     from mcp.client.streamable_http import create_mcp_http_client, streamable_http_client
     from mcp.shared.auth import OAuthClientMetadata
     from evlet import HTTPClient
-    from tests.test_business import PASSWORD
+    from tests.support import PASSWORD
 
     class Memory:
         tokens = client = None

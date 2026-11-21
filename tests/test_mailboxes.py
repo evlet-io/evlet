@@ -24,7 +24,7 @@ from evlet import secrets as vault
 from evlet.auth import AccessError, User
 from evlet import mailboxes as module
 from test_assistants import send
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 ALL = Rule(('read', 'create', 'update', 'delete'))
 APP_PASSWORD = 'imap-app-password-55e1'
@@ -1000,3 +1000,21 @@ def test_a_message_is_kept_once_per_record_and_threads_through_the_index(app, ma
         assert module.link_message(app.business, tx, editor, Customer, app.records['customer'], index[0]['message_key'], data, 'email') is None
         assert module.link_message(app.business, tx, editor, Customer, app.records['customer'], index[0]['message_key'], {**data, 'text': 'Other'}, 'email')
     assert [item['text'] for _, _, item in links(app)] == [data['text'], 'Other']
+
+
+def test_mailbox_callback_query_stays_out_of_the_access_log_scope(app):
+    """Uvicorn logs the request's scope after the response: the code and state must not be in it."""
+    import asyncio
+    scope = {'type': 'http', 'method': 'GET', 'path': '/_/mail/callback', 'query_string': b'code=mailbox-code-7f3&state=state-91c',
+             'scheme': 'http', 'headers': [(b'host', b'127.0.0.1:8000'), (b'sec-fetch-site', b'cross-site')], 'client': ('127.0.0.1', 1234)}
+    sent = []
+
+    async def receive():
+        return {'type': 'http.request', 'body': b''}
+
+    async def push(event):
+        sent.append(event)
+    asyncio.run(app(scope, receive, push))
+    assert sent[0]['status'] == 200 and scope['query_string'] == b''
+    # The page still carries both values on to the same-origin post.
+    assert b'value="mailbox-code-7f3"' in sent[1]['body'] and b'value="state-91c"' in sent[1]['body']

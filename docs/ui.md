@@ -12,18 +12,30 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 ## What this interface renders
 
 - Sign-in and first-run setup (the first administrator account).
-- Docs, with its topics, from the sidebar and the search palette.
-- The shell: a top bar across the window with the Evlet brand and the Workspace switcher at its left,
+- Docs, with its topics, from the sidebar and the search palette. People who can open Controls
+  (administrators), everyone on a development server (`evlet dev`, the Playground) and development builds see
+  the developer guide (Build with Evlet, Getting started, Screens and routes, ...) followed by the Help topics.
+  Everyone else sees Help only: **Help** (the lists of their workspace, each with its `Meta.description`),
+  **Working with records** and **Keyboard shortcuts**; a developer topic's address opens Help for them.
+  Docs is display only and holds no data, so this is not a permission check.
+- A cold load after a visit that ended signed in (a per-browser hint, `evlet.signed-in`, that holds nothing
+  about the person) asks for `/api/schema` and `/api/_settings/me` together with `/api/auth/session` and draws
+  the shell's outline (sidebar, top bar, placeholder lines) instead of the blank "Connecting" splash. Without
+  the hint only the session is asked for; a signed-out answer drops the hint.
+- The shell: a top bar across the window with the Evlet brand at its left,
   then at its right the search button, whose palette opens the Explorer ([below](#top-bar-search-and-explorer)),
-  a history button for recent records, notifications and shortcuts; under it a white sidebar with the workspace's
-  sections and shortcuts ([below](#sidebar-and-workspaces)) beside a light grey main area whose cards are white.
+  a history button for recent records, notifications and shortcuts; under it a light grey sidebar with the Workspace
+  switcher at its top, then Home and the workspace's sections, parents and children ([below](#sidebar-and-workspaces)),
+  beside a grey main area whose cards are white.
   Each page's breadcrumb is a small line above its title ([Breadcrumb](#breadcrumb)). New records start from the New button
   on a model's list page or from the search palette.
 - Generated model screens: lists, boards for models that name their State in `Meta.board` (`board = "docstate"`), record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves (with their remarks), child tables, measures, related records and
   files.
 - Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
-  `/reports/<name>`, listed in the sidebar and in the Explorer.
+  `/reports/<name>`, listed in the sidebar and in the Explorer. A text column that reads a Select field (its
+  `source='model.field'`, or the report model's field of the same name) shows the choice's label, as the list
+  does ("Draft", not "draft").
 - Prompts ([prompts.md](prompts.md)): the form an action (or an `@api` shortcut) opens, built from the
   record engine, calculated in the browser and submitted once through a ticket.
 - Printing ([printing.md](printing.md)): Print in a record's More menu for roles that may print the
@@ -520,6 +532,12 @@ class Employee(Model):
   checked at definition. For a Link it is the linked record's title (or name), found when the page
   loads; if this person can't read such a record, the list opens on All. `list_tab` without tabs
   raises `ValueError`.
+- **How they look.** Each tab is a pill: a small dot in the value's colour (the State step's `color`, or the
+  Select's `colors`, as the list's badges show it; All and Link tabs have none), the label and a count chip.
+  The open tab sits on a light accent fill with a solid chip. Tabs that don't fit the card's width go in a
+  dashed **More N** button at the end of the row (N: how many are in it), whose menu lists them with their
+  dots and counts; the open tab always stays in the row. On phones (760 px and under) the search row comes
+  first, above the tabs. The title row (name, Filter, New and the app's buttons) is unchanged.
 - **Link tabs** show the most used values, at most 8, most used first, each labelled with the
   linked record's title. The filter finds the others. A record a link opened with `?tab=` keeps
   its own tab even when it is not among them.
@@ -563,25 +581,35 @@ filter that can be removed. It is left out when the role cannot filter that list
 
 ## Workspaces
 
-A workspace is a named sidebar: groups of items, three levels deep (workspace, group, item). An app
-can declare none, one or several. `/api/schema` gives each role its own view of them under
-`workspaces`, and the sidebar draws them ([below](#sidebar-and-workspaces)).
+A workspace is a named sidebar. Inside it the sidebar has three levels: **section titles** (`NavSection`,
+bold, in capitals, never collapsing), **parents** (a `NavGroup` with its icon on a tile in its colour, or a
+`Shortcut` placed directly in a section, which is a parent that is a link) and their **children**. An
+optional **Home** sits above every section. An app can declare none, one or several workspaces.
+`/api/schema` gives each role its own view of them under `workspaces`, and the sidebar draws them
+([below](#sidebar-and-workspaces)).
 
 ```python
 # apps/projects/workspaces.py
-from evlet import NavGroup, Shortcut, Workspace
+from evlet import NavGroup, NavSection, Shortcut, Workspace
 from .reports import SalesByCustomer
 
-PROJECTS = Workspace('Projects', icon='kanban', groups=(
-    NavGroup('Projects', icon='kanban', items=(
-        'project',                                                   # a model's list
-        Shortcut('project', view='board', label='Board'),            # its board (Meta.board)
-        Shortcut('task', filters={'done': False}, label='Open tasks'),
+PROJECTS = Workspace('Projects', icon='kanban', home=True, groups=(
+    NavSection('Build', items=(
+        NavGroup('Projects', icon='kanban', color='teal', items=(
+            'project',                                                   # a model's list
+            Shortcut('project', view='board', label='Board'),            # its board (Meta.board)
+            Shortcut('task', filters={'done': False}, label='Open tasks',
+                     icon='list-checks', badge={'priority': 'high'}),    # a child's icon and badge
+        )),
+        Shortcut('customer', icon='users', color='violet'),             # a parent that is a link
     )),
-    NavGroup('More', items=(
-        Shortcut(report=SalesByCustomer),                            # a report
-        Shortcut(api='projects.quick_invoice', label='Quick invoice'),  # an @api prompt
-        Shortcut(url='/reports', label='All reports'),               # an app path or http(s) address
+    NavSection('More', items=(
+        NavGroup('Reports', icon='chart-column', items=(
+            Shortcut(report=SalesByCustomer),                            # a report
+            Shortcut(api='projects.quick_invoice', label='Quick invoice'),  # an @api prompt
+            Shortcut(url='/reports', label='All reports'),               # an app path, opened in place
+        )),
+        Shortcut(url='https://docs.example.com', label='Docs', icon='file-text'),  # opens in a new tab
     )),
 ))
 ```
@@ -600,9 +628,20 @@ DESK`) belongs to that app and is not collected again, as for models and reports
 the message names both and where each comes from (`app tasks (AppDefinition)`,
 `app notes (notes/workspaces.py)` or `Application(workspaces=...)`).
 
-- `Workspace(label, *, key=None, icon=None, groups=(...))`. `key` defaults to the label in lowercase
-  with underscores (`'Sales desk'` is `sales_desk`); give one when the label has no Latin letters.
-- `NavGroup(label, *, icon=None, items=(...))`.
+- `Workspace(label, *, key=None, icon=None, groups=(...), home=None)`. `key` defaults to the label in lowercase
+  with underscores (`'Sales desk'` is `sales_desk`); give one when the label has no Latin letters. `groups`
+  takes `NavSection`s and `NavGroup`s; a `NavGroup` outside a section is a parent with no title above it, so
+  workspaces declared before sections keep working. `home=True` puts **Home** (a house icon) directly under
+  the Workspace switcher, above every section, opening the start page; a model name or a `Shortcut` makes
+  Home open that instead (it takes no icon, colour or badge). Home is never inside a section or a group and
+  never lower down.
+- `NavSection(label, *, items=(...))`: a section title. Its items are `NavGroup`s and parent links (a model
+  name or a `Shortcut`). It has no icon and never collapses.
+- `NavGroup(label, *, icon=None, color=None, items=(...))`: a parent. `color` is one of `blue`, `green`,
+  `amber`, `rose`, `violet`, `teal` and `slate`; without one the browser picks a stable colour from the key.
+  Its children take its colour, which is not configurable on a child.
+- **`home` is reserved.** No workspace key, section, group or item label may be "home", and no model may be
+  stored as `home`. Controls refuses a group or a custom workspace keyed `home` too.
 - An item is a model name (`'project'`, the storage name or `app.ClassName`), or a `Shortcut` that
   names exactly one target:
   - `Shortcut(model, view=None, filters=None, label=None)`: a model given by name or class. `view`
@@ -615,6 +654,13 @@ the message names both and where each comes from (`app tasks (AppDefinition)`,
   - `Shortcut(url='/reports', label='All reports')`: an app path starting with `/`, or an `http` or
     `https` address. `javascript:`, `data:` and every other scheme are refused. It needs a label.
   - `label` replaces the model's plural name, or the report's title.
+  - `icon=` replaces the kind's icon, on a parent link or a child.
+  - `color=` goes only on a parent link (a `Shortcut` directly in a `NavSection`); on a child it is refused.
+  - `badge=` is a filter, in the forms `filters` takes, on a model child inside a `NavGroup`. Its bounded
+    count shows beside the child ([Badges](#badges)). Parents never show a badge.
+  - `new_tab=` goes with `url`: it opens the address in a new tab, with the open-externally icon at the end
+    of the row. It defaults to `True` for an http(s) address and `False` for an app path, so
+    `Shortcut(url='/docs', label='Docs', new_tab=True)` opens Docs beside the app.
 - `icon` is an icon name from the browser's set, such as `receipt` or `users`.
 
 **Checked when the application is built.** Each problem fails with a message that names the
@@ -622,15 +668,18 @@ workspace, the group and the item: an unknown model, report or endpoint; a child
 or a model with `Meta.api = None`; a board for a model without `Meta.board`; a view other than list
 or board; filters on unknown fields, with operators the field does not take, with values the field
 refuses or on fields of linked records (the same checks a list request makes); a URL that is not an
-app path or an http(s) address; an empty or over-long label; two workspaces with one key; and two
-items with one key in a workspace.
+app path or an http(s) address; an empty or over-long label; two workspaces with one key; two
+items with one key in a workspace; a badge filter the model's fields refuse; a colour that is not a tint;
+a colour on a child or a badge on a parent; and the reserved `home`.
 
 **Keys.** Keys are stable, so the browser can remember choices and Controls can refer to items:
 
 | What | Key |
 | --- | --- |
 | Workspace | `key`, or the label as above. An automatic workspace has its app's name (`app` for an application built by hand) |
-| Group | The label in lowercase with underscores, unique in its workspace |
+| Section | The label in lowercase with underscores, unique in its workspace |
+| Group | The label in lowercase with underscores, unique in its workspace. A parent link's key is its item's key with `:` as `_` (`model_customer`, `url_docs`) |
+| Home | `home` |
 | Model item | `model:<name>`; a shortcut with a label, view or filters adds `:<label>` (or `:<view>` without a label): `model:task:open_tasks`, `model:project:board` |
 | Report, endpoint, URL | `report:<name>`, `api:<endpoint>`, `url:<label>` |
 
@@ -647,21 +696,48 @@ those without a group first).
 ```json
 "workspaces": [
   {"key": "projects", "label": "Projects", "icon": "kanban", "app": "projects", "source": "declared",
+   "home": {"key": "home", "kind": "home", "label": "Home", "icon": null},
    "groups": [
-     {"key": "projects", "label": "Projects", "icon": "kanban", "items": [
-       {"key": "model:project", "kind": "model", "label": "Projects", "model": "project", "view": "list", "filters": null},
+     {"key": "projects", "label": "Projects", "icon": "kanban", "color": "teal",
+      "section": {"key": "build", "label": "Build"}, "link": false, "items": [
+       {"key": "model:project", "kind": "model", "label": "Projects", "model": "project", "view": "list", "filters": null,
+        "icon": null, "badge": false},
        {"key": "model:task:open_tasks", "kind": "model", "label": "Open tasks", "model": "task", "view": "list",
-        "filters": [["done", "eq", false]]}]},
-     {"key": "more", "label": "More", "icon": null, "items": [
-       {"key": "report:SalesByCustomer", "kind": "report", "label": "Sales by customer", "report": "SalesByCustomer"},
-       {"key": "api:projects.quick_invoice", "kind": "api", "label": "Quick invoice", "api": "projects.quick_invoice"},
-       {"key": "url:all_reports", "kind": "url", "label": "All reports", "url": "/reports"}]}]}
+        "filters": [["done", "eq", false]], "icon": "list-checks", "badge": true}]},
+     {"key": "model_customer", "label": "Customers", "icon": "users", "color": "violet",
+      "section": {"key": "build", "label": "Build"}, "link": true, "items": [
+       {"key": "model:customer", "kind": "model", "label": "Customers", "model": "customer", "view": "list",
+        "filters": null, "icon": "users", "badge": false}]},
+     {"key": "reports", "label": "Reports", "icon": "chart-column", "color": null,
+      "section": {"key": "more", "label": "More"}, "link": false, "items": [
+       {"key": "report:SalesByCustomer", "kind": "report", "label": "Sales by customer", "report": "SalesByCustomer", "icon": null},
+       {"key": "api:projects.quick_invoice", "kind": "api", "label": "Quick invoice", "api": "projects.quick_invoice", "icon": null},
+       {"key": "url:all_reports", "kind": "url", "label": "All reports", "url": "/reports", "icon": null, "new_tab": false}]}]}
 ]
 ```
 
 `source` is `declared`, `automatic` or `custom` (added on this site, with `app` null). `filters` is
-always in the list form a list address carries (`?f=`), or null. Hiding an item is never a
-permission: every route checks access as before.
+always in the list form a list address carries (`?f=`), or null. Groups stay one flat list, in order, so the
+site overrides below keep working on groups and items: each says its `section` (null outside one), its
+`color` (null: the browser picks one) and whether it is a `link`, a parent that opens its one item. `home` is
+null without one; its `kind` is `home` (the start page) or the kind of the item it opens. `badge` says only
+that a badge is declared and this role may filter by it: the filter itself stays on the server. Hiding an
+item is never a permission: every route checks access as before.
+
+### Badges
+
+`GET /api/_nav/badges?workspace=<key>` answers `{"badges": {"<item key>": {"count", "more", "partial"}}}` for
+the badges this role sees in that workspace. It only reads, in one snapshot, and the browser asks lazily:
+once the sidebar shows the workspace, again when the workspace changes, and on navigation at most every 30
+seconds. Each count is bounded so it never reads a large table in full:
+
+- The window is the **newest 1,000 rows** of the model (by id). At most these are read per badge.
+- In the window, the role's **row scope**, the shortcut's filters and the badge filter apply, and the count
+  stops at **100**. 100 or more reads **99+** (`more`).
+- Fewer than 100 reads the number found. When the model holds more than 1,000 rows, that number is what the
+  window held (`partial`, with the tooltip "Among the latest 1,000"). 0 shows no badge.
+- An item the role can't open has no badge, and a badge whose filter fields the role can't filter by is left
+  out while the item stays. An unknown workspace is 404.
 
 **Customizing a workspace on one site.** Admins, and roles with "Customize workspaces" on in Controls,
 can reorder, hide and rename groups and items, rename a workspace, add shortcuts and add whole
@@ -742,11 +818,11 @@ nothing to open yet.
 
 ## Sidebar and workspaces
 
-The sidebar has three levels: workspace, section, shortcut. It starts directly with its navigation
-(Docs, Eva, then the sections); the brand and the Workspace switcher are in the top bar
+The sidebar starts with the Workspace switcher, then Home (when the workspace declares it), Docs, Eva, and
+the workspace's section titles, parents and children. The Evlet brand is in the top bar
 ([Top bar](#top-bar-search-and-explorer)).
 
-- **Workspace switcher.** A compact button in the top bar, after the Evlet brand and a pipe: the
+- **Workspace switcher.** A compact button at the top of the sidebar, as wide as it: the
   current workspace's name in the normal text colour and the up-down chevrons (`chevrons-up-down`), in
   a flat box with a 1 px border and 4 px corners, as tall as the search box. Hover gives it a light grey
   background; while its menu is open the border is stronger too. Its tooltip and accessible name
@@ -756,6 +832,7 @@ The sidebar has three levels: workspace, section, shortcut. It starts directly w
   For people with access, a divider and **Customize** follow. Arrow Up and Arrow Down move through the
   rows (wrapping at either end), Home and End jump to the first and last, Enter opens one, and Esc
   closes the menu and gives focus back to the button. The menu is a `menu` of `menuitemradio` rows.
+  The collapsed sidebar keeps its chevrons only.
   Opening a workspace shows its sections and opens its first shortcut.
 - **The workspace stays put.** Opening a page of another workspace (a link, Back, the search palette,
   a related record) keeps the current workspace and its sidebar; nothing is marked there, since no
@@ -770,26 +847,28 @@ The sidebar has three levels: workspace, section, shortcut. It starts directly w
   without one (a new tab, a pasted link, a bookmark) opens on the page's own workspace; a page no
   workspace holds, such as the start page, opens on the person's last choice, kept on the device in
   localStorage under the same name. Blocked storage falls back to the page's workspace.
-- **Sections** are collapsible titles with an icon, an optional count and a chevron. Each one is open
-  until the person closes it. The closed ones are kept per person in browser storage
-  (`evlet.<username>.nav.closed`).
-  Blocked storage only means nothing is remembered.
-- **Shortcuts** sit under their section on a thin guide line, each starting with its kind's icon
-  ([Navigation icons](#navigation-icons)), small and muted, in place of a dot. The one the page
-  opens exactly (a list with its view, tab and filters, or a report) gets a light blue tint across the whole
-  row, with its label and icon in the primary blue at weight 600; its record count stays muted. Hover on
-  the other rows is a light grey.
-- **The sidebar** is white (the surface colour) with a border on its right; the main area beside it is a
-  light grey (`--page-bg`), so its cards read as cards. Dark themes keep the same structure: the sidebar
-  and top bar on the dark surface, the main area a little darker.
-- **Section titles** show the section's icon, a bold label, the number of its shortcuts while it is
-  closed, and a chevron (right when closed, down when open). **The section that holds that shortcut**
-  has its icon, label and chevron in the primary blue, with no fill. It keeps them when closed, so the
-  person still sees where they are.
-- The collapsed sidebar shows each shortcut's kind icon with its name in a tooltip, and the active one blue
-  on the same light blue tile; section titles give way to a thin rule. The round button on the sidebar's
+- **Home** sits directly under the switcher, above Docs and every section, with no title or parent: a house
+  on a grey tile and "Home". It opens the start page, or what `home=` names.
+- **Section titles** (`NavSection`) are bold, in capitals, with no icon, and never collapse.
+- **Parents** show their icon on a 24 px tile in their colour (the tint's light ground and strong ink), their
+  label and a chevron. Each one is open until the person closes it; the closed ones are kept per person in
+  browser storage (`evlet.<username>.nav.closed`). Blocked storage only means nothing is remembered. Parents
+  show no count or badge. A closed parent holding the open page keeps a bolder label. A **parent link** opens
+  its item directly, with no chevron or children.
+- **Children** sit under their parent on a thin vertical guide line, each starting with its icon (its own, or
+  its kind's, [Navigation icons](#navigation-icons)) in the parent's colour. The one the page opens exactly
+  (a list with its view, tab and filters, or a report) is a white card with a 1 px border and a semibold
+  label, and the guide line is marked at its height by a short bar in the parent's colour. A child with a
+  badge shows its [bounded count](#badges) at the end of the row, else its record count when the person
+  turned counts on.
+- **New-tab items** (an http(s) address, or `new_tab=True`) end with the open-externally icon.
+- **Hover** on any row is a light grey.
+- **The sidebar** is a light grey (`--bg-subtle`), lighter than the main area (`--page-bg`), with a border on
+  its right; the top bar and the cards are white. Dark themes keep the same structure.
+- The collapsed sidebar shows each child's icon with its name in a tooltip, and each parent link's tile;
+  section titles and parent headings give way to a thin rule, and badges are hidden. The round button on the sidebar's
   edge, just above the account card, collapses and expands it (and `[`). On phones the sidebar is the
-  drawer, opened from the top bar's menu button.
+  drawer, opened from the top bar's menu button: the brand at its top, then the switcher and the navigation.
 
 **Where the sidebar comes from.** `workspaceNav()` in `app/workspaces.ts` maps the schema's
 `workspaces` ([Workspaces](#workspaces)): each group is a section (with its icon, `layers` without
@@ -854,8 +933,8 @@ each role after the override. Changes need a recent two-step code where Controls
 
 ### Navigation icons
 
-A shortcut's icon comes from what it opens, never from the item, so every list looks alike and an
-app has nothing to set. `app/nav-icons.ts` is the one map; the sidebar, the collapsed sidebar, the
+A shortcut's icon comes from what it opens unless the item names its own (`Shortcut(icon=...)`), so every
+list looks alike and an app has nothing to set. `app/nav-icons.ts` is the one map; the sidebar, the collapsed sidebar, the
 workspace editor, the Explorer cards and the search palette all read it. Group and workspace icons
 stay as declared. Every name is in the browser's icon set (`ui/icon-data.ts`); where the ideal icon
 is missing, the closest one stands in (a prompt uses `sticky-note`, a dashboard `activity`).
@@ -886,19 +965,17 @@ is missing, the closest one stands in (a prompt uses `sticky-note`, a dashboard 
 ### Top bar: Search and Explorer
 
 The top bar runs across the whole window, over the sidebar and the main column, on the white surface
-with a light divider under it. From left to right it holds the drawer button (phones only), the **Evlet
-brand**, a pipe and the **Workspace switcher**; then, on the right, the **search** button, the **history**
+with a light divider under it. From left to right it holds the drawer button (phones only) and the **Evlet
+brand**; then, on the right, the **search** button, the **history**
 button, notifications and the shortcuts button. The breadcrumb is not in the top bar: it is a small line
 above each page's title ([Breadcrumb](#breadcrumb)).
 
 - **Brand.** The Evlet logo, the same artwork and size as on the sign-in page and before: the
   horizontal evlet.io lockup, 26 px tall (`evlet-logo-primary.svg`, and `evlet-logo-white.svg` in dark
   themes). The brand is shown here; the sidebar shows it only as a drawer on narrow windows.
-- **Pipe.** A 1 px line, 16 px tall, in the strong border colour, with space on both sides.
-- **Switcher.** The compact Workspace button ([Sidebar and workspaces](#sidebar-and-workspaces)).
-- **Width.** With the sidebar expanded, the brand, pipe and switcher take the sidebar's width (a long
-  workspace name is cut with an ellipsis). With the sidebar collapsed they take only the room they need:
-  the Evlet mark alone (`evlet-icon-blue.svg`, 26 px), the pipe and the switcher.
+- **Switcher.** The compact Workspace button is at the top of the sidebar ([Sidebar and workspaces](#sidebar-and-workspaces)).
+- **Width.** With the sidebar expanded, the brand takes the sidebar's width. With the sidebar collapsed it takes
+  only the room it needs: the Evlet mark alone (`evlet-icon-blue.svg`, 26 px).
 - **Narrow windows** keep the main column at least about 600 px wide, in two steps. At 1220 px and
   under, the sidebar and the switcher leave the page: a menu button at the top bar's left opens them as a
   drawer over the page, with the brand at its top (the same lockup and size as the top bar), the
@@ -940,7 +1017,8 @@ the one. It scrolls away with the title.
 
 - The first crumb names the workspace the page belongs to (the first declared one holding it).
   Clicking it shows that workspace in the sidebar, the page staying open. When the page's next crumb
-  has the workspace's name, the two are one crumb.
+  has the workspace's name, the two are one crumb, and a later crumb that only repeats it (a report group
+  named like the workspace) is left out: "Sales / Reports / Invoice register".
 - A record's last crumb is its document number when the model has one ("Projects / PRJ-2026-0021"),
   else its title. The last crumb is darker than the others.
 - Phones keep the last two crumbs; a long last crumb is cut with an ellipsis.
@@ -981,13 +1059,13 @@ before the page changes or the tab closes.
 ## A small application
 
 ```python
-from evlet import App, Model, Text, Boolean
+from evlet import DevApp, Model, Text, Boolean
 
 class Note(Model):
     title = Text(required=True)
     done = Boolean(default=False)
 
-app = App(name="notes", models=[Note])
+app = DevApp(name="notes", models=[Note])
 ```
 
 Run `uvicorn app:app --host 127.0.0.1 --port 8000 --reload`. Open
@@ -995,7 +1073,7 @@ http://127.0.0.1:8000, create the first administrator, then sign in. Notes has a
 and a record view. Search, filters, sort and paging run through the model query API.
 Role, field and record permissions stay on the server.
 
-`App` is a local convenience entry point. Its default database is `.data/notes.sqlite3`;
+`DevApp` (named `App` before 0.4.x; that name still works and warns) is a local convenience entry point. Its default database is `.data/notes.sqlite3`;
 its default authentication allows initial setup and insecure cookies only on exact
 loopback origins on port 8000. A deployed site must supply its database and explicit
 `LocalAuth` configuration.
@@ -1337,6 +1415,11 @@ sideways; the page never scrolls sideways. The pinned columns, column resizing, 
 of the card) and the bulk bar work as before. The loading lines and the empty states show inside the
 card. The board sits in the same card, which keeps the board's own height and does not stick.
 On a phone the card scrolls with the page and the table is as tall as its rows.
+
+**Phones** (up to 640 px, `PHONE_LIST` in `app/list-page.ts`) show a list's rows as stacked cards instead of
+the table: the title and the first amount, then the document number and the State badge, then two more key
+fields (`Meta.key_fields`, else the first visible fields). A card opens its record as a row does. A record page
+there reads in one column, whatever its main column's width step. Wider screens keep the table.
 
 A record opened in the list's side panel is its own white card beside the list card, about 13 px
 apart, with its own border and 4 px corners; it is not a drawer against the window's edge. Both cards

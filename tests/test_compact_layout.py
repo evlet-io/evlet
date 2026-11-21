@@ -8,7 +8,7 @@ from evlet import (Child, Count, Currency, Database, Integer, Link, LongText, Ma
                    Sum, Table, TableSection, Text)
 from evlet.calc import F
 from evlet.ui.metadata import ui_schema, view_for
-from test_business import client
+from support import client
 from test_meaning import serve
 from test_rules_types import ALL, add_user
 

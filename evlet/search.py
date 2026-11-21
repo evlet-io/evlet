@@ -34,7 +34,7 @@ import re
 from urllib.parse import parse_qs
 
 from . import qb
-from .auth import AccessError
+from .auth import AccessError, allow
 from .calc import Expr
 from .database import Session
 from .declarations import Ref
@@ -51,8 +51,7 @@ WORD = re.compile(r'[^\W_]+', re.UNICODE)
 
 def route(business, scope, user, model):
     """GET /api/{model}/search: up to `limit` options this person may read, ranked by the typed text."""
-    if scope['method'] not in ('GET', 'HEAD'):
-        raise AccessError(405, 'Method not allowed')
+    allow(scope['method'], 'GET', 'HEAD')
     text, link, values, limit = parameters(scope)
     policy = business.policy
     policy.require(user, model, 'read')
@@ -194,11 +193,27 @@ def ranked(connection, model, table, where, columns, text, limit, extra=()):
     columns = [*columns, *extra]
     squeezed = ''.join(text.split())
     stored = [qb.col(f'record.{name}_text' if isinstance(model.__fields__[name], RichText) else f'record.{name}') for name in columns]
-    match = qb.or_(*(qb.subsequence_ci(column, squeezed) for column in stored))
-    first = qb.when((qb.or_(*(qb.starts_with(qb.lower(column), text.lower()) for column in stored[:primary])), 0),
-                    (qb.or_(*(qb.contains_ci(column, text) for column in stored[:primary])), 1), otherwise=2)
-    rows = connection.run(qb.select(table, 'record.id', *stored).where(*where, match).order_by(qb.asc(first), 'record.id')
-                          .limit(CANDIDATES)).all()
+    # Bounded queries without ORDER BY, so SQLite stops at the LIMIT instead of sorting every match on each
+    # keystroke. Each kind of match ranks above the next: values starting with the text, values holding it, values
+    # holding its characters in order. A query that returns fewer than CANDIDATES rows returned every match of its
+    # kind, so the narrower one is asked only when the wider one filled up.
+    def candidates(*conditions):
+        found = {}
+        for condition in conditions:
+            for row in connection.run(qb.select(table, 'record.id', *stored).where(*where, condition).limit(CANDIDATES)).all():
+                found.setdefault(row[0], row)
+        return found
+
+    starting = qb.or_(*(qb.starts_with(qb.lower(column), text.lower()) for column in stored[:primary]))
+    holding = qb.or_(*(qb.contains_ci(column, text) for column in stored[:primary]))
+    in_order = qb.or_(*(qb.subsequence_ci(column, squeezed) for column in stored))
+    found = candidates(in_order)
+    if len(found) >= CANDIDATES:
+        better = candidates(holding)
+        if len(better) >= CANDIDATES:
+            better = candidates(starting) | better
+        found = better | found
+    rows = list(found.values())
     scored = []
     for row in rows:
         best = None

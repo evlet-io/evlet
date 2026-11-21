@@ -9,7 +9,7 @@ from evlet import Child, Count, Database, Decimal, Link, Model, Ref, Registry, R
 from evlet.calc import F
 from evlet.declarations import Option
 from evlet.search import rank
-from test_business import client
+from support import client
 from test_rules_types import add_user, start
 
 ALL = ('read', 'create', 'update', 'delete')

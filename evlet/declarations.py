@@ -390,8 +390,8 @@ class Level:
             raise ValueError('A level needs its pending text, for example "Pending manager approval"')
 
 
-class Rule:
-    """One move: Rule("draft", "issued", "Issue", by=("editor",), when=F("total") > 0, remark="optional").
+class Move:
+    """One move: State.Move("draft", "issued", "Issue", by=("editor",), when=F("total") > 0, remark="optional").
 
     `from_` is a state or a tuple of states. `key` defaults to "<from>_to_<to>"; it is the rule's stable id
     in routes, the log and instance overrides. `by` names roles and user fields (default admin and editor);
@@ -437,6 +437,21 @@ class Rule:
         return f'Rule({self.sources!r}, {self.to!r}, key={self.key!r})'
 
 
+# The framework's own modules call a move a Rule (rules=, check_rules); apps write State.Move.
+Rule = Move
+
+
+class _RenamedMember:
+    """A class attribute renamed in 0.4.x: still returns the same object, with a DeprecationWarning once."""
+    def __init__(self, old, new, value):
+        self.old, self.new, self.value = old, new, value
+
+    def __get__(self, instance, owner=None):
+        from .fields import renamed_warning
+        renamed_warning(self.old, self.new)
+        return self.value
+
+
 # The name every State field has; it shows as "Status" unless it declares a label.
 STATE_FIELD = 'docstate'
 
@@ -480,7 +495,9 @@ class State(Select):
         return {**super().metadata(), 'state': True}
 
 
-State.Rule, State.Level, State.Remark = Rule, Level, Remark
+State.Move, State.Level, State.Remark = Move, Level, Remark
+# Named State.Rule before 0.4.x, which read like evlet.Rule (a permission rule).
+State.Rule = _RenamedMember('State.Rule', 'State.Move', Move)
 
 
 def check_rules(field, rules):

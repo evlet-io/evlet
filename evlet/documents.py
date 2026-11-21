@@ -40,9 +40,6 @@ def freeze(value):
     return value
 
 
-UNBOUND = 'Get the record through a context to run its actions'
-
-
 class Row(Snapshot):
     """A Table row of a Record. Its virtual values (stored=False) are calculated with the record's, on the first read."""
     def __init__(self, record, model, values):

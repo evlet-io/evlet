@@ -10,7 +10,7 @@ import pytest
 from evlet import identity
 from evlet.identity import RecordId, decode, encode, new_id, path_id
 from examples.playground.models import Customer, Invoice
-from tests.test_business import client, hashed, secured  # noqa: F401 (fixtures)
+from tests.support import client
 
 
 def test_text_form_is_13_lowercase_crockford_characters():

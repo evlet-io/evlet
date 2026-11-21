@@ -163,34 +163,46 @@ def check_host(root, name, host, frontend):
 
 
 def _port(root, name, port):
-    """The port of the installed unit in deploy/, so a host change keeps it; else port or 8000."""
+    """The port of the installed unit, so a host change keeps it; else the one in deploy/, else port or 8000."""
+    from . import site
     if port is not None:
         return port
-    try:
-        words = (root / 'deploy' / f'evlet-{name}.service').read_text(encoding='utf-8').split()
-        return int(words[words.index('--port') + 1])
-    except (OSError, ValueError, IndexError):
-        return 8000
+    # The installed unit belongs to root; the copy in deploy/ is only a fallback before the first --apply.
+    for unit in (site.installed(name)[0], root / 'deploy' / f'evlet-{name}.service'):
+        try:
+            words = unit.read_text(encoding='utf-8').split()
+            return int(words[words.index('--port') + 1])
+        except (OSError, ValueError, IndexError):
+            continue
+    return 8000
 
 
 def proxy_files(root, name, app, port, user=None):
-    """Write deploy/evlet-<name>.caddy, the service unit and the global options, as evlet setup --host does."""
-    import getpass
+    """Write deploy/evlet-<name>.caddy, the service unit and the global options, as evlet setup --host does.
+
+    Returns the rendered texts, which --apply installs (never the copies in deploy/)."""
     from . import proxy, site
     trusted = app.business.auth.trusted_proxies
+    account, chosen = site.service_account(name, user)
+    texts = {'unit': proxy.systemd_unit(root, name, port, account),
+             'site': proxy.caddy(app.routes, port, name, trusted, global_options=False), 'options': proxy.GLOBAL_OPTIONS}
     (root / 'deploy').mkdir(mode=0o755, exist_ok=True)
-    written = [proxy.write(root / 'deploy' / f'evlet-{name}.caddy', proxy.caddy(app.routes, port, name, trusted, global_options=False)),
-               proxy.write(root / 'deploy' / f'evlet-{name}.service', proxy.systemd_unit(root, name, port, user or getpass.getuser())),
-               proxy.write(root / 'deploy' / site.GLOBAL_FILE, proxy.GLOBAL_OPTIONS)]
+    written = [proxy.write(root / 'deploy' / f'evlet-{name}.caddy', texts['site']),
+               proxy.write(root / 'deploy' / f'evlet-{name}.service', texts['unit']),
+               proxy.write(root / 'deploy' / site.GLOBAL_FILE, texts['options'])]
     for path in written:
         print(f'Wrote {path}')
+    note = site.account_note(account, chosen)
+    if note:
+        print(note)
+    return texts
 
 
 def _finish(root, name, port, apply, run, user, app):
     from . import site
-    proxy_files(root, name, app, port, user)
+    texts = proxy_files(root, name, app, port, user)
     # The instance reads routes.py when it starts, so the service restarts after Caddy has the new site.
-    commands = site.privileged_steps(root, name, restart=True)
+    commands = site.privileged_steps(root, name, texts, restart=True)
     if not apply:
         print('Review the files, then run these steps with sudo:')
         print('\n'.join('    ' + site.describe(command) for command in commands))

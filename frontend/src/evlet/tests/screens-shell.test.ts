@@ -127,22 +127,21 @@ describe('app shell', () => {
     expect(host.querySelector('.topbar .btn.primary')).toBeNull();
   });
 
-  it('shows the Evlet brand, a pipe and the Workspace switcher at the left of the top bar, and collapses from the edge button', async () => {
+  it('shows the Evlet brand at the left of the top bar and the Workspace switcher at the top of the sidebar, and collapses from the edge button', async () => {
     const { host } = start([...adminRoutes()]);
     await until(() => expect(host.querySelector('.app')).not.toBeNull());
     const app = host.querySelector('.app')!;
-    // Left to right: the menu button (narrow windows), then the brand, a pipe and the switcher, then the actions on the right.
+    // Left to right: the menu button (narrow windows), then the brand, then the actions on the right.
     const left = host.querySelector<HTMLElement>('.topbar > .top-left')!;
     expect(left.previousElementSibling!.classList.contains('nav-menu-btn')).toBe(true);
     expect(left.nextElementSibling!.classList.contains('top-actions')).toBe(true);
-    expect([...left.children].map(child => child.className)).toEqual(['brand', 'top-pipe', 'app-switch']);
+    expect([...left.children].map(child => child.className)).toEqual(['brand']);
     // The evlet.io lockup for light and dark themes, and the mark for the collapsed sidebar, as on main.
     const brand = [...left.querySelectorAll<HTMLImageElement>('.brand img')].map(img => [img.className, img.getAttribute('src'), img.alt]);
     expect(brand).toEqual([['ev-lockup-light', '/assets/evlet-logo-primary.svg', 'Evlet'],
       ['ev-lockup-dark', '/assets/evlet-logo-white.svg', 'Evlet'], ['ev-logo', '/assets/evlet-icon-blue.svg', 'Evlet']]);
-    expect(left.querySelector('.top-pipe')!.getAttribute('aria-hidden')).toBe('true');
-    // The sidebar's head holds the same brand and a second switcher, shown only when the sidebar is a drawer
-    // (ui/styles.css); its body starts with the navigation.
+    // The sidebar's head holds the switcher, above Home and the sections, and the same brand, shown only when the
+    // sidebar is a drawer (ui/styles.css); its body starts with the navigation.
     const sidebar = host.querySelector('.sidebar')!;
     const head = sidebar.querySelector('.side-head')!;
     expect(sidebar.firstElementChild).toBe(head);
@@ -151,8 +150,9 @@ describe('app shell', () => {
     expect(sidebar.querySelector('.side-body .brand, .side-body img, .side-body .app-switch')).toBeNull();
     expect(host.querySelectorAll('.ev-logo')).toHaveLength(2);
     expect(sidebar.querySelector('.side-body')!.firstElementChild!.classList.contains('nav')).toBe(true);
+    expect(host.querySelectorAll('.app-switch')).toHaveLength(1);
     // The switcher: the workspace name and a small chevron, and no site name after it.
-    const appSwitch = left.querySelector<HTMLElement>('.app-switch')!;
+    const appSwitch = head.querySelector<HTMLElement>('.app-switch')!;
     const appName = text(appSwitch.querySelector('.as-text b'));
     expect(appName).not.toBe('');
     expect(appSwitch.querySelector('.as-text small')).toBeNull();
@@ -169,14 +169,14 @@ describe('app shell', () => {
     expect(pop.querySelector('.ws-item.on')!.getAttribute('aria-checked')).toBe('true');
     closeDialogs();
     // The edge button collapses and expands; the top bar's toggle is only for the phone drawer. Collapsed,
-    // the brand and the switcher stay in the top bar.
+    // the brand stays in the top bar and the switcher at the top of the rail.
     const edge = host.querySelector<HTMLButtonElement>('.side-edge')!;
     expect(edge.getAttribute('aria-expanded')).toBe('true');
     click(edge);
     expect(app.classList.contains('collapsed')).toBe(true);
     expect(edge.getAttribute('aria-label')).toBe('Expand sidebar');
     expect(host.querySelector('.topbar > .top-left .brand .ev-logo')).not.toBeNull();
-    expect(host.querySelector('.topbar > .top-left .app-switch')).toBe(appSwitch);
+    expect(host.querySelector('.sidebar > .side-head .app-switch')).toBe(appSwitch);
     click(edge);
     expect(app.classList.contains('collapsed')).toBe(false);
     expect(host.querySelector('.topbar > .nav-menu-btn button')).not.toBeNull();
@@ -218,7 +218,7 @@ describe('app shell', () => {
     } finally { window.matchMedia = media; }
   });
 
-  it('styles the top bar left: brand, pipe and a compact switcher, collapsed and on phones', () => {
+  it('styles the top bar left and the sidebar\'s compact switcher, collapsed and on phones', () => {
     const styles = css('ui/styles.css');
     // As wide as the expanded sidebar, so the breadcrumb starts over the main column; only as wide as it needs collapsed.
     expect(rule(styles, '.top-left')).toContain('width:calc(var(--sidebar-w) - 16px)');
@@ -227,15 +227,16 @@ describe('app shell', () => {
     expect(rule(styles, '.brand .ev-lockup')).toContain('height:26px');
     expect(rule(styles, '.brand .ev-logo')).toMatch(/display:none;width:26px;height:26px/);
     expect(styles).not.toMatch(/ev-logo[^{]*\{[^}]*filter/);
-    // The pipe: one pixel wide, 16 px tall, in the border colour.
-    expect(rule(styles, '.top-pipe')).toMatch(/width:1px;height:16px;background:var\(--border-strong\)/);
+    // The switcher fills the sidebar's head; the brand there shows only in the drawer.
+    expect(rule(styles, '.side-head .app-switch')).toContain('width:100%');
+    expect(rule(styles, '.side-head .brand')).toContain('display:none');
     // The switcher: a flat bordered button as tall as the search box, in the normal text colour, with the
     // solid focus outline; a light background on hover, and a stronger border while its menu is open.
     expect(rule(styles, '.app-switch')).toMatch(/height:32px;.*border:1px solid var\(--border\);border-radius:var\(--r\)/);
     expect(rule(styles, '.app-switch')).toContain('color:var(--fg)');
     expect(rule(styles, '.app-switch')).not.toContain('box-shadow');
     expect(rule(styles, '.top-search')).toContain('height:32px');
-    expect(rule(styles, '.app-switch:hover')).toContain('background:var(--bg-muted)');
+    expect(rule(styles, '.app-switch:hover')).toContain('background:var(--side-hover)');
     expect(rule(styles, '.app-switch[aria-expanded="true"]')).toContain('border-color:var(--border-strong)');
     expect(rule(styles, '.app-switch:focus-visible')).toContain('outline:2px solid var(--accent)');
     // The Workspace menu: as wide as the other menus, flat (the light shadow), and no tile styles left.
@@ -245,14 +246,15 @@ describe('app shell', () => {
     // Collapsed: the mark alone, the switcher compact.
     expect(rule(styles, '.app.collapsed .brand .ev-lockup')).toContain('display:none');
     expect(rule(styles, '.app.collapsed .brand .ev-logo')).toContain('display:block');
-    // 1220 px and under: one column that never scrolls sideways; the top bar's brand and switcher give way to the
-    // menu button, and the drawer's head shows the lockup as the top bar does at full width.
+    // 1220 px and under: one column that never scrolls sideways; the top bar's brand gives way to the menu button,
+    // and the drawer's head shows the lockup above the switcher, as the top bar does at full width.
     expect(rule(styles, '.nav-menu-btn')).toContain('display:none');
-    expect(rule(styles, '.side-head')).toContain('display:none');
+    expect(rule(styles, '.app.collapsed .side-head .as-text')).toContain('display:none');
     const narrow = styles.slice(styles.indexOf('@media (max-width:1220px){\n  .app,.app.collapsed'));
     expect(narrow).toContain('.app,.app.collapsed{grid-template-columns:minmax(0,1fr)}');
     expect(narrow).toContain('.nav-menu-btn{display:grid');
-    expect(narrow).toContain('.top-left,.top-pipe{display:none}');
+    expect(narrow).toContain('.top-left{display:none}');
+    expect(narrow).toContain('.side-head .brand{display:flex}');
     expect(narrow).toContain('.side-edge{display:none}');
     expect(narrow).toContain('.side-head .brand .ev-lockup{display:block}');
     expect(narrow).toContain('.side-head .brand .ev-logo{display:none}');

@@ -11,7 +11,7 @@ import time
 
 from . import qb
 from .adapter import Column, TableDefinition
-from .auth import AccessError
+from .auth import AccessError, allow
 from .identity import path_id
 from .models import ValidationError, checked_body
 
@@ -77,20 +77,6 @@ def autosave(model):
     if type(value) is not bool:
         raise ValueError(f'{model.__name__}: Meta.autosave is True or False')
     return value
-
-
-def check_setting(key, value):
-    """A limit as Controls saves it: a whole number in its safe range."""
-    _, low, high = LIMITS[key]
-    if type(value) is not int or not low <= value <= high:
-        raise ValueError(f'Use a whole number from {low} to {high}.')
-    return value
-
-
-def strictest(key, value):
-    """A stored limit that no longer validates: clamped into its range, or the smallest."""
-    _, low, high = LIMITS[key]
-    return min(max(value, low), high) if type(value) is int else low
 
 
 class Unsaved:
@@ -248,8 +234,7 @@ class Unsaved:
     def api(self, scope, body, user):
         path, method = scope['path'], scope['method']
         if path == '/api/_unsaved':
-            if method != 'GET':
-                raise AccessError(405, 'Method not allowed')
+            allow(method, 'GET')
             return 200, self.info(user), []
         parts = path.split('/')
         if len(parts) != 5 or method not in ('GET', 'PUT', 'DELETE'):

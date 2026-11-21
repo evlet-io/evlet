@@ -178,8 +178,9 @@ Who it acts as is always explicit:
 Handlers must be short and bounded. They hold the tenant database's SQLite write
 lock for their whole execution. Split long work into a resumable task
 ([below](#progress-and-long-jobs)), whose steps each hold it briefly. Do not use this queue for long network calls,
-large exports, or distributed execution. Separate worker processes are safe to
-claim jobs, but do not make writes to one SQLite database parallel. A default
+large exports, or distributed execution. Separate worker processes claim jobs
+safely (no job runs twice), but their writes wait outside the API's fair write queue, so prefer
+running jobs in the API process (`evlet serve NAME --jobs`, `TenantApplication(jobs=True)`). A default
 claim lease is 300 seconds; no heartbeat, cancellation, priority, or dead-letter
 service is included. Completed job history is retained; plan retention before
 high-volume use.
@@ -327,12 +328,17 @@ Only failed jobs can be manually retried. Retrying resets the attempt count and
 keeps the same external idempotency key. The account selected for a schedule is
 checked by the worker at execution time, even if the CLI was run by an operator.
 
-Deployment rendering now also writes `evlet-worker.service`. It shares the API's
-service user, catalog path, private umask, and filesystem restrictions. Both units
-optionally read `/etc/evlet/server.env`. Review and apply them through the existing
-deployment process; rendering does not start them. Stop both API and worker before
-backups, database upgrades, or restoring state. See the
+The rendered tenant deployment runs jobs inside the API process: `evlet.service` sets
+`EVLET_TENANT_JOBS=1`, so `TenantApplication` takes each active tenant's job steps through that
+tenant's write queue, as `evlet serve NAME --jobs` does for one instance. Rendering with
+`separate_worker=True` writes the older layout instead: the API without jobs plus
+`evlet-worker.service`, which shares the API's service user, catalog path, private umask, and
+filesystem restrictions. Both units optionally read `/etc/evlet/server.env`. Review and apply them
+through the existing deployment process; rendering does not start them. Stop the API (and the
+worker, if you use one) before backups, database upgrades, or restoring state. See the
 [tenant deployment guide](tenancy-deployment.md) for the server boundary.
+A separate worker writes from a second process, outside the API's write queue, so long job steps
+can make API writes wait; keep job steps short there.
 
 ## Background work in a flat app
 
@@ -411,10 +417,15 @@ with a current watermark; clients reload their authorized records. Cursor `0`
 requests the retained beginning. Pages scan at most 100 events and advance even
 when permissions filter all their records. Follow `more` to drain a backlog.
 
-The stream honors `Last-Event-ID` on reconnect, sends a heartbeat page about once
-per second, and closes after a bounded run of about 25 seconds. It rechecks the
-session, account, tenant/host activation, and read permissions during delivery.
-Revocation closes the stream with a named `unavailable` event. Browser clients
+The stream honors `Last-Event-ID` on reconnect, sends a page when new events arrive and a
+heartbeat page at least every five seconds, and closes after a bounded run of about 25 seconds.
+Open streams do not poll the database each: one poller per application (so per database, and per
+tenant) reads the newest event number once a second and wakes every stream of that application
+when it moves; each stream then reads its own permission-filtered page. An idle stream costs no
+database work between its rechecks. Every page read rechecks the session, account, tenant/host
+activation, and read permissions, so nothing is delivered after a revocation; an idle stream
+notices it within about five seconds and closes with a named `unavailable` event. The number of
+open streams per process is `EVLET_HTTP_STREAM` (default 64, at most 256). Browser clients
 must still use authenticated reads to retrieve the latest values.
 
 Current row scopes filter replay. Deleted rows cannot be checked against a current

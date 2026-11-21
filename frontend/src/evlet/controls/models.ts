@@ -120,7 +120,7 @@ export function ModelsPage(ctx: ControlsContext): HTMLElement {
 function FieldsTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
   const toggle = (info: FieldInfo, prop: 'required' | 'read_only' | 'hidden') => () => {
     const value = effective(ctx, model.name, info.name);
-    if (prop === 'hidden' && !value.hidden && value.required) return toast("A required field can't be hidden. People couldn't fill it in.", { icon: 'info' });
+    if (prop === 'hidden' && !value.hidden && value.required) return toast("A required field can't be hidden. People couldn't fill it in.", { tone: 'info' });
     if (prop === 'required' && !value.required && value.hidden) setProp(ctx, model.name, info.name, 'hidden', false);
     setProp(ctx, model.name, info.name, prop, !value[prop]);
   };
@@ -159,27 +159,27 @@ function openField(ctx: ControlsContext, model: ModelInfo, info: FieldInfo) {
     html`<input class="input" id=${`ctl-f-${prop}`} placeholder=${placeholder} class:ctl-changed=${() => value()[prop] !== file[prop]} prop:value=${() => value()[prop]}
       on:change=${(event: Event) => {
         const input = event.target as HTMLInputElement, next = input.value.trim();
-        if (prop === 'label' && !next) { toast("A label can't be empty", { icon: 'info' }); input.value = value().label; return; }
+        if (prop === 'label' && !next) { toast("A label can't be empty", { tone: 'info' }); input.value = value().label; return; }
         set(prop, next);
       }}>`);
   const rule = (prop: 'required' | 'read_only' | 'hidden', title: string, note: () => string) => html`<div class="ctl-setrow flat">
     <div class="grow"><strong>${title}</strong><p>${note}</p></div><div class="ctl-setctl">${() => prop !== 'hidden' && file[prop]
       ? Icon('lock', { size: 'sm' }) : Switch({ on: () => value()[prop], ariaLabel: title, disabled: prop === 'hidden' ? () => value().required && !value().hidden : !info.editable,
         onChange: next => {
-          if (prop === 'hidden' && next && value().required) return toast("A required field can't be hidden. People couldn't fill it in.", { icon: 'info' });
+          if (prop === 'hidden' && next && value().required) return toast("A required field can't be hidden. People couldn't fill it in.", { tone: 'info' });
           if (prop === 'required' && next && value().hidden) set('hidden', false);
           set(prop, next);
         } })}</div></div>`;
   const newOption = cell('');
   const addOption = () => {
     const option = newOption.peek().trim().toLowerCase().replace(/\s+/g, '_');
-    if (!option) return toast('Type an option first', { icon: 'info' });
-    if (options(value()).some(item => item.value === option)) return toast(`${option} is already an option`, { icon: 'info' });
+    if (!option) return toast('Type an option first', { tone: 'info' });
+    if (options(value()).some(item => item.value === option)) return toast(`${option} is already an option`, { tone: 'info' });
     set('options_add', [...value().options_add, option]);
     newOption.set('');
   };
   const hideOption = (option: string, hide: boolean) => {
-    if (hide && options(value()).filter(item => !item.hidden).length <= 1) return toast('Keep at least one option shown', { icon: 'info' });
+    if (hide && options(value()).filter(item => !item.hidden).length <= 1) return toast('Keep at least one option shown', { tone: 'info' });
     if (hide && value().default === option) set('default', null);
     set('options_hidden', hide ? [...value().options_hidden, option] : value().options_hidden.filter(item => item !== option));
   };
@@ -196,7 +196,7 @@ function openField(ctx: ControlsContext, model: ModelInfo, info: FieldInfo) {
       on:change=${(event: Event) => { const next = (event.target as HTMLInputElement).value.trim(); set('default', next || null); }}>`;
   };
   const remove = () => {
-    if (ctx.state.peek().remove_fields) return toast(ctx.state.peek().remove_fields!, { icon: 'info' });
+    if (ctx.state.peek().remove_fields) return toast(ctx.state.peek().remove_fields!, { tone: 'info' });
     openModal({ title: `Remove ${info.name}?`, icon: 'trash-2', tint: 'rose', narrow: true,
       body: () => html`<p class="ctl-confirm">The column is dropped from <code>${model.table}</code> after a backup. Values in ${plural(model.records, 'record')} are lost. Overrides that use the field are cleaned.</p>`,
       footer: close => DialogFooter({ cancel: close, submit: { label: 'Remove field', variant: 'danger', onClick: async () => {
@@ -205,7 +205,7 @@ function openField(ctx: ControlsContext, model: ModelInfo, info: FieldInfo) {
           close(); closeDrawer();
           await ctx.reload();
           toast(result.backup ? `${info.name} removed. Backup ${result.backup} saved first.` : `${info.name} removed`);
-        } catch (failure) { toast(message(failure), { icon: 'info' }); }
+        } catch (failure) { toast(message(failure), { tone: 'error' }); }
       } } }) });
   };
   const closeDrawer = openDrawer({ title: `${model.name}.${info.name}`, icon: 'layers', tint: info.custom ? 'teal' : 'blue', className: 'ctl-drawer',
@@ -412,7 +412,7 @@ function LayoutTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
       aria-roledescription="draggable section" aria-describedby="ctl-drag-help">${Icon('grip-vertical', { size: 'xs' })}</button><span class="mono muted ctl-small">${sectionId(index)}</span>
       <input class="input" aria-label="Section title" prop:value=${section.title} on:change=${(event: Event) => {
         const input = event.target as HTMLInputElement, title = input.value.trim();
-        if (!title) { toast('A section needs a title', { icon: 'info' }); input.value = section.title; return; }
+        if (!title) { toast('A section needs a title', { tone: 'info' }); input.value = section.title; return; }
         change(draft => { draft[index].title = title; });
       }}>
       ${panelToggle('sections', section.title, `section ${section.title}`)}
@@ -485,7 +485,7 @@ function ListTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
   const toggle = (name: string) => {
     const current = value().columns;
     if (current.includes(name)) { if (current.length > 1) set({ columns: current.filter(item => item !== name) }); }
-    else if (current.length >= 8) toast('Show at most 8 columns', { icon: 'info' });
+    else if (current.length >= 8) toast('Show at most 8 columns', { tone: 'info' });
     else set({ columns: [...current, name] });
   };
   const move = (name: string, step: number) => {

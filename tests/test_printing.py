@@ -6,7 +6,7 @@ from evlet import (Application, ChildTable, Column as ReportColumn, Currency, Da
                    Policy, PrintDesign, Registry, Report, Rule, Select, Text)
 from evlet.printing import (Column, Fields, Footnote, Heading, Image, PageBreak, PageNumber, Prints, Table, Text as Words,
                             Totals, Watermark, available, document, document_context, fetcher)
-from tests.test_business import PASSWORD, hashed, http, secured  # noqa: F401 (fixtures)
+from tests.support import PASSWORD, http
 
 renders = pytest.mark.skipif(not available(), reason='needs the print extra: pip install evlet[print]')
 PX_TO_MM = 25.4 / 96
@@ -612,7 +612,7 @@ def test_print_designs_require_authentication(tmp_path):
 
 @renders
 def test_playground_prints_an_invoice_and_a_report(secured):
-    from tests.test_business import client
+    from tests.support import client
     admin, editor, viewer = client(secured), client(secured, 'editor'), client(secured, 'viewer')
     status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Gulf Horizon Contracting', 'currency': 'AED'})
     assert status == 201, customer
@@ -678,7 +678,7 @@ def test_stored_definitions_are_checked(tmp_path, change, message):
 
 @renders
 def test_controls_saves_previews_and_removes_a_design(secured):
-    from tests.test_business import client
+    from tests.support import client
     admin, editor = client(secured), client(secured, 'editor')
     status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Gulf <b>Horizon</b>', 'currency': 'AED'})
     status, invoice_record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-1', 'total': '10.00', 'status': 'draft'})
@@ -719,7 +719,7 @@ def test_controls_saves_previews_and_removes_a_design(secured):
 
 @renders
 def test_stored_design_values_are_escaped(secured):
-    from tests.test_business import client
+    from tests.support import client
     from evlet.printing import Compiler, design_from
     admin = client(secured)
     status, customer, _ = admin('POST', '/api/customer', {'customer_name': '<script>x</script>', 'currency': 'AED'})

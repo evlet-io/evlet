@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from tests.test_business import secured, hashed, client  # noqa: F401
+from tests.support import client
 
 from evlet import Application, Database, Model, Registry, Text
 
@@ -246,6 +246,8 @@ def test_streams_are_admitted_but_do_not_park_read_workers(bounded, secured):
 @pytest.mark.parametrize('cancel_queued', [False, True])
 def test_read_burst_has_a_bounded_queue_and_independent_probe(bounded, http_capacity, monkeypatch, cancel_queued):
     app, _ = bounded
+    # Eight read threads whatever this host's CPU count (the default scales with it).
+    monkeypatch.setenv('EVLET_HTTP_READ_WORKERS', '8')
     http_capacity(read=32)
     module = importlib.import_module('evlet.runtime')
     runtime = module.runtime()

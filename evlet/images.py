@@ -20,9 +20,10 @@ import binascii
 from contextlib import contextmanager
 from contextvars import ContextVar
 import re
+import struct
 import time
 
-from .fields import Image, RichText
+from .fields import Image, RichText, size_text
 from .models import ValidationError
 from . import qb
 from .adapter import Column
@@ -64,6 +65,75 @@ def image_type(content):
     return None
 
 
+# The most pixels an uploaded image may declare. A small file can declare a huge picture (a decompression bomb)
+# that every viewer's browser and the PDF renderer would decode in full, so the header is read before storing.
+MAX_PIXELS = 40_000_000
+
+
+def dimensions(content):
+    """(width, height) read from the header of PNG, JPEG, GIF or WebP bytes without decoding them, or None
+    when the header is missing or damaged."""
+    try:
+        kind = image_type(content)
+        if kind == 'image/png':
+            if content[12:16] != b'IHDR':
+                return None
+            return struct.unpack('>II', content[16:24])
+        if kind == 'image/gif':
+            return struct.unpack('<HH', content[6:10])
+        if kind == 'image/jpeg':
+            return _jpeg_dimensions(content)
+        if kind == 'image/webp':
+            chunk = content[12:16]
+            if chunk == b'VP8 ' and content[23:26] == b'\x9d\x01\x2a':
+                width, height = struct.unpack('<HH', content[26:30])
+                return width & 0x3FFF, height & 0x3FFF
+            if chunk == b'VP8L' and content[20:21] == b'\x2f':
+                bits = int.from_bytes(content[21:25], 'little')
+                return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+            if chunk == b'VP8X' and len(content) >= 30:
+                return int.from_bytes(content[24:27], 'little') + 1, int.from_bytes(content[27:30], 'little') + 1
+    except struct.error:
+        return None
+    return None
+
+
+def _jpeg_dimensions(content):
+    # Walk the marker segments to the first start of frame (SOF0-SOF15, without DHT, JPG and DAC).
+    index = 2
+    while index + 4 <= len(content):
+        if content[index] != 0xFF:
+            return None
+        marker = content[index + 1]
+        if marker == 0xFF:
+            index += 1
+            continue
+        if marker in (0x01, 0xD8) or 0xD0 <= marker <= 0xD7:
+            index += 2
+            continue
+        if marker in (0xD9, 0xDA):
+            return None
+        length = struct.unpack('>H', content[index + 2:index + 4])[0]
+        if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+            height, width = struct.unpack('>HH', content[index + 5:index + 9])
+            return width, height
+        if length < 2:
+            return None
+        index += 2 + length
+    return None
+
+
+def check_dimensions(content, field='image'):
+    """Refuse an image whose header cannot be read, that declares no pixels, or more than MAX_PIXELS."""
+    size = dimensions(content)
+    if size is None or 0 in size:
+        raise ValidationError({field: 'This image is damaged or cut short. Save it again and upload the copy.'})
+    if size[0] * size[1] > MAX_PIXELS:
+        raise ValidationError({field: f'Use an image of at most {MAX_PIXELS // 1_000_000} megapixels '
+                                      f'(this one is {size[0]} x {size[1]} pixels)'})
+    return size
+
+
 def rich_fields(model):
     return [name for name, field in model.__fields__.items() if isinstance(field, RichText) and field.stored]
 
@@ -95,10 +165,6 @@ def limits(business):
         return settings['files.image_max_kb'] * 1024, settings['files.images_per_record']
     except (AttributeError, KeyError, TypeError):
         return DEFAULT_LIMITS
-
-
-def size_text(size):
-    return f'{size // (1024 * 1024)} MiB' if size % (1024 * 1024) == 0 else f'{size // 1024} KiB'
 
 
 def initialize(database):
@@ -133,6 +199,7 @@ def upload(business, tx, user, model, record_id, body):
         raise ValidationError({'image': 'Use a PNG, JPEG, GIF or WebP image. SVG and other files are not allowed.'})
     if not 1 <= len(content) <= max_size:
         raise ValidationError({'image': f'Use an image up to {size_text(max_size)}'})
+    check_dimensions(content)
     name = business.registry.name_for(model)
     now = int(time.time())
     purge(tx, now)

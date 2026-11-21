@@ -1,6 +1,6 @@
 import pytest
 
-from test_business import secured, hashed, client
+from support import client
 from evlet import Policy, Rule
 from examples.playground.models import Customer, Invoice, Project, ProjectTask, registry
 

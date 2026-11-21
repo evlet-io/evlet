@@ -22,7 +22,7 @@ from urllib.parse import quote, quote_plus
 
 from . import qb
 from .adapter import Column, TableDefinition
-from .auth import ROLE_ID, AccessError
+from .auth import ROLE_ID, AccessError, is_loopback
 from .models import ValidationError, checked_body
 from . import secrets as vault
 from .secrets import SecretKeyError
@@ -128,13 +128,6 @@ def state_context(digest):
 # ---------- framework connectors: email ----------
 
 SECURITY = (('starttls', 'STARTTLS'), ('ssl', 'SSL/TLS'), ('none', 'None (this server only)'))
-
-
-def _loopback(host):
-    try:
-        return host == 'localhost' or ipaddress.ip_address(host).is_loopback
-    except ValueError:
-        return False
 
 
 def safe_address(host, port, *, local=False, public=False):
@@ -491,7 +484,7 @@ class Connectors:
         if connector in FRAMEWORK and not errors:
             if not ADDRESS.fullmatch(settings['address']):
                 errors['address'] = 'Enter a valid email address.'
-            if settings['security'] == 'none' and not _loopback(settings['host']):
+            if settings['security'] == 'none' and not is_loopback(settings['host'], name=True):
                 errors['security'] = 'Without encryption the mail server must be on this machine. Choose STARTTLS or SSL/TLS.'
         if errors:
             raise ValidationError(errors)

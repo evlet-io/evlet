@@ -1,5 +1,7 @@
 # State manager plan (0.4.6)
 
+> Archived: a completed or superseded plan, kept for history. It may describe code that has since changed; the current documentation is in `docs/`.
+
 Status: plan, 13-11-2026. Built on the query-builder branch (#183). Sources: the owner's brief
 (`work/specs/statemanager-brief.md`), the Approval Rules spec and its review. The brief wins
 where they differ.

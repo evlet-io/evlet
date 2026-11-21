@@ -18,7 +18,7 @@ from evlet.database import Session
 from evlet.ledger import describe, lock_hash, table as ledger_table
 from evlet.periods import set_lock
 from evlet.sequences import Sequence
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 from test_rules_types import ALL
 
 FULL = {**ALL, 'editor': Rule(('read', 'create', 'update', 'delete'))}
@@ -157,7 +157,7 @@ def test_a_ledger_model_takes_stored_fields_and_ledger_options():
     (Sequence('{n:05}'), 'not Sequence'),
     (Tags(), 'not Tags'),
     (MultiSelect(('a',)), 'not MultiSelect'),
-    (Reference(), 'not Reference'),
+    (Reference(), 'not AnyLink'),  # the class was renamed; Reference still works
     (Email(), 'not Email'),
     (Duration(), 'not Duration'),
     (Integer(compute=lambda record: 1), 'computed fields'),

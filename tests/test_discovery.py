@@ -4,7 +4,7 @@ from copy import deepcopy
 import pytest
 
 from evlet import Application, Database, Integer, Link, LocalAuth, Model, Policy, Registry, Rule, Text, identity
-from tests.test_business import client, hashed, http, secured
+from tests.support import client, http
 from examples.playground.models import Customer, Project, ProjectTask
 
 

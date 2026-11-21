@@ -407,18 +407,26 @@ def view_for(model):
     refuse_removed(model.__name__, meta)
     allowed = META_OPTIONS
     if meta is not None:
-        if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
-            raise ValueError('Model.Meta supports ' + ', '.join(sorted(allowed)))
+        if not isinstance(meta, type):
+            raise ValueError(f'{model.__name__}.Meta must be a class: class Meta: ...')
+        unknown = sorted(key for key in vars(meta) if not key.startswith('_') and key not in allowed)
+        if unknown:
+            import difflib
+            close = difflib.get_close_matches(unknown[0], sorted(allowed), n=1)
+            raise ValueError(f'{model.__name__}.Meta.{unknown[0]} is not a Meta option'
+                             + (f'; did you mean {close[0]}?' if close else '; the options are ' + ', '.join(sorted(allowed))))
     visible = form_fields(model, meta)
     texts = [name for name, field in visible.items() if isinstance(field, Text) and not isinstance(field, LongText)]
     label = getattr(meta, 'label', label_for(model.__name__))
     plural = getattr(meta, 'plural', plural_for(label))
     description = getattr(meta, 'description', '')
     if any(not isinstance(value, str) for value in (label, plural, description)) or not label or not plural:
-        raise ValueError('View labels must be nonempty strings and description must be text')
+        raise ValueError(f'{model.__name__}.Meta: label and plural must be nonempty strings and description must be text, '
+                         f'not label={label!r}, plural={plural!r}, description={description!r}')
     title = getattr(meta, 'title_field', next((name for name in ('name', 'title', 'reference') if name in texts), texts[0] if texts else 'id'))
     if title != 'id' and title not in texts:
-        raise ValueError('title_field must be a visible short text field or id')
+        raise ValueError(f'{model.__name__}.Meta.title_field = {title!r}: use a visible short Text field '
+                         f"({', '.join(texts) or 'none'}) or 'id'")
     if not hasattr(meta, 'title_field') and 'title' in model.__app_fields__ and (standard(model.__app_fields__['title']) or 'title' in texts):
         # Without Meta.title_field, records show their title column (a template, the name or the text
         # id). With it, that field holds the same text the title does.
@@ -430,11 +438,13 @@ def view_for(model):
     standard_text = {key for key, field in model.__app_fields__.items() if standard(field)}
     for value, maximum, names in ((columns, 8, {'id', *visible}), (search, 8, {name for name, field in visible.items() if isinstance(field, Text)} | standard_text)):
         if not isinstance(value, (tuple, list)) or len(value) > maximum or any(not isinstance(name, str) or name not in names for name in value) or len(set(value)) != len(value):
-            raise ValueError('View fields must be distinct visible field names, with at most eight entries')
+            option = 'list_fields' if value is columns else 'search_fields'
+            raise ValueError(f'{model.__name__}.Meta.{option} = {value!r}: name at most {maximum} distinct visible '
+                             f'fields, from {", ".join(sorted(names))}')
     # How a list opens its records: the full record page, or a side panel beside the narrowed list.
     open_in = getattr(meta, 'open_in', 'page')
     if open_in not in OPEN_IN:
-        raise ValueError('open_in must be "page" or "panel"')
+        raise ValueError(f'{model.__name__}.Meta.open_in must be "page" or "panel", not {open_in!r}')
     # The summary strip under the record header: Meta.summary = False leaves it out.
     summary = getattr(meta, 'summary', None)
     if summary is not None and type(summary) is not bool:
