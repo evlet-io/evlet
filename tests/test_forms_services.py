@@ -7,7 +7,7 @@ from evlet import (Model, Text, Integer, Rule, Report, Column, Chart, Count, Sum
                    Application, LocalAuth, api, cron, ValidationError)
 from evlet.forms import Forms
 from evlet.services import Calendar, Endpoint
-from test_business import http, client, PASSWORD
+from support import http, client, PASSWORD
 
 
 class Ticket(Model):

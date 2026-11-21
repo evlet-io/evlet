@@ -12,7 +12,7 @@ from evlet import Database, Model, Registry, Sequence, Text
 from evlet.jobs import JobQueue, Task
 from evlet.printing import Formats
 from examples.playground.models import Customer
-from test_business import secured, hashed, client  # noqa: F401
+from support import client
 from test_rules_types import ALL
 from test_cli_lifecycle import environment_stub, project  # noqa: F401
 

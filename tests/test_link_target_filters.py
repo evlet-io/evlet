@@ -6,7 +6,7 @@ every move, not only in the browser."""
 import pytest
 
 from evlet import Database, Link, Model, Ref, Registry, Rule, Select, State, Text
-from test_business import client
+from support import client
 from test_rules_types import start
 
 ALL = {'admin': Rule(('read', 'create', 'update', 'delete'))}

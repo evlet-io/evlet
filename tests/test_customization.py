@@ -10,7 +10,7 @@ import pytest
 from evlet import (Application, Database, Date, Decimal, LocalAuth, Link, LongText, Model, Naming, Registry, Select,
                    Series, State, Text)
 from evlet.expressions import ConditionError, UnknownField, parse
-from test_business import client, hashed, http  # noqa: F401
+from support import client, http
 from test_controls import add_user, password, save  # noqa: F401
 
 

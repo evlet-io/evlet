@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from evlet import Policy, Rule, qb
 from examples.playground.models import Customer, Project, ProjectTask, registry
-from test_business import client, hashed, secured  # noqa: F401
+from support import client
 
 
 KEY = {b'idempotency-key': b'create-test-001'}

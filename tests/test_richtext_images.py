@@ -11,7 +11,7 @@ import pytest
 from evlet import Application, Database, LocalAuth, Model, Policy, Registry, RichText, Rule, Text
 from evlet.images import HOLD_SECONDS, image_type, purge
 from evlet.richtext import sanitise
-from tests.test_business import PASSWORD, http
+from tests.support import PASSWORD, http
 
 PNG = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01' + b'\x00' * 24
 JPEG = b'\xff\xd8\xff\xe0\x00\x04\x00\x00\xff\xc0\x00\x11\x08\x00\x01\x00\x01' + b'\x00' * 30

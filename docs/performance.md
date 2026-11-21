@@ -90,8 +90,31 @@ retain a lazy boundary only while it gives a measurable benefit without changing
   to 30,000 values. Tests walk 20,000 groups 500 at a time with a traced Python peak under
   1.5 MB; holding all groups at once takes about 5.7 MB.
 
+- Request deadlines. A report run, export or print (`POST /api/_reports/...`) only reads, and its
+  database work stops after `EVLET_REPORT_SECONDS` (default 300; `0` turns it off): SQLite's
+  progress handler interrupts the running statement and the request answers 504 "The request took
+  longer than its time limit". `EVLET_REQUEST_SECONDS` sets the same limit for every other request
+  and is off unless set; a write it interrupts rolls back. When the client of a report disconnects,
+  its work is interrupted five seconds later, and stopping the server interrupts running report work
+  at once, so abandoned runs free their worker and do not hold up a restart.
+  (`evlet.database.Deadline`; the limit is checked every few thousand SQLite instructions.)
+- List totals. A list page with fewer rows than its limit already tells its total, so
+  `Database.page` skips the second, counting scan for it (the common case for a search with few
+  matches). `Session.count(..., cap=n)` (and `Database.count`) counts at most `n` rows in one scan
+  that stops there, for callers that show "n+" instead of an exact total.
+- Response encoding. JSON responses are encoded in the request's worker thread, not on the event
+  loop, so a large detail or report page does not stall other connections or stream heartbeats.
+- Event streams share one poller per application (see [Jobs and realtime](jobs-realtime.md)).
+
 SQLite writes remain serialized per file. Neither additional API workers nor these local benchmark
 numbers establish parallel write capacity or production readiness.
+
+**One web process per database.** Sign-in limits (`evlet_login_limits`) live in the database and
+hold across processes. API key rate limits (300 requests per key and minute), the remote MCP and
+connection-test limits, the write turn and the tenant application cache are kept in the process,
+so several workers serving one database each count them separately (four workers allow four times
+the rate). Run one web process per database (the generated service files pass `--workers 1`); at
+startup the server logs a warning when it sees more (`uvicorn --workers N` or `WEB_CONCURRENCY`).
 
 ## Local results, 29 October 2026
 
@@ -202,7 +225,11 @@ the order of the log read them, so each is one short write to `logs.sqlite3`.
 
 **Connections.** Idle connections use a cross-thread pool: at most eight per `Database`
 (the default HTTP read lane's workers, so concurrent requests reuse open connections and their
-page cache instead of opening four files each) and eight per process, with 60-second expiry pruned on access. Active connections are never
+page cache instead of opening four files each) and, across every database and tenant of the
+process, `EVLET_IDLE_CONNECTIONS` (1 to 1,024). By default that follows the process's file
+descriptor limit, since an attached connection can hold twelve descriptors: a quarter of the
+limit, between 8 (a 256 limit, as on macOS) and 32 (a limit of 1,536 or more). Idle connections
+expire after 60 seconds, pruned on access. Active connections are never
 evicted. Reuse requires the same four files on disk; a restore or replacement invalidates
 old handles, and an open transaction is rolled back before caching. `Database.close()`
 drains in-flight log flushing and invalidates old checkouts so they cannot repopulate the

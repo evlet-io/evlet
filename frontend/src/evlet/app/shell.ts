@@ -213,7 +213,8 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const crumbs = () => {
     const workspace = pageWorkspace.get(), all = ctx.crumbs.get();
     const merged = workspace && all.length > 1 && all[0].label === workspace.label ? all[0] : null;
-    const list = merged ? all.slice(1) : all;
+    // A later crumb that only repeats the workspace (a report group named like it) is left out: "Sales / Reports / Invoice register".
+    const list = (merged ? all.slice(1) : all).filter((crumb, index, rest) => !workspace || index === rest.length - 1 || crumb.label !== workspace.label);
     const items: HTMLElement[] = [...(workspace && list.length ? [workspaceCrumb(workspace, merged?.href)] : []), ...list.map((crumb, index, all) => (index === all.length - 1
       ? html`<span class="cur" aria-current="page">${crumb.label}</span>` : html`<a href=${crumb.href ?? '#'}>${crumb.label}</a>`) as HTMLElement)];
     return items.flatMap((item, index) => {
@@ -286,7 +287,8 @@ function keys(ctx: AppContext, event: KeyboardEvent) {
   if (key === 'c') { const create = ctx.createHere.peek(); if (create) { event.preventDefault(); create(); } }
 }
 
-const SHORTCUTS: Array<[string, string]> = [
+/** The shortcuts that work everywhere: the ? sheet and the Docs topic Keyboard shortcuts. */
+export const SHORTCUTS: Array<[string, string]> = [
   ['⌘K or Ctrl K', 'Search and commands'], ['C', 'Create in the current list'], ['/', 'Focus the page search'], ['G then D', 'Go to Docs'], ['G then E', 'Open the Explorer'],
   ['[', 'Toggle the sidebar'], ['?', 'Shortcuts'], ['⌘ Enter', 'Save a form or dialog'], ['Esc', 'Close the top layer, then clear the selection'],
 ];

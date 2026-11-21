@@ -16,7 +16,7 @@ from evlet import Database, JobQueue, Task, User
 from evlet import framework, writes
 from evlet.writes import STORES, Busy, SplitError, WriteLine, split_files
 from examples.playground.models import Customer, registry
-from test_business import secured, hashed, client  # noqa: F401
+from support import client
 from test_eva import make
 
 

@@ -3,7 +3,7 @@
 import pytest
 
 from evlet import Currency, Link, Model, Percent, Registry, Select, Text
-from test_business import client, hashed, secured  # noqa: F401
+from support import client
 
 
 class Company(Model):

@@ -33,10 +33,10 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from . import qb
 from .adapter import Column, TableDefinition
-from .auth import AccessError, User
+from .auth import AccessError, User, is_loopback
 from . import secrets as vault
 from .connectors import (ADDRESS, NOT_ALLOWED, PUBLIC_ONLY, REJECTED, TIMEOUT, UNREACHABLE, ConnectionFailed, Connector, ConnectorField,
-                         Connectors, SecretKeyError, _loopback, check_imap, check_smtp, mailbox_context, open_imap, run_with_timeout,
+                         Connectors, SecretKeyError, check_imap, check_smtp, mailbox_context, open_imap, run_with_timeout,
                          safe_address, scrub, state_context)
 from .controls import NOT_FOUND, audit
 from .fields import Email
@@ -243,7 +243,7 @@ def key_of(message_id):
 
 
 def security_for(host, port):
-    return 'none' if _loopback(host) else 'ssl' if port in (465, 993) else 'starttls'
+    return 'none' if is_loopback(host, name=True) else 'ssl' if port in (465, 993) else 'starttls'
 
 
 def safe_url(value, *, fetch):
@@ -254,7 +254,7 @@ def safe_url(value, *, fetch):
     except ValueError:
         raise ConnectionFailed(NOT_ALLOWED) from None
     if url.scheme not in ('https', 'http') or not url.hostname or url.username or url.password or url.fragment \
-            or (url.scheme == 'http' and not _loopback(url.hostname)):
+            or (url.scheme == 'http' and not is_loopback(url.hostname, name=True)):
         raise ConnectionFailed(NOT_ALLOWED)
     return (url, port, safe_address(url.hostname, port, local=url.scheme == 'http')) if fetch else (url, port, None)
 
@@ -382,7 +382,7 @@ class Mailboxes:
                 errors[f'{kind}_port'] = 'Use a port from 1 to 65535.'
                 continue
             host = host.strip()
-            if PUBLIC_SERVERS_ONLY and _loopback(host):
+            if PUBLIC_SERVERS_ONLY and is_loopback(host, name=True):
                 errors[f'{kind}_host'] = PUBLIC_ONLY
                 continue
             security = body.get(f'{kind}_security', security_for(host, port))
@@ -390,7 +390,7 @@ class Mailboxes:
                 errors[f'{kind}_security'] = 'Choose SSL/TLS, STARTTLS or None.'
             elif security == 'none' and PUBLIC_SERVERS_ONLY:
                 errors[f'{kind}_security'] = 'Choose STARTTLS or SSL/TLS. A personal mailbox needs an encrypted connection.'
-            elif security == 'none' and not _loopback(host):
+            elif security == 'none' and not is_loopback(host, name=True):
                 errors[f'{kind}_security'] = 'Without encryption the mail server must be on this machine. Choose STARTTLS or SSL/TLS.'
             elif (security != 'none' or PUBLIC_SERVERS_ONLY) and port not in ports:
                 *head, last = (str(item) for item in ports)

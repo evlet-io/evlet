@@ -5,7 +5,7 @@ import pytest
 from evlet import Child, Currency, Decimal, Model, Registry, Select, Table, Text
 from evlet.calc import CalcError, Document, F
 from finite_fixtures import FiniteMeta
-from test_business import client
+from support import client
 from test_rules_types import ALL, application, patch
 
 

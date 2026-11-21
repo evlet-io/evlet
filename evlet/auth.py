@@ -15,12 +15,12 @@ import secrets
 import time
 from threading import BoundedSemaphore, Lock
 from types import MappingProxyType
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 from . import qb
 from .adapter import Column, TableDefinition
 from .models import ValidationError
-from .identity import RecordId
+from .identity import RecordId, path_id
 
 # Framework roles. Custom roles live in evlet_roles; Policy.roles maps every role to its base.
 ROLES = ('admin', 'editor', 'viewer')
@@ -188,6 +188,38 @@ class AccessError(Exception):
         self.status, self.message = status, message
 
 
+def allow(method, *methods):
+    """Raise 405 unless the request method is one of methods."""
+    if method not in methods:
+        raise AccessError(405, 'Method not allowed')
+
+
+def record_in(parts, index=3, message='Record not found'):
+    """The record id at parts[index] of a split API path, or a 404."""
+    record_id = path_id(parts[index]) if len(parts) > index else None
+    if record_id is None:
+        raise AccessError(404, message)
+    return record_id
+
+
+def page_query(raw, *, default, maximum, message, extra=(), size=256, max_offset=2**63 - 1):
+    """(limit, offset, {extra name: value or None}) from a ?limit=&offset= query string, or a 400.
+
+    Each key at most once, no unknown keys, decimal digits only. maximum None leaves the limit's
+    range to the caller."""
+    try:
+        query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=2 + len(extra)) if len(raw) <= size else None
+        if query is None or set(query) - {'limit', 'offset', *extra} or any(len(values) != 1 for values in query.values()):
+            raise ValueError()
+        limit, offset = query.get('limit', [str(default)])[0], query.get('offset', ['0'])[0]
+        if not re.fullmatch('[0-9]{1,19}', limit) or not re.fullmatch('[0-9]{1,19}', offset) or int(offset) > max_offset \
+                or (maximum is not None and not 1 <= int(limit) <= maximum):
+            raise ValueError()
+    except (ValueError, UnicodeError):
+        raise ValidationError({'query': message}) from None
+    return int(limit), int(offset), {name: query.get(name, [None])[0] for name in extra}
+
+
 @dataclass(frozen=True)
 class KeyAccess:
     """What an API key narrows its user to: reads only or reads and writes, on every model or on these."""
@@ -325,6 +357,17 @@ def client_address(scope, trusted_proxies=()):
         if not state:
             break
     return current
+
+
+def is_loopback(host, *, name=False):
+    """Whether host is a loopback address (IPv4-mapped IPv6 included); with name, also 'localhost'."""
+    if name and host == 'localhost':
+        return True
+    try:
+        ip = ipaddress.ip_address(host)
+    except (TypeError, ValueError):
+        return False
+    return (ip.ipv4_mapped or ip).is_loopback if ip.version == 6 else ip.is_loopback
 
 
 def client_network(address):

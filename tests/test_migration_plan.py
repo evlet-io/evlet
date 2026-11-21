@@ -136,7 +136,7 @@ def test_plan_names_each_difference_writes_nothing_and_its_suggestion_migrates(p
     assert database_bytes(project) == before
 
     main(['migrate', 'acme', '--trust'])
-    assert 'app6_people__0001_dependents' in capsys.readouterr().out
+    assert 'Applied migrations: people 0001_dependents' in capsys.readouterr().out
     main(['migrate', 'acme', '--plan', '--trust'])
     assert 'The migrations produce the current models.' in capsys.readouterr().out
 
@@ -538,7 +538,7 @@ def test_cli_migrate_allow_destructive_keeps_a_backup(project, capsys):
     assert '--allow-destructive' in capsys.readouterr().err
     main(['migrate', 'acme', '--trust', '--allow-destructive'])
     output = capsys.readouterr().out
-    assert 'app6_people__0002_drop_reason' in output and 'Backup: ' in output
+    assert 'Applied migrations: people 0002_drop_reason' in output and 'Backup: ' in output
     backup = output.split('Backup: ')[1].strip()
     with sqlite3.connect(backup) as connection:
         assert connection.execute('SELECT reason FROM leaveapplication').fetchall() == [('Annual',)]

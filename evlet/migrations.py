@@ -1531,11 +1531,16 @@ def run_data(connection, registry, migration, *, seed_only=False):
             logger.warning('Data step %s of %s ran with maintenance access', operation.label(), migration.name)
 
 
-def migrate(database, migrations, *, recompute_posted=False, allow_destructive=False, allow_maintenance=False):
+def migrate(database, migrations, *, recompute_posted=False, allow_destructive=False, allow_maintenance=False, new_apps=()):
     """Apply pending migrations in one transaction. `recompute_posted=True`, an admin's explicit choice (the
     `--recompute-posted` flag of `evlet migrate`), lets Recompute recalculate posted records too.
     `allow_destructive=True` (`--allow-destructive`) permits DropField, and `allow_maintenance=True`
-    (`--allow-maintenance`) RunData steps declared with maintenance=True."""
+    (`--allow-maintenance`) RunData steps declared with maintenance=True.
+
+    `new_apps` holds one (tables, migration names) pair per app being installed on a database that already
+    has other apps. An app none of whose tables are in the saved schema and none of whose migrations ran is
+    installed like a first install: its tables are created from the current models and its migrations are
+    recorded without running (only their seed steps run)."""
     migrations, checksums = _migration_plan(migrations)
     with database.schema_transaction() as connection:
         try:
@@ -1554,12 +1559,17 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
             steps = {}
             if saved:
                 ledger_switch(saved[0], database.registry)
+            created, adopted = _new_apps(saved and saved[0], history, pending, database.registry, new_apps)
             if saved and (history or not _same(saved[0], database.registry)):
-                planned = _planned_definition(saved[0], pending, steps, migrations[:len(history)])
+                planned = _planned_definition(saved[0], [item for item in pending if item.name not in adopted], steps,
+                                              migrations[:len(history)])
+                if created:
+                    planned['models'].extend(model for model in database.registry.schema()['models'] if model['name'] in created)
                 if _comparable(planned) != _comparable(database.registry.schema()):
                     raise mismatch(planned, database.registry.schema())
-                destructive(pending, allow_destructive)
-                maintenance_steps(pending, allow_maintenance)
+                running = [item for item in pending if item.name not in adopted]
+                destructive(running, allow_destructive)
+                maintenance_steps(running, allow_maintenance)
             # A new database initialized directly from current models already has
             # the target schema. Explicit migration adopts that verified baseline.
             baseline = not history and saved and _same(saved[0], database.registry)
@@ -1567,15 +1577,18 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
                 for name, model in database.registry.models.items():
                     _create(connection, name, model)
             pending = migrations[len(history):]
-            if not pending and saved and not _same(saved[0], database.registry):
+            if not pending and not created and saved and not _same(saved[0], database.registry):
                 raise SchemaError('Changed model definitions require a new migration')
             if not fresh:
                 # Data migrations write through Session, which fills the record time columns, so existing
                 # tables get them before any step runs (framework step 0004 does the same without migrations).
                 for table in sorted(_tables(connection) - ledger_tables(database.registry)):
                     add_audit_columns(connection, table)
+            # A newly installed app gets today's tables, as on a first install, before any step writes to them.
+            for table in sorted(created):
+                _create(connection, table, database.registry.models[table])
             for position, migration in enumerate(pending, len(history) + 1):
-                if not fresh and not baseline:
+                if not fresh and not baseline and migration.name not in adopted:
                     for operation in migration.operations:
                         # A schema change of an append-only table runs with its guard lifted, in this transaction only.
                         lifted = isinstance(operation, LIFTED) and connection.table_exists(operation.table) \
@@ -1596,7 +1609,8 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
                 connection.run(qb.insert('evlet_migrations', position=position, name=migration.name, checksum=checksums[position - 1]))
             applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
-                applied.skipped, applied.posted = _recompute(connection, database.registry, recomputes(pending), lambda db: db.table_exists('evlet_calculation_versions'),
+                applied.skipped, applied.posted = _recompute(connection, database.registry,
+                    recomputes([item for item in pending if item.name not in adopted]), lambda db: db.table_exists('evlet_calculation_versions'),
                     include_posted=recompute_posted)
             # The batch ends with the models' standard name and title columns (framework step 0003 does
             # the same for instances that have no app migration to run).
@@ -1613,6 +1627,24 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
             if isinstance(exc, SchemaError):
                 raise
             raise SchemaError(f'Migration rolled back: {exc}') from exc
+
+
+def _new_apps(saved, history, pending, registry, new_apps):
+    """The tables to create and the migration names to record without running for apps installed on a database
+    that already has a saved schema (see migrate()). An app that already left tables or history is migrated as usual."""
+    if not saved:
+        return frozenset(), frozenset()
+    existing = {model['name'] for model in json.loads(saved)['models']}
+    ran = {row['name'] for row in history}
+    waiting = {item.name for item in pending}
+    created, adopted = set(), set()
+    for tables, names in new_apps:
+        tables, names = set(tables), set(names)
+        if not tables or tables & existing or names & ran or not names <= waiting or not tables <= registry.models.keys():
+            continue
+        created |= tables
+        adopted |= names
+    return frozenset(created), frozenset(adopted)
 
 
 @dataclass(frozen=True)

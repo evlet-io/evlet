@@ -2,7 +2,7 @@
 
 from evlet import Child, Database, Model, Registry, Rule, State, Table, Text, ValidationError, qb, validate
 from finite_fixtures import FiniteMeta
-from test_business import client
+from support import client
 from test_rules_types import start
 from test_states import etag
 

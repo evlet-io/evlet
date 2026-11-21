@@ -5,7 +5,7 @@ from evlet import Boolean, Currency, Database, Link, Model, Query, Ref, Referenc
 from evlet.calc import F
 from evlet.permissions import calling
 from finite_fixtures import FiniteMeta
-from test_business import client
+from support import client
 from test_rules_types import add_user, start
 
 ALL = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update'))}

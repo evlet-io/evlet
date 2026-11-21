@@ -8,7 +8,7 @@ from evlet.auth import AccessError, User
 from evlet.calc import F
 from evlet import Prompt
 from finite_fixtures import FiniteMeta
-from test_business import client
+from support import client
 from test_rules_types import ALL, add_user, start
 
 HIDDEN = {**ALL, 'editor': Rule(('read', 'create', 'update'), read_fields=('customer', 'title', 'remarks', 'approved', 'total',
@@ -467,7 +467,7 @@ class Ticket(Model):
 
 def test_states_and_actions_work_on_roots_without_calculations(tmp_path):
     from evlet import Application, LocalAuth
-    from test_business import http, PASSWORD
+    from support import http, PASSWORD
     registry = Registry(Ticket)
     assert Ticket not in registry.plans and Ticket in registry.guard_plans
     db = Database(tmp_path / 'tickets.sqlite3', registry)
@@ -574,7 +574,7 @@ class Folder(Model):
 
 def test_attachments_on_document_models_and_locked_records(tmp_path):
     from evlet import Application, LocalAuth
-    from test_business import http, PASSWORD
+    from support import http, PASSWORD
     db = Database(tmp_path / 'files.sqlite3', Registry(Plain, Folder, Invoice, Customer))
     app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
                       attachments=(Plain, Folder, Invoice))
@@ -671,7 +671,7 @@ def test_guards_work_on_roots_with_legacy_string_calculations(tmp_path):
 
 def test_sessions_change_a_state_only_inside_maintenance(tmp_path):
     from evlet import Application, LocalAuth
-    from test_business import http, PASSWORD
+    from support import http, PASSWORD
     db = Database(tmp_path / 'tickets.sqlite3', Registry(Ticket))
     db.initialize()
     with db.transaction() as tx:

@@ -13,7 +13,7 @@ import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Cell, type
 import type { Route } from '../router';
 import { RecordStore, type Field, type Row, type Rules } from '../model/record';
 import { loadScript, ScriptHost, type ScriptPage } from '../model/script';
-import type { FieldSchema } from '../model/schema';
+import { can, type FieldSchema } from '../model/schema';
 import { tooltip } from '../ui/tooltip';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildTable, type ChildTableControls } from '../ui/childtable';
@@ -209,9 +209,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const { api, router, prefs } = ctx;
   const { isNew, extras, panel } = options;
   const name = model.name, look = identity(model);
-  const canUpdate = model.api !== 'read' && model.permissions?.update !== false;
+  const canUpdate = can(model, 'update');
   // The role may create records of this model: what the list's New button reads.
-  const canCreate = model.api !== 'read' && model.permissions?.create !== false;
+  const canCreate = can(model, 'create');
   const canWrite = isNew ? canCreate : canUpdate;
   const state = model.state && fieldOf(model, model.state.field) ? model.state : null;
   const locked = derive(() => Boolean(extras.get()._locked));
@@ -458,7 +458,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     void Promise.resolve(going).then(done => { if (done === false) dropDuplicate(name); });
   };
   // A record that ever posted is kept (its entries name it), so the server refuses its delete.
-  const canDelete = () => !isNew && model.api !== 'read' && Boolean(model.permissions?.delete) && !locked.peek() && extras.peek()._deletable !== false;
+  const canDelete = () => !isNew && can(model, 'delete') && !locked.peek() && extras.peek()._deletable !== false;
   const moreItems = (): MenuItem[] => {
     const items: MenuItem[] = [{ label: 'Copy link', icon: 'link', onSelect: () => void copyText(location.href, 'the link') }];
     if (!isNew) items.push({ label: 'Copy record ID', icon: 'copy', onSelect: () => void copyText(String(store.id), 'the record ID') },
@@ -1205,7 +1205,7 @@ export function RecordFooter(ctx: AppContext, model: ScreenModel, id: string): H
 /** The print preview: the PDF the server renders for this person, with Download and File a copy. */
 export function openPrint(ctx: AppContext, model: ScreenModel, id: string, title: string, designs: Array<{ name: string; title: string }>) {
   const design = cell(designs[0].name);
-  const canFile = Boolean(model.attachments) && model.api !== 'read' && model.permissions?.update !== false;
+  const canFile = Boolean(model.attachments) && can(model, 'update');
   const fileCopy = async () => {
     try {
       const file = await ctx.api.fileCopy(model.name, id, design.peek());
@@ -1235,7 +1235,7 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
   const changed = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.model === model.name && detail?.id === store.id) void load(); };
   window.addEventListener('evlet-files-changed', changed);
   onCleanup(() => window.removeEventListener('evlet-files-changed', changed));
-  const canWrite = model.api !== 'read' && model.permissions?.update !== false;
+  const canWrite = can(model, 'update');
   // The files of a locked record cannot change: the server refuses with 409.
   const locked = () => Boolean(extrasOf(ctx.api.detail(model.name, store.id!).get())._locked);
   const limits = model.attachment_limits ?? { max_files: 10, max_size: 1_048_576 };

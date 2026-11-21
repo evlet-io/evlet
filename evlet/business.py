@@ -16,11 +16,11 @@ from urllib.parse import parse_qs, quote
 from . import qb
 from .adapter import Column, TableDefinition
 from .audit import actor_id, detail as audit_detail
-from .auth import ADMINISTRATOR, AccessError, has_role
+from .auth import ADMINISTRATOR, AccessError, allow, has_role, page_query
 from .identity import RecordId, checked as item_id, path_id
 from .naming import drop_echoes
 from .database import ROW_LIMIT, Session, using
-from .fields import Link
+from .fields import Link, size_text
 from .ui.metadata import view_for
 from .models import ChildTable, ValidationError, identifier
 from .permissions import CORRECTIONS, Policy, calling, read_only
@@ -68,13 +68,6 @@ EMPTY_EXPRESSIONS = {'compute': None, 'initial': None, 'applies_when': None, 're
 @dataclass(frozen=True)
 class Download:
     content: bytes
-
-
-def size_text(size):
-    for unit, scale in (('MiB', 1024 * 1024), ('KiB', 1024)):
-        if size % scale == 0:
-            return f'{size // scale} {unit}'
-    return '1 byte' if size == 1 else f'{size} bytes'
 
 
 class Gate:
@@ -125,6 +118,9 @@ class Business:
         self.tenant = None
         self.gate = Gate()
         self.application = None
+        # Set by Application: the route table, reports, API endpoints, workspaces, print designs and sign-in flow.
+        self.routes = self.forms = self.workspaces = self.prints = self.oidc = None
+        self.apis = ()
         self.jobs, self.events = jobs, events
         if jobs is not None: jobs.business = self
         if any(service is not None and service.database is not database for service in (jobs, events)):
@@ -230,10 +226,10 @@ class Business:
         images.initialize(self.database)
         mentions.initialize(self.database)
         self.settings.initialize()
-        if getattr(self, 'oidc', None) is not None:
+        if self.oidc is not None:
             self.oidc.initialize()
         self.unsaved.initialize()
-        if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
+        if any(endpoint.public for endpoint in self.apis):
             with self.database.transaction() as tx:
                 tx.connection.ensure_table(PUBLIC_LIMITS)
         if self.registry.plans:
@@ -261,7 +257,7 @@ class Business:
         from .prompts import ensure_tickets
         with self.database.transaction() as tx:
             ensure_tickets(tx.connection)
-        if getattr(self, 'prints', None) is not None:
+        if self.prints is not None:
             self.prints.initialize()
         if self.events:
             self.events.initialize()
@@ -349,20 +345,20 @@ class Business:
 
     def schema(self, user):
         result = self.registry.ui_schema()
-        if getattr(self, 'forms', None) and self.forms.reports:
+        if self.forms and self.forms.reports:
             result['reports'] = self.forms.catalog(user)
-            if getattr(self, 'prints', None) is not None:
+            if self.prints is not None:
                 for entry in result['reports']:
                     designs = self.prints.for_report(user, self.forms.reports[entry['name']])
                     if designs:
                         entry['prints'] = designs
-        if getattr(self, 'prints', None) is not None and self.prints.designs:
+        if self.prints is not None and self.prints.designs:
             from .printing import available
             result['printing'] = {'available': available()}
         if self.events or self.jobs:
             result['capabilities'] = {'events': self.events is not None, 'jobs': self.jobs is not None}
         # How the currency codes an admin changed are shown (evlet.currencies); every other code keeps the default.
-        displays = self.controls.settings.get('display.currencies') if getattr(self, 'controls', None) is not None else None
+        displays = self.controls.settings.get('display.currencies') if self.controls is not None else None
         if displays:
             result['currency_display'] = displays
         # Decimal places of every code that does not have 2: ISO 4217 with this site's changes (evlet.currencies).
@@ -370,6 +366,9 @@ class Business:
         result['currency_decimals'] = decimals_table(displays)
         if self.tenant:
             result['tenant'] = self.tenant
+        # The IANA zone the server dates today() in (Instance.timezone, UTC by default), so the browser's
+        # calculation previews and date pickers pick the same day as the save.
+        result['timezone'] = self.timezone or 'UTC'
         available = {name for name, model in self.registry.models.items() if self.policy.allows(user, model, 'read')}
         result['models'] = [entry for entry in result['models'] if entry['name'] in available]
         for entry in result['models']:
@@ -455,7 +454,7 @@ class Business:
                         field['placeholder'] = placeholder
             entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
             # The designs this role may print the model with; absent when there are none.
-            designs = self.prints.for_model(user, model) if getattr(self, 'prints', None) is not None else []
+            designs = self.prints.for_model(user, model) if self.prints is not None else []
             if designs:
                 entry['prints'] = designs
             from .permissions import corrects
@@ -536,13 +535,13 @@ class Business:
             if plan is not None:
                 entry['calculation'] = self.calculation_projection(user, model, plan)
         # Named sidebars, after the models and reports above are filtered for this role (evlet.workspaces).
-        if getattr(self, 'workspaces', None) is not None:
+        if self.workspaces is not None:
             result['workspaces'] = self.workspaces.schema(user, result)
         return result
 
     def docs_path(self, scope, user):
         """Where Docs are for this request, or None: off, on a sub-host, or outside Docs(roles=...)."""
-        routes = getattr(self, 'routes', None)
+        routes = self.routes
         if routes is None or not routes.docs or routes.scopes(dict(scope.get('headers', [])).get(b'host', b'')) is not None:
             return None
         if routes.docs_roles and (user is None or not has_role(user, routes.docs_roles)):
@@ -582,7 +581,7 @@ class Business:
                     info['docs'] = self.docs_path(scope, None)
                 extra = {'application': info} if info else {}
                 # First-run setup creates an admin, so it asks for config.py's admin minimum.
-                if getattr(self, 'oidc', None) is not None and (provider := self.oidc.options(scope)) is not None:
+                if self.oidc is not None and (provider := self.oidc.options(scope)) is not None:
                     extra['oidc'] = provider
                 if self.auth.allow_setup and self.auth.setup_needed():
                     extra['password_min'] = self.auth.minimum('admin')
@@ -639,15 +638,15 @@ class Business:
         if path.startswith('/api/_prompts/'):
             from .prompts import dispatch
             return dispatch(self, scope, body, user)
-        prints = getattr(self, 'prints', None)
+        prints = self.prints
         if prints is not None and path == '/api/_prints':
-            if method != 'GET': raise AccessError(405, 'Method not allowed')
+            allow(method, 'GET')
             return 200, prints.catalog(user), []
         if prints is not None and path.startswith('/api/_reports/') and path.count('/') == 5 and path.split('/')[4] == 'prints':
-            if method != 'POST': raise AccessError(405, 'Method not allowed')
+            allow(method, 'POST')
             _, _, _, report, _, design = path.split('/')
             return prints.report_pdf(report, design, body, user)
-        if getattr(self, 'forms', None) and (path == '/api/_reports' or path.startswith('/api/_reports/')):
+        if self.forms and (path == '/api/_reports' or path.startswith('/api/_reports/')):
             return self.forms.dispatch(scope, body, user)
         if path.startswith('/api/_draft/') and method == 'POST':
             from .documents import load_draft, settle, source_values, walk
@@ -805,7 +804,6 @@ class Business:
             # People to mention in this record's activity, with whether each can open the record.
             if path_id(parts[3]) is None or method != 'GET': raise AccessError(404, 'Route not found')
             if model not in self.activities: raise AccessError(404, 'This record has no activity')
-            from urllib.parse import parse_qs
             from .mentions import mentionable
             query = parse_qs(scope.get('query_string', b'').decode('latin-1'))
             with self.database.transaction() as tx:
@@ -905,16 +903,14 @@ class Business:
             raise AccessError(404, 'Record not found')
         record_id = path_id(parts[3])
         if len(parts) >= 6 and parts[4] == 'lines':
-            if method != 'GET':
-                raise AccessError(405, 'Method not allowed')
+            allow(method, 'GET')
             return self.lines(scope, user, model, record_id, parts[5:])
         if len(parts) >= 5 and parts[4] == 'related':
-            if method != 'GET':
-                raise AccessError(405, 'Method not allowed')
+            allow(method, 'GET')
             return self.related(scope, user, model, record_id, parts[5:])
         if len(parts) >= 5 and parts[4] == 'attachments':
             return self.files(user, model, record_id, parts[5:], method, body)
-        if len(parts) >= 6 and parts[4] == 'prints' and getattr(self, 'prints', None) is not None:
+        if len(parts) >= 6 and parts[4] == 'prints' and self.prints is not None:
             return self.prints.record_pdf(scope, user, model, record_id, parts[5:], method)
         if len(parts) != 4 or method not in ('GET', 'PATCH', 'DELETE'):
             raise AccessError(405, 'Method not allowed')
@@ -1436,19 +1432,8 @@ class Business:
 
     def lines(self, scope, user, model, record_id, path):
         """GET /api/{model}/{id}/lines/{name}[/{row id}/{name}...]: one page of a readable owned collection."""
-        try:
-            raw = scope.get('query_string', b'')
-            query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=2) if len(raw) <= 256 else None
-            if query is None or set(query) - {'limit', 'offset'} or any(len(values) != 1 for values in query.values()):
-                raise ValueError()
-            limit, offset = query.get('limit', [str(EMBEDDED_ROWS)])[0], query.get('offset', ['0'])[0]
-            if not re.fullmatch('[0-9]{1,19}', limit) or not re.fullmatch('[0-9]{1,19}', offset):
-                raise ValueError()
-            limit, offset = int(limit), int(offset)
-            if not 1 <= limit <= ROW_LIMIT or offset > 2**63-1:
-                raise ValueError()
-        except (ValueError, UnicodeError):
-            raise ValidationError({'query': f'Use a limit of 1 to {ROW_LIMIT} rows and a nonnegative offset'})
+        limit, offset, _ = page_query(scope.get('query_string', b''), default=EMBEDDED_ROWS, maximum=ROW_LIMIT,
+                                      message=f'Use a limit of 1 to {ROW_LIMIT} rows and a nonnegative offset')
         if len(path) % 2 != 1:
             raise AccessError(404, 'Route not found')
         with self.database._connection() as connection:
@@ -1529,19 +1514,8 @@ class Business:
         relation = next((item for item in self.visible_relations(user, model) if len(path) == 1 and item.name == path[0]), None)
         if relation is None:
             raise AccessError(404, 'Relation not found')
-        try:
-            raw = scope.get('query_string', b'')
-            query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=2) if len(raw) <= 256 else None
-            if query is None or set(query) - {'limit', 'offset'} or any(len(values) != 1 for values in query.values()):
-                raise ValueError()
-            limit, offset = query.get('limit', [str(relation.limit)])[0], query.get('offset', ['0'])[0]
-            if not re.fullmatch('[0-9]{1,19}', limit) or not re.fullmatch('[0-9]{1,19}', offset):
-                raise ValueError()
-            limit, offset = int(limit), int(offset)
-            if not 1 <= limit <= ROW_LIMIT or offset > 2**63-1:
-                raise ValueError()
-        except (ValueError, UnicodeError):
-            raise ValidationError({'query': f'Use a limit of 1 to {ROW_LIMIT} rows and a nonnegative offset'})
+        limit, offset, _ = page_query(scope.get('query_string', b''), default=relation.limit, maximum=ROW_LIMIT,
+                                      message=f'Use a limit of 1 to {ROW_LIMIT} rows and a nonnegative offset')
         source = relation.source
         order = self.relation_order(user, relation)
         with self.database._connection() as connection:
@@ -1575,35 +1549,32 @@ class Business:
 
     def page(self, scope, user, model):
         self.policy.require(user, model, 'read')
+        limit, offset, query = page_query(scope.get('query_string', b''), default=50, maximum=ROW_LIMIT, size=8192,
+                                          message='Invalid query parameters', extra=('filters', 'order_by', 'q', 'awaiting'))
         try:
-            raw = scope.get('query_string', b'')
-            if len(raw) > 8192:
-                raise ValueError()
-            query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=10)
-            if set(query) - {'limit', 'offset', 'filters', 'order_by', 'q', 'awaiting'} or any(len(values) != 1 for values in query.values()) \
-                    or query.get('awaiting', ['me']) != ['me']:
+            if query['awaiting'] not in (None, 'me'):
                 raise ValueError()
             import json
-            filters = json.loads(query.get('filters', ['{}'])[0])
-            order = query.get('order_by', [self.controls.custom.default_order(self.policy, user, model)])[0].split(',')
-            limit, offset = int(query.get('limit', ['50'])[0]), int(query.get('offset', ['0'])[0])
-            if not isinstance(filters, (dict, list)) or not 1 <= limit <= ROW_LIMIT or not 0 <= offset <= 2**63-1:
+            filters = json.loads('{}' if query['filters'] is None else query['filters'])
+            if not isinstance(filters, (dict, list)):
                 raise ValueError()
-        except (ValueError, UnicodeError, RecursionError):
+        except (ValueError, RecursionError):
             raise ValidationError({'query': 'Invalid query parameters'})
+        order = query['order_by']
+        order = (self.controls.custom.default_order(self.policy, user, model) if order is None else order).split(',')
         children = self.children.values()
         self.policy.query_fields(user, model, filters, order, database=self.database, children=children)
         compiler = SqlQuery(self.registry, model, children=children)
         readable = self.policy.fields(user, model)
         search_fields = [name for name in view_for(model)['search_fields'] if name in readable]
-        where = [item for item in (compiler.where(filters, query.get('q', [''])[0], search_fields=search_fields),
+        where = [item for item in (compiler.where(filters, query['q'] or '', search_fields=search_fields),
                                    self.policy.scope(user, model)) if not qb.always(item)]
         ordering = compiler.ordering(order)
         table = qb.table(self.registry.name_for(model), 'record')
         with self.database._connection() as connection:
             connection.snapshot()
             tx = Session(connection, self.registry)
-            if 'awaiting' in query:
+            if query['awaiting'] is not None:
                 # Awaiting my approval: records whose waiting approval level this user may approve.
                 from .documents import Context
                 from .statemanager import awaiting

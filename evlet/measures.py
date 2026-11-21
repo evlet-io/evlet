@@ -16,8 +16,7 @@ import re
 from urllib.parse import parse_qs
 
 from . import qb
-from .auth import AccessError
-from .identity import path_id
+from .auth import AccessError, allow, record_in
 from .fields import COLORS, Boolean, Date, DateTime, Decimal, Integer, Link, LongText, Reference, Tags
 from .models import build_step, Model, ValidationError
 from .query import SqlQuery
@@ -928,13 +927,8 @@ def parse_groups(text):
 def route(business, scope, user, model, parts):
     """GET-only measure routes on a model."""
     from .database import Session
-    if scope['method'] != 'GET':
-        raise AccessError(405, 'Method not allowed')
-    record_id = None
-    if len(parts) == 5:
-        if path_id(parts[3]) is None:
-            raise AccessError(404, 'Record not found')
-        record_id = path_id(parts[3])
+    allow(scope['method'], 'GET')
+    record_id = record_in(parts) if len(parts) == 5 else None
     business.policy.require(user, model, 'read')
     if parts[3] == 'list_tabs':
         query, filters = parameters(scope, {'filters', 'q'})

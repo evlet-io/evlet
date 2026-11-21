@@ -1,8 +1,6 @@
 """Compact, permission-filtered descriptions of the existing HTTP contract."""
 
-from urllib.parse import parse_qs
-
-from .auth import AccessError
+from .auth import AccessError, page_query
 from .identity import SCHEMA as ID_SCHEMA
 from .models import ValidationError
 from .query import OPERATORS
@@ -206,18 +204,11 @@ class Discovery:
         return ['read', *[name for name, allowed in entry['permissions'].items() if allowed]]
 
     def catalog(self, query):
-        try:
-            if len(query) > 8192:
-                raise ValueError()
-            params = parse_qs(query.decode('ascii'), keep_blank_values=True, max_num_fields=3)
-            if set(params) - {'limit', 'offset', 'q'} or any(len(values) != 1 for values in params.values()):
-                raise ValueError()
-            limit, offset = int(params.get('limit', ['50'])[0]), int(params.get('offset', ['0'])[0])
-            search = params.get('q', [''])[0].casefold()
-            if not 1 <= limit <= 100 or not 0 <= offset <= 2**63 - 1 or len(search) > 200:
-                raise ValueError()
-        except (ValueError, UnicodeError):
-            raise ValidationError({'query': 'Use limit 1 to 100, a nonnegative offset, and an optional search up to 200 characters'})
+        message = 'Use limit 1 to 100, a nonnegative offset, and an optional search up to 200 characters'
+        limit, offset, params = page_query(query, default=50, maximum=100, size=8192, message=message, extra=('q',))
+        search = (params['q'] or '').casefold()
+        if len(search) > 200:
+            raise ValidationError({'query': message})
         roots = [entry for entry in self.models.values() if not entry['child_only']]
         matches = [entry for entry in roots if search in (entry['name'] + ' ' + entry['label']).casefold()]
         capabilities = {'operations': sorted({operation for entry in roots for operation in self.operations(entry)}),

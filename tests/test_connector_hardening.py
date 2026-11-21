@@ -12,7 +12,7 @@ from evlet import ConnectionFailed, Connector, ConnectorField
 from evlet import connectors as module
 from evlet.connectors import scrub
 from evlet.secrets import SecretKey, rotate
-from test_business import client, hashed
+from support import client
 from test_connectors import MAIL_PASSWORD, SECRET, account, app, build, mail_servers, serve
 
 

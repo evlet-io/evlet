@@ -49,6 +49,30 @@ finite-v1 document. Its owned tables inherit the plan. Legacy string formulas
 (`compute="qty * rate"`) keep the legacy compiler and HALF_EVEN profile. One root cannot
 mix the two. Finite-v1 roots do not support `Query` sources yet.
 
+### Two formula languages
+
+A field can be computed in two languages. Write new formulas with `F(...)` (this guide);
+string formulas are the older language. They round differently, so the same arithmetic can
+store a different last digit:
+
+| | `F(...)` expressions (finite-v1) | String formulas (legacy) |
+| --- | --- | --- |
+| Written as | `compute=F("qty") * F("rate")`, `applies_when=`, `required_when=`, `locked_when=`, `visible_when=`, `initial=` | `compute="qty * rate"`, `visible_if=`, `required_if=`, `read_only_if=` |
+| Division | 18 places, half up | 18 places, half even |
+| Result stored in a field | The field's `rounding`: half up for `Currency` and `Integer`, half even for `Decimal` | Always half even, whatever `rounding` says |
+| `round(x, n)` | Half up | Not available |
+| Example: `Currency` result `1.005` (`qty` 1.005 times `rate` 1) | `1.01` | `1.00` |
+
+Which one a model uses is decided per root document, not per field: one `F(...)` compute,
+`initial=` or `*_when` rule anywhere in the root or its tables switches the whole tree to
+finite-v1, and then every computed field in it rounds as in the first column. A root cannot
+hold both kinds of formula; registration refuses the mix with `UNSUPPORTED_EXPRESSION`. Set
+`Meta.calculation_language = "finite-v1"` to make the choice visible in the model. Switching an
+existing model's formulas from strings to `F(...)` can change stored results at the last
+place, so recompute and compare them in a test first (`Recompute` in a migration recalculates
+stored values). This page does not change which language a model uses; it only says how each
+rounds.
+
 ## Operators
 
 The language is closed:
@@ -351,7 +375,7 @@ Rules may read fields or Link paths the user cannot read; the server enforces th
 
 ### Rule guards and action availability
 
-`State.Rule(..., when=...)` and `@action(..., available_when=...)` use the same language and are
+`State.Move(..., when=...)` and `@action(..., available_when=...)` use the same language and are
 decided like `locked_when`: on the record as saved, in the write's transaction, with pending
 or error results blocking. They are compiled with the document at registration but are not
 entries of the shipped plan, so they do not change any plan or formula hash. A State field is

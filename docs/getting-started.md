@@ -53,8 +53,11 @@ evlet install notes --instance acme
 
 Installation asks whether you trust the app. Python app code runs on your
 computer, so review downloaded apps before accepting. For scripts, use `--trust`
-after that review. Installation creates the site's database and records the app
-version and contents in `instances/acme/apps.lock`.
+after that review. Installation creates the site's database, creates the app's
+tables straight from its models, and records the app version and contents in
+`instances/acme/apps.lock`. That is the rule for every app new to an instance,
+including a second app installed later: its first models need no migration.
+From then on, every model change needs one (step 5).
 
 ## 4. Open it
 
@@ -83,8 +86,11 @@ The model is `apps/notes/models/item.py`. Presentation settings such as labels a
 `Meta.list_fields` live beside its fields. Use:
 
 ```sh
-evlet dev --instance acme
+evlet dev acme
 ```
+
+(`evlet dev --instance acme` is the same: every command that takes an instance
+accepts its name either way.)
 
 Python changes reload while you work. At startup it prints a one-time sign-in link for the
 built-in Administrator (`admin`; `--user NAME` signs in someone else). The Administrator has no
@@ -97,6 +103,20 @@ expired, and `evlet users set-password acme admin` to change the password from t
 explicit migration: stop the server, run `evlet makemigration notes --instance acme`,
 review the file it writes, then `evlet migrate acme`. Follow
 [What you can customize](customizing.md) for a complete example.
+
+## 6. Test it
+
+The new app has `apps/notes/tests/test_notes.py`. It starts a temporary instance
+of the app on real SQLite and sends requests through the real HTTP API as an
+editor, a viewer and an admin, so permissions and validation run as they do on
+your site:
+
+```sh
+.venv/bin/python -m pip install pytest
+.venv/bin/python -m pytest apps/notes/tests
+```
+
+[Testing an app](testing.md) describes `evlet.testing`.
 
 ## Another site, same app
 

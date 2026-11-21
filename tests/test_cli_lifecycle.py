@@ -584,7 +584,7 @@ def test_unchanged_migrate_does_not_create_backup(project):
 
 
 def test_instance_session_uses_its_name_and_unique_preference_identity(project):
-    from test_business import http
+    from support import http
     install(project, 'acme', app_name='notes', trust=True)
     create_instance(project, 'beta')
     install(project, 'beta', app_name='notes', trust=True)

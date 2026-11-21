@@ -7,7 +7,7 @@ from evlet import (Application, Column, Count, Currency, Database, Link, Report,
 from evlet.auth import LocalAuth, User
 from evlet.permissions import calling
 from finite_fixtures import FiniteMeta
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 from test_rules_types import ALL
 
 FULL = {**ALL, 'editor': Rule(('read', 'create', 'update', 'delete'))}

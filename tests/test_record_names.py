@@ -8,7 +8,7 @@ from evlet import (Application, Child, Database, LocalAuth, Model, Naming, Regis
                    User, ValidationError)
 from evlet.auth import AccessError
 from evlet.framework import upgrade
-from test_business import client, http, PASSWORD
+from support import client, http, PASSWORD
 
 FULL = Rule(('read', 'create', 'update', 'delete'))
 

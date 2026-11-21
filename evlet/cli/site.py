@@ -160,26 +160,83 @@ def installed(name):
     return Path(SYSTEMD_DIR) / f'evlet-{name}.service', Path(CADDY_DIR) / f'evlet-{name}.caddy'
 
 
-def differs(source, target):
-    """Whether an installed file is missing or not the same as the one in deploy/. Unreadable counts as different."""
+def differs(text, target):
+    """Whether an installed file is missing or does not hold text. Unreadable counts as different."""
     try:
-        return Path(target).read_bytes() != Path(source).read_bytes()
-    except OSError:
+        return Path(target).read_text(encoding='utf-8') != text
+    except (OSError, UnicodeError):
         return True
 
 
-def privileged_steps(root, name, restart=False):
+# Members of these groups can become root with sudo; a network-facing service should not run as one.
+PRIVILEGED_GROUPS = ('sudo', 'wheel', 'admin')
+
+
+def privileged_account(user):
+    """Why user should not run the service (root, or a member of sudo, wheel or admin), or None. Unknown accounts pass."""
+    import grp
+    import pwd
+    try:
+        entry = pwd.getpwnam(user)
+    except KeyError:
+        return None
+    if entry.pw_uid == 0:
+        return f'{user} is root'
+    for group in grp.getgrall():
+        if group.gr_name in PRIVILEGED_GROUPS and (user in group.gr_mem or group.gr_gid == entry.pw_gid):
+            return f'{user} is in the {group.gr_name} group and can use sudo'
+    return None
+
+
+def installed_user(name):
+    """The User= of the unit an earlier --apply installed (root owns it, so the app cannot change it), or None."""
+    try:
+        text = installed(name)[0].read_text(encoding='utf-8')
+    except (OSError, UnicodeError):
+        return None
+    users = [line.removeprefix('User=').strip() for line in text.splitlines() if line.startswith('User=')]
+    return users[0] if len(users) == 1 and users[0] else None
+
+
+def service_account(name, user=None):
+    """The account the service runs as, and whether it was chosen on purpose.
+
+    An explicit user or EVLET_SERVICE_USER wins and must not be root or a sudoer. Otherwise the account of
+    the unit already installed stays, and a first install uses the login user running setup, as before."""
+    import getpass
+    import os
+    chosen = user or os.environ.get('EVLET_SERVICE_USER', '').strip()
+    if chosen:
+        reason = privileged_account(chosen)
+        if reason:
+            raise ValueError(f'{reason}. Run the service as a dedicated account without sudo rights, such as evlet-{name}')
+        return chosen, True
+    return installed_user(name) or getpass.getuser(), False
+
+
+def account_note(user, chosen):
+    """A warning when the default service account can use sudo; nothing for a dedicated account."""
+    reason = None if chosen else privileged_account(user)
+    if reason:
+        return (f'Note: the service runs as {user}, and {reason}. A bug in an app then reaches root. Prefer a dedicated '
+                'account: see "Service account" in docs/production-operations.md, then set EVLET_SERVICE_USER.')
+    return None
+
+
+def privileged_steps(root, name, texts, restart=False):
     """The sudo commands that install the service and the Caddy site. Shown first; run only with --apply.
 
-    Every step runs again on each --apply, so a file that changed since the last install is replaced and
+    texts holds the unit, site and global options rendered by this command (keys unit, site, options). --apply
+    installs that text through standard input, never a file from deploy/, which the service account may be able to
+    rewrite. Every step runs again on each --apply, so a file that changed since the last install is replaced and
     Caddy reloads it. restart also restarts a service that was already running with an older unit."""
     deploy = root / 'deploy'
     unit, site = installed(name)
     options = Path(CADDY_DIR) / GLOBAL_FILE
     return [
-        ['sudo', 'install', '-m', '644', str(deploy / unit.name), str(unit)],
-        ['sudo', 'install', '-m', '644', str(deploy / site.name), str(site)],
-        ['sudo', 'install', '-m', '644', str(deploy / GLOBAL_FILE), str(options)],
+        ('install', str(deploy / unit.name), str(unit), texts['unit']),
+        ('install', str(deploy / site.name), str(site), texts['site']),
+        ('install', str(deploy / GLOBAL_FILE), str(options), texts['options']),
         ('import', str(site)),
         ('import-first', str(options)),
         ['sudo', 'systemctl', 'daemon-reload'],
@@ -239,6 +296,9 @@ def global_block(text):
 
 
 def describe(command):
+    if command[0] == 'install':
+        # The reviewed copy in deploy/ holds the same text --apply installs.
+        return shlex.join(['sudo', 'install', '-m', '644', command[1], command[2]])
     if command[0] == 'import-first':
         line, caddyfile = 'import ' + command[1], CADDYFILE
         return f'grep -qxF {shlex.quote(line)} {caddyfile} || sudo sed -i {shlex.quote("1i " + line)} {caddyfile}'
@@ -255,7 +315,10 @@ def run_privileged(commands, run=None):
         raise ValueError('--apply needs systemd and sudo. Run the printed steps on the server yourself')
     for command in commands:
         print('$ ' + describe(command))
-        if command[0] == 'import':
+        if command[0] == 'install':
+            # The text rendered in this process goes to root through a pipe, so nothing in deploy/ can be swapped in.
+            run(['sudo', 'install', '-m', '644', '/dev/stdin', command[2]], input=command[3], text=True, check=True)
+        elif command[0] == 'import':
             caddyfile, line = Path(CADDYFILE), 'import ' + command[1]
             if line not in caddyfile.read_text(encoding='utf-8').splitlines():
                 run(['sudo', 'tee', '-a', str(caddyfile)], input='\n' + line + '\n', text=True, check=True, stdout=subprocess.DEVNULL)
@@ -277,7 +340,6 @@ def run_privileged(commands, run=None):
 
 def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None, run=None, user=None):
     """Prepare a Caddy site for host: administrator, domain, files, DNS check, then the privileged steps."""
-    import getpass
     from ..auth import trusted_proxies_line
     from ..instances import load_runtime
     from . import proxy
@@ -295,20 +357,26 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
     with step('Caddy and service files'):
         app = load_runtime(root, name, port=port)
         app.database.close()
+        account, chosen = service_account(name, user)
         trusted = app.business.auth.trusted_proxies
+        texts = {'unit': proxy.systemd_unit(root, name, port, account),
+                 'site': proxy.caddy(app.routes, port, name, trusted, global_options=False), 'options': proxy.GLOBAL_OPTIONS}
         (root / 'deploy').mkdir(mode=0o755, exist_ok=True)
-        site = proxy.write(root / 'deploy' / f'evlet-{name}.caddy', proxy.caddy(app.routes, port, name, trusted, global_options=False))
-        proxy.write(root / 'deploy' / GLOBAL_FILE, proxy.GLOBAL_OPTIONS)
-        unit = proxy.write(root / 'deploy' / f'evlet-{name}.service', proxy.systemd_unit(root, name, port, user or getpass.getuser()))
+        site = proxy.write(root / 'deploy' / f'evlet-{name}.caddy', texts['site'])
+        proxy.write(root / 'deploy' / GLOBAL_FILE, texts['options'])
+        unit = proxy.write(root / 'deploy' / f'evlet-{name}.service', texts['unit'])
         print(f'Wrote {site}\nWrote {unit}')
+        note = account_note(account, chosen)
+        if note:
+            print(note)
         line = proxy.trust_line(trusted)
         if line:
             print(f'Add this line to Instance(...) in instances/{name}/config.py so Evlet sees client addresses:\n    {line},')
         installed_unit, installed_site = installed(name)
         # An earlier --apply installed older files: say so, and restart the service when its unit changed.
-        restart = installed_unit.exists() and differs(unit, installed_unit)
-        for source, target in ((site, installed_site), (unit, installed_unit)):
-            if target.exists() and differs(source, target):
+        restart = installed_unit.exists() and differs(texts['unit'], installed_unit)
+        for text, target in ((texts['site'], installed_site), (texts['unit'], installed_unit)):
+            if target.exists() and differs(text, target):
                 print(f'{target} is out of date. ' + ('Installing the new file.' if apply else 'Run the steps below, or --apply, to replace it.'))
     with step('DNS check'):
         saved = None if ips else saved_addresses(root)
@@ -321,7 +389,7 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
         if ips and saved_addresses(root) != sorted({str(ipaddress.ip_address(item)) for item in ips}):
             save_addresses(root, ips)
             print(f'Saved the public address in deploy/{SERVER_FILE}; later runs on this server need no --ip')
-    commands = privileged_steps(root, name, restart=restart)
+    commands = privileged_steps(root, name, texts, restart=restart)
     if not apply:
         print('Review the two files, then run these steps with sudo:')
         print('\n'.join('    ' + describe(command) for command in commands))
@@ -381,7 +449,8 @@ def run(root, args, *, confirm=None, ask=None):
         with step('evlet dev'):
             serve(root, name, port=args.port, development=True, link=True)
     elif args.host:
-        public_site(root, name, args.host, port=args.port, ips=args.ip, apply=args.apply, ask=ask)
+        public_site(root, name, args.host, port=args.port, ips=args.ip, apply=args.apply, ask=ask,
+                    user=getattr(args, 'service_user', None))
     else:
         where = shlex.quote(str(root))
         print(f'Next: cd {where} && evlet dev --instance {name}\nOr serve it with: evlet serve {name}')

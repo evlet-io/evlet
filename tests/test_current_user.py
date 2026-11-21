@@ -4,7 +4,7 @@ import pytest
 
 from evlet import CurrentUser, Database, Email, Integer, Link, Model, Registry, Rule, Text
 from evlet.auth import User
-from test_business import client
+from support import client
 from test_rules_types import ALL, add_user, start
 
 

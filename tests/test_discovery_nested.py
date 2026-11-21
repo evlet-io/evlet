@@ -7,7 +7,7 @@ import pytest
 
 from evlet import Child, Database, Model, Policy, Registry, Rule, Table, Text
 from finite_fixtures import FiniteMeta
-from test_business import client
+from support import client
 from test_rules_types import add_user, start
 
 

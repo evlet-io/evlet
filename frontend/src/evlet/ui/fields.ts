@@ -13,7 +13,7 @@ import type { ApiClient, RecordData } from '../api';
 import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '../model/record';
 import { linkContext, linkScope } from '../model/links';
 import { lookOf, scriptControl, scriptTip } from '../model/script';
-import type { FieldSchema, SchemaIndex } from '../model/schema';
+import { can, type FieldSchema, type SchemaIndex } from '../model/schema';
 import { Chip, Icon, IconButton, RecordMark, StatusPill, Switch } from './base';
 import { highlighted, tintFor, TINTS, uid, type Prop, type Tint } from './core';
 import { formula, labeller, phrase, source } from './explain';
@@ -199,7 +199,7 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex, options: {
     },
     canCreate: options.quickCreate ? meta => {
       const target = meta.target && schema.has(meta.target) ? schema.model(meta.target) : null;
-      return Boolean(target && !target.child_only && target.api !== 'read' && target.permissions?.create);
+      return Boolean(target && !target.child_only && can(target, 'create'));
     } : undefined,
     create: options.quickCreate ? async (meta, text, values) => {
       const made = await options.quickCreate!(meta.target!, text, values);

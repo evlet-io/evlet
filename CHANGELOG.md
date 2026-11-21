@@ -6,6 +6,27 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Upgrading
+
+- **Public API is additive only.** `Session.count(..., cap=None)` counts at most `cap` rows; `evlet.testing`
+  (`TestApp`, `Client`, `TestResponse`) is new for app tests; `/api/schema` carries `timezone`.
+- **`evlet serve` no longer accepts first-admin setup over HTTP.** Create the Administrator with
+  `evlet users set-password INSTANCE admin`; `evlet dev` and the Playground still print a sign-in link.
+- **Report runs stop after `EVLET_REPORT_SECONDS` (300)** with a 504; set `0` to turn the limit off.
+- **Generated proxy configs send HSTS and the generated unit is sandboxed.** Re-run `evlet setup --host` or
+  `evlet proxy` to pick them up.
+- **Decimal and Currency text input is strict:** `1_000`, exponents, non-ASCII digits and surrounding spaces are
+  refused, as `calc` already did.
+- **Three names renamed; the old names still work and warn.** `evlet.App` is now `evlet.DevApp`, `State.Rule` is
+  now `State.Move` and `evlet.Reference` is now `evlet.AnyLink`. Each old name returns the same class with a
+  `DeprecationWarning` once per process, so `isinstance` checks and existing migrations keep working; nothing is
+  stored differently. Switch to the new names before 0.5 (run your tests with `-W error::DeprecationWarning`).
+  `makemigration` and the Controls export now write `AnyLink(...)`. `State(rules=...)` keeps its keyword
+  ([docs/api-stability.md](docs/api-stability.md#renamed-in-04x-old-names-deprecated)).
+- **The two formula languages' rounding is documented side by side.** String formulas round half even, `F(...)`
+  expressions follow the field's `rounding` (half up for Currency); nothing changed
+  ([docs/finite-calculations.md](docs/finite-calculations.md#two-formula-languages)).
+
 ### Fixed
 
 - **A `DropIndex` by an index's first names after its field was renamed and the name reused.** 0.4.17 renamed the

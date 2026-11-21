@@ -16,7 +16,7 @@ from evlet import (Application, Boolean, Child, Database, Decimal, Integer, Link
 from evlet.auth import AccessError, KeyAccess, LocalAuth, User
 from evlet.connector import ConnectorError
 from evlet.tools import ApprovalNeeded
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 FULL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 ADMIN = User(1, 'admin', 'admin')

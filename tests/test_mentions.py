@@ -7,7 +7,7 @@ import pytest
 
 from evlet import Activity, Database, Model, Registry, Rule, Text
 from evlet.richtext import mention_ids, sanitise
-from test_business import client
+from support import client
 from test_rules_types import add_user, start
 
 

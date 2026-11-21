@@ -13,7 +13,7 @@ import pytest
 
 from evlet import Model, RichText, Text, ValidationError
 from evlet.richtext import plain_text, safe_href, sanitise
-from tests.test_business import client, hashed, secured  # noqa: F401  (fixtures)
+from tests.support import client
 
 CASES = json.loads((Path(__file__).parents[1] / 'frontend/src/evlet/tests/richtext-cases.json').read_text())['cases']
 ALLOWED = {'p': set(), 'h2': set(), 'h3': set(), 'ul': {'data-type'}, 'ol': set(), 'li': {'data-checked'}, 'blockquote': set(),

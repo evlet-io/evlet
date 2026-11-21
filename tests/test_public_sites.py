@@ -8,7 +8,7 @@ from evlet import ApiScope, AppDefinition, Application, Database, Frontend, Host
 from evlet.routing import resolve_routes
 from evlet.services import Endpoint
 from examples.playground.models import Customer, registry
-from test_business import http
+from support import http
 
 PRIMARY, SITE = b'erp.acme.com', b'www.acme.com'
 NAME = 'Acme Ledger'

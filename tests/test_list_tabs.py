@@ -7,7 +7,7 @@ import pytest
 
 from evlet import Database, Link, Model, Registry, Rule, Select, State, Text
 from evlet.ui.metadata import view_for
-from test_business import client
+from support import client
 from test_rules_types import add_user, start
 
 ALL = Rule(('read', 'create', 'update', 'delete'))

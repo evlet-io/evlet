@@ -8,7 +8,7 @@ from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Tab
                    Integer, Text, Link, Rule, ValidationError, validate)
 from evlet.business import ChildTable
 from evlet.calc import CalcError, Document, check_plan, fingerprint, round
-from test_business import http, client, PASSWORD
+from support import http, client, PASSWORD
 from finite_fixtures import FiniteMeta
 
 FULL = Rule(('read', 'create', 'update', 'delete'))

@@ -9,7 +9,7 @@ from evlet import (AddField, AddIndex, Application, RenameField, Boolean, Child,
                    Tags, Text, Time, User, ValidationError, action)
 from evlet.calc import CalcError, D, Document, F, parent, when
 from evlet.identity import RecordId, encode
-from test_business import http, client, PASSWORD
+from support import http, client, PASSWORD
 from finite_fixtures import FiniteMeta
 
 ALL = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}

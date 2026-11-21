@@ -375,7 +375,10 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     database = Database(database_path, registry, migrations=migrations)
     routes = resolve_routes(definitions, config, read_routes(path), port=port, roots={package.name: package.source_root for package in pinned})
     secure = routes.primary is not None
+    # A public instance's cookies carry the __Host- prefix, so a sibling subdomain cannot set or shadow them.
+    # Browsers holding a session under the plain name from an earlier release sign in again once.
     auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=secure, allow_setup=development and not secure,
+                     cookie_name='__Host-evlet_session' if secure else 'evlet_session',
                      trusted_proxies=config.trusted_proxies, security=config.security,
                      **({'oidc': config.oidc} if config.oidc is not None else {}))
     rules, schedules, roles = {}, [], {role: role for role in ('admin', 'editor', 'viewer', 'portal')}

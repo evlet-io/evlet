@@ -438,8 +438,8 @@ class Settings:
             'customize_workspaces': not portal and controls.customizes(scope, user),
             # Eva answers this session (/api/_eva): the browser asks for its status only then, so a workspace
             # without Eva makes no failing request.
-            'eva': not portal and getattr(self.business, 'eva', None) is not None and self.business.eva.available(scope, user),
-            'development': getattr(getattr(self.business, 'routes', None), 'primary', None) is None,
+            'eva': not portal and self.business.eva is not None and self.business.eva.available(scope, user),
+            'development': getattr(self.business.routes, 'primary', None) is None,
             # The built-in Administrator: only its email address can change in its profile.
             'builtin': is_administrator(user),
             'profile': {key: row[key] for key in ('full_name', 'short_name', 'title', 'phone', 'email', 'signature')} | {'photo': row['photo_file'] is not None},

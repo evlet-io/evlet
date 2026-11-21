@@ -1,5 +1,7 @@
 # Finance: rebuilding on the state manager (Evlet 0.4.6)
 
+> Archived: a completed or superseded plan, kept for history. It may describe code that has since changed; the current documentation is in `docs/`.
+
 For the Finance app (`evlet-io/finance`, `work/evlet-finance`). Written 13-11-2026 from Finance at
 `5fbd6e9` (the 0.4.3 merge) and Evlet's state manager PRs. Finance was not edited. Do the steps in
 order on a branch; each ends with the tests named in it.

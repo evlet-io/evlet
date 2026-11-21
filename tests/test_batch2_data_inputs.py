@@ -11,7 +11,7 @@ from evlet.calc import NUMBER
 from evlet.fields import DECIMAL_TEXT
 from evlet.images import MAX_PIXELS, check_dimensions, dimensions
 from evlet.models import ValidationError
-from test_business import client
+from support import client
 from test_rules_types import add_user, application
 
 ALL = ('read', 'create', 'update', 'delete')

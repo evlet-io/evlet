@@ -13,7 +13,7 @@ from evlet.cli.instance import create_instance
 from evlet.cli.install import install
 from evlet.instances import load_runtime
 from evlet.packages import read_package, resolve_packages
-from test_business import http, client, PASSWORD
+from support import http, client, PASSWORD
 
 
 @pytest.fixture
@@ -246,7 +246,7 @@ def test_flat_sources_skip_dotfiles_and_virtual_environments(project):
     (venv / 'lib').mkdir(parents=True)
     (venv / 'pyvenv.cfg').write_text('home = /usr/bin')
     (venv / 'lib64').symlink_to(venv / 'lib')
-    (root / 'tests').mkdir()
+    (root / 'tests').mkdir(exist_ok=True)
     (root / 'tests/test_item.py').write_text('')
     (root / 'services/build').mkdir(parents=True)
     (root / 'services/build/steps.py').write_text('')

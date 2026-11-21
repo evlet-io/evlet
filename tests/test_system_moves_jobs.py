@@ -10,7 +10,7 @@ from evlet.identity import RecordId
 from evlet.auth import AccessError, KeyAccess, LocalAuth, User
 from evlet.connector import ConnectorError
 from evlet.tools import Dispatch
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 ROLES = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update')),
          'viewer': Rule(('read',))}

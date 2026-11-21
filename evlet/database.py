@@ -4,6 +4,7 @@ The database adapter boundary is described in docs/database-adapters.md: a Datab
 connections and runs transactions, and a connection class that implements evlet.adapter.Connection."""
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 import logging
 import os
@@ -40,6 +41,25 @@ class ConflictError(ValueError):
 
 
 CONSTRAINT = 'A unique value or linked record constraint was violated'
+
+
+class Deadline:
+    """A time limit for the database work of one request: statements still running after it are interrupted
+    (SQLite's progress handler) and raise the adapter's OperationalError. cancel() moves it closer, for a
+    client that went away or a server that is stopping (docs/performance.md)."""
+
+    def __init__(self, seconds):
+        self.at = time.monotonic() + seconds
+
+    def cancel(self, grace=0.0):
+        self.at = min(self.at, time.monotonic() + grace)
+
+    def passed(self):
+        return time.monotonic() > self.at
+
+
+# The Deadline of the work running in this context, or None for no limit.
+DEADLINE = ContextVar('evlet_deadline', default=None)
 
 
 def conflict(registry, failure):
@@ -121,6 +141,10 @@ class Database:
         if connection is None:
             connection = self._open(sides)
         connection.evlet_generation = generation
+        deadline = DEADLINE.get()
+        if deadline is not None:
+            # Checked every few thousand SQLite instructions; a nonzero answer interrupts the statement.
+            connection.set_progress_handler(deadline.passed, 5000)
         try:
             with using(self):
                 yield connection
@@ -173,6 +197,7 @@ class Database:
             # Hooks set for one use (an authorizer, a test's statement trace) go before the connection is kept.
             connection.set_authorizer(None)
             connection.set_trace_callback(None)
+            connection.set_progress_handler(None, 0)
             if connection.in_transaction:
                 connection.rollback()
         except sqlite3.Error:
@@ -372,9 +397,9 @@ class Database:
             return Session(connection, self.registry).list(
                 model, limit=limit, offset=offset, filters=filters, order_by=order_by, search=search)
 
-    def count(self, model, *, filters=None, search=""):
+    def count(self, model, *, filters=None, search="", cap=None):
         with self._connection() as connection:
-            return Session(connection, self.registry).count(model, filters=filters, search=search)
+            return Session(connection, self.registry).count(model, filters=filters, search=search, cap=cap)
 
     def aggregate(self, model, *, measures, group_by=(), filters=None, limit=None, after=None):
         """Exact aggregates over all records; see docs/measures.md. With `limit` (and `after`), one page of
@@ -396,7 +421,9 @@ class Database:
             connection.snapshot()
             session = Session(connection, self.registry)
             records = session.list(model, **query)
-            total = session.count(model, filters=query.get('filters'), search=query.get('search', ''))
+            total = page_total(query.get('limit', 50), query.get('offset', 0), len(records))
+            if total is None:
+                total = session.count(model, filters=query.get('filters'), search=query.get('search', ''))
             return records, total
 
     def close(self):
@@ -409,6 +436,23 @@ class Database:
     def check(self):
         with self._connection() as connection:
             connection.execute("SELECT 1").fetchone()
+
+
+def page_total(limit, offset, shown):
+    """The exact filtered total when one page already tells it: a page with fewer rows than its limit is the
+    last one (an empty first page means none), so the second scan a count would make is skipped. None when a
+    count is needed."""
+    if type(limit) is int and type(offset) is int and shown < limit and (shown or offset == 0):
+        return offset + shown
+    return None
+
+
+def capped_count(connection, query, cap):
+    """count(*) of query's rows, stopping at cap: min(rows, cap) in one bounded scan. query is a qb.select."""
+    if type(cap) is not int or not 1 <= cap <= 10**9:
+        raise ValueError('Use a count cap from 1 to 1000000000')
+    bounded = query.limit(cap)
+    return connection.run(qb.select(qb.from_query(bounded, 'counted'), qb.count())).value()
 
 
 # The most ids one tx.reserve_ids call hands out.
@@ -508,8 +552,8 @@ class ReadSession:
     def list(self, model, *, limit=50, offset=0, filters=None, order_by=None, search=""):
         return self._session.list(model, limit=limit, offset=offset, filters=filters, order_by=order_by, search=search)
 
-    def count(self, model, *, filters=None, search=""):
-        return self._session.count(model, filters=filters, search=search)
+    def count(self, model, *, filters=None, search="", cap=None):
+        return self._session.count(model, filters=filters, search=search, cap=cap)
 
     def related(self, record, field_name):
         return self._session.related(record, field_name)
@@ -897,6 +941,10 @@ class Session:
         from .measures import aggregate
         return aggregate(self, model, measures, group_by, filters, limit, after)
 
-    def count(self, model, *, filters=None, search=""):
+    def count(self, model, *, filters=None, search="", cap=None):
+        """The number of matching records; with cap, at most cap, read in one scan that stops there."""
         where = SqlQuery(self.registry, model, trusted=True).where(filters, search)
-        return self.connection.run(qb.select(qb.table(self.registry.name_for(model), 'record'), qb.count()).where(where)).value()
+        table = qb.table(self.registry.name_for(model), 'record')
+        if cap is not None:
+            return capped_count(self.connection, qb.select(table, qb.col('record.id')).where(where), cap)
+        return self.connection.run(qb.select(table, qb.count()).where(where)).value()

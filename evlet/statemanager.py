@@ -4,11 +4,11 @@
         State.Step("draft", "Draft"),
         State.Step("issued", "Issued", color="green", lock=True),
         State.Step("void", "Void", color="rose", lock=True, final=True),
-        rules=(State.Rule("draft", "issued", "Issue"), State.Rule("issued", "void", "Void", remark="required")),
+        rules=(State.Move("draft", "issued", "Issue"), State.Move("issued", "void", "Void", remark="required")),
     )
 
-`State.Rule`, `State.Level` and `State.Remark` are this module's Rule, Level and Remark (evlet.Rule is the
-permission rule).
+`State.Move`, `State.Level` and `State.Remark` are this module's Rule (a move), Level and Remark; evlet.Rule is
+the permission rule. State.Move was named State.Rule before 0.4.x, which still works and warns.
 
 Nothing moves without a rule. A rule is checked on the saved record, in the move's transaction: who may
 use it (`by`), when it is offered (`when`) and the remark it takes. Five hooks run code on a document:
@@ -20,7 +20,7 @@ apps post and reverse. See docs/states-actions.md.
 import inspect
 from types import MappingProxyType
 
-from .auth import AccessError, has_role
+from .auth import AccessError, allow, has_role, record_in
 from .fields import MISSING
 from .models import build_step
 # The declarations live in core, where models and sequences import them; evlet.statemanager.State still works.
@@ -993,11 +993,8 @@ def version_diff(context, model, record_id, first, second):
 
 def route(business, scope, body, user, model, parts):
     """POST /api/{model}/{id}/restore ({version, remark}), GET .../versions, .../versions/{n} and .../versions/{a}/diff/{b or current}."""
-    from .identity import path_id
     from .models import ValidationError, checked_body
-    record_id = path_id(parts[3]) if len(parts) > 3 else None
-    if record_id is None:
-        raise AccessError(404, 'Record not found')
+    record_id = record_in(parts)
     if parts[4] == 'restore':
         if len(parts) != 5 or scope['method'] != 'POST':
             raise AccessError(405, 'Method not allowed')
@@ -1010,8 +1007,7 @@ def route(business, scope, body, user, model, parts):
             result = context.restore(model, record_id, version=body.get('version'), remark=body.get('remark'))
             extra = business.availability(context, model, context._tx.get(model, record_id))
         return 200, {**business.embedded(result), **extra}, [(b'etag', business.revision(result))]
-    if scope['method'] != 'GET':
-        raise AccessError(405, 'Method not allowed')
+    allow(scope['method'], 'GET')
     tail = parts[5:]
     try:
         numbers = [int(part) for part in tail if part not in ('diff', 'current')]

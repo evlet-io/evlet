@@ -19,6 +19,7 @@ from .database import NotFoundError
 from .identity import path_id
 from .models import ValidationError, checked_body
 from .periods import TABLE as PERIOD_LOCKS
+from .unsaved import LIMITS as UNSAVED_LIMITS
 from . import qb, writes
 from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, scope_condition
 
@@ -46,12 +47,26 @@ SETTINGS = MappingProxyType({
     'eva.user_limit': {'amount': None, 'unit': 'aed', 'period': 'week'},
     'eva.person_limits': {}, 'eva.task_reserve': 10, 'eva.max_steps': 12, 'eva.max_tools': 30, 'eva.max_seconds': 120, 'eva.rates': {},
     # Unsaved changes kept when someone leaves a record (evlet.unsaved): expiry, caps and entry size.
-    'unsaved.server_days': 30, 'unsaved.server_entries': 200, 'unsaved.browser_days': 7, 'unsaved.browser_entries': 20, 'unsaved.entry_kb': 256,
+    **{key: default for key, (default, _, _) in UNSAVED_LIMITS.items()},
     # How each currency code is shown (evlet.currencies): only the codes an admin changed.
     'display.currencies': {},
 })
 # Safe bounds of the rich text image limits: up to 8 MiB an image (what private storage reads back) and 200 a record.
 IMAGE_LIMITS = {'files.image_max_kb': (64, 8192), 'files.images_per_record': (1, 200)}
+WHOLE = 'Use a whole number from {low} to {high}.'
+# Whole-number settings: (smallest, largest, value when a stored one is unusable, refusal). A largest of None is the
+# config.py value, which the setting can only lower; an unusable value of None is the config.py value too.
+BOUNDED = {
+    'security.password_min': (1, 64, 64, 'Use a minimum password length from 1 to 64 characters. 1 means any password.'),
+    'security.session_hours': (1, None, 1, 'Session length can only go down, from {high} hours to 1.'),
+    'security.lockout': (3, None, 3, 'Failed sign-ins before lockout can only go down, from {high} to 3.'),
+    'mcp.rate': (1, 60, 1, 'Use 1 to 60 tool calls a minute. The framework allows at most 60.'),
+    **{key: (low, high, None, WHOLE) for key, (low, high) in IMAGE_LIMITS.items()},
+    **{key: (low, high, low, WHOLE) for key, (_, low, high) in UNSAVED_LIMITS.items()},
+}
+# On/off settings and the value each takes when a stored one is unusable.
+SWITCHES = {'security.two_step': True, 'security.controls_two_step': True, 'mcp.enabled': False, 'mcp.allow_writes': False,
+            'mail.personal': False}
 # Audit areas of setting overrides by key prefix; other settings are Security.
 SETTING_AREAS = {'mcp': 'MCP', 'mail': 'Email', 'eva': 'Eva', 'files': 'Files', 'unsaved': 'Records', 'display': 'Display'}
 # Settings only an admin may change: what every page shows, not only what Controls openers manage.
@@ -268,40 +283,30 @@ def _networks(values):
 
 def strictest(key, value, roles, file=None):
     """The strictest safe value of a stored setting that no longer validates; file is the starting value."""
-    file = SETTINGS.get(key) if file is None else file
-    number = type(value) is int
-    if key in ('mcp.enabled', 'mcp.allow_writes', 'mail.personal'):
-        return False
-    if key in ('security.two_step', 'security.controls_two_step'):
-        return True
+    if key not in SETTINGS:
+        raise KeyError(f'Unknown setting {key}')
+    file = SETTINGS[key] if file is None else file
+    if key in SWITCHES:
+        return SWITCHES[key]
+    if key in BOUNDED:
+        low, high, unusable, _ = BOUNDED[key]
+        return min(max(value, low), file if high is None else high) if type(value) is int else file if unusable is None else unusable
     if key == 'display.currencies':
         return {}
-    if key == 'mcp.rate':
-        return min(max(value, 1), 60) if number else 1
-    if key in IMAGE_LIMITS:
-        low, high = IMAGE_LIMITS[key]
-        return min(max(value, low), high) if number else file
     if key in ('mcp.disabled_tools', 'mcp.hidden_models'):
         # Names are kept as they are; a value that is not a list turns every tool off or hides every model ('*').
         from .tools import NAMES
         if isinstance(value, list):
             return [item for item in value if isinstance(item, str)]
         return list(NAMES) if key == 'mcp.disabled_tools' else ['*']
-    if key.startswith('unsaved.'):
-        from .unsaved import strictest as unsaved_strictest
-        return unsaved_strictest(key, value)
     if key.startswith('eva.'):
         from .eva import strictest as eva_strictest
         return eva_strictest(key, value)
-    if key == 'security.password_min':
-        return min(max(value, 1), 64) if number else 64
-    if key == 'security.session_hours':
-        return min(max(value, 1), file) if number else 1
-    if key == 'security.lockout':
-        return min(max(value, 3), file) if number else 3
     if key == 'security.two_step_roles':
         listed = [role for role in value if isinstance(role, str) and role in roles] if isinstance(value, list) else []
         return list(dict.fromkeys(role for role in listed if role != 'admin'))
+    if key != 'security.controls_ips':
+        raise KeyError(f'No strictest value for {key}')
     kept = []
     for item in value if isinstance(value, list) else []:
         try:
@@ -403,7 +408,7 @@ class Controls:
         if self.business.jobs is not None:
             self.business.jobs.policy = policy
         # Site workspace overrides (evlet.workspaces); /api/schema filters them by permission after applying them.
-        workspaces = getattr(self.business, 'workspaces', None)
+        workspaces = self.business.workspaces
         if workspaces is not None:
             with activated(self.database, layer):
                 workspaces.load_overrides([row for row in stored if row['kind'] == 'workspace'], problems)
@@ -658,16 +663,13 @@ class Controls:
             return value
         if key not in SETTINGS:
             raise ValueError('Choose a known setting.')
-        file = self.files()[key]
-        number = type(value) is int
-        if key == 'security.password_min' and not (number and 1 <= value <= 64):
-            raise ValueError('Use a minimum password length from 1 to 64 characters. 1 means any password.')
-        if key in ('security.two_step', 'security.controls_two_step') and type(value) is not bool:
+        if key in SWITCHES and type(value) is not bool:
             raise ValueError('Use on or off.')
-        if key == 'security.session_hours' and not (number and 1 <= value <= file):
-            raise ValueError(f'Session length can only go down, from {file} hours to 1.')
-        if key == 'security.lockout' and not (number and 3 <= value <= file):
-            raise ValueError(f'Failed sign-ins before lockout can only go down, from {file} to 3.')
+        if key in BOUNDED:
+            low, high, _, refusal = BOUNDED[key]
+            high = self.files()[key] if high is None else high
+            if type(value) is not int or not low <= value <= high:
+                raise ValueError(refusal.format(low=low, high=high))
         if key == 'security.two_step_roles':
             if not isinstance(value, list) or any(role not in self.roles or self.roles[role]['realm'] != 'desk' for role in value) or len(set(value)) != len(value):
                 raise ValueError('Choose existing roles, each once.')
@@ -685,19 +687,9 @@ class Controls:
                 except ValueError:
                     raise ValueError(f"{item} isn't an IP address or range.") from None
             value = list(dict.fromkeys(networks))
-        if key in ('mcp.enabled', 'mcp.allow_writes', 'mail.personal') and type(value) is not bool:
-            raise ValueError('Use on or off.')
-        if key in IMAGE_LIMITS and not (number and IMAGE_LIMITS[key][0] <= value <= IMAGE_LIMITS[key][1]):
-            low, high = IMAGE_LIMITS[key]
-            raise ValueError(f'Use a whole number from {low} to {high}.')
-        if key == 'mcp.rate' and not (number and 1 <= value <= 60):
-            raise ValueError('Use 1 to 60 tool calls a minute. The framework allows at most 60.')
         if key == 'display.currencies':
             from .currencies import check as currencies
             return currencies(value)
-        if key.startswith('unsaved.'):
-            from .unsaved import check_setting as unsaved_setting
-            return unsaved_setting(key, value)
         if key.startswith('eva.'):
             from .eva import check_setting as eva_setting
             return eva_setting(key, value, self.business)
@@ -1309,7 +1301,7 @@ class Controls:
 
         The access rule of the workspace override routes, also reported as ``customize_workspaces`` by
         ``GET /api/_settings/me``. Two-step sign-in is checked by the routes, not here."""
-        if self.routes is None or getattr(self.business, 'workspaces', None) is None:
+        if self.routes is None or self.business.workspaces is None:
             return False
         role = self.roles.get(user.role)
         if user.access is not None or not self.host_allowed(scope) or role is None or role['realm'] != 'desk':
@@ -1410,7 +1402,7 @@ class Controls:
         # and checking that MCP is reachable do not.
         if method not in ('GET', 'HEAD') and not re.fullmatch(r'/naming/[A-Za-z][A-Za-z0-9_]{0,63}/try', path) and path not in ('/prints/preview', '/mcp/reach'):
             self.business.settings.recently_verified(user)
-        if (path == '/prints' or path.startswith('/prints/')) and getattr(self.business, 'prints', None) is not None:
+        if (path == '/prints' or path.startswith('/prints/')) and self.business.prints is not None:
             response = self.business.prints.designer.dispatch(path, method, body, user)
             if response is not None:
                 return response

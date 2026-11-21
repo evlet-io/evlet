@@ -2,11 +2,33 @@
 
 from functools import cache
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 from ..business import Download
 
-CSP = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+IMAGE_ORIGIN = re.compile(r"https://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+(?::[1-9][0-9]{0,4})?")
+
+
+def content_policy(image_origins=None):
+    """The Content-Security-Policy of the pages Evlet serves.
+
+    image_origins None lets pages show images from any https: address (records may hold image URLs). A list of
+    exact https origins ("https://cdn.example.com") allows only those besides the app itself and data:; an empty
+    list allows none. EVLET_IMAGE_ORIGINS sets this for the process (docs/routing.md)."""
+    if image_origins is None:
+        images = "https:"
+    else:
+        origins = image_origins.split() if isinstance(image_origins, str) else list(image_origins)
+        if not all(isinstance(origin, str) and IMAGE_ORIGIN.fullmatch(origin) for origin in origins):
+            raise ValueError('EVLET_IMAGE_ORIGINS lists exact https origins, such as https://cdn.example.com')
+        images = " ".join(origins)
+    sources = " ".join(part for part in ("'self'", images, "data:") if part)
+    return (f"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src {sources}; connect-src 'self'; "
+            "frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+
+
+CSP = content_policy(os.environ.get("EVLET_IMAGE_ORIGINS"))
 STATIC = Path(__file__).with_name("static")
 TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -53,8 +75,10 @@ def version():
 
 
 def config_block(values):
-    """The inline, non-executable runtime config every served page carries."""
-    text = json.dumps({**values, "version": version()}, separators=(",", ":"))
+    """The inline, non-executable runtime config every served page carries.
+
+    values may set version itself: the routes send "" before sign-in, so a visitor cannot read the release."""
+    text = json.dumps({**values, "version": values.get("version", version())}, separators=(",", ":"))
     text = text.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     return b'<script id="evlet-config" type="application/json">' + text.encode() + b"</script>"
 

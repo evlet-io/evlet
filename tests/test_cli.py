@@ -9,7 +9,7 @@ import pytest
 from evlet import ConnectorError, HTTPClient
 from evlet.cli import main
 from tests.test_connector import live_connector, project_path, signed, wire_server
-from tests.test_business import hashed, PASSWORD
+from tests.support import PASSWORD
 
 
 def test_cli_login_describe_and_logout_keep_credentials_private(live_connector, tmp_path, monkeypatch, capsys):
