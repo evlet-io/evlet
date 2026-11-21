@@ -16,6 +16,14 @@ import time
 from . import qb
 from .adapter import Column, TableDefinition
 from .migrations import SchemaError
+from .activity import SCALAR_COLUMNS, rename_legacy, stored_table
+from .auth import ensure_administrator
+from .database import ROW_LIMIT, Session
+from .identity import add_id_guard
+from .naming import add_columns, fill_titles
+from .prompts import ensure_tickets
+from .statemanager import digest, ensure_releases, releasing, store, tree, versioned
+from .unsaved import ensure
 
 
 @dataclass(frozen=True)
@@ -61,7 +69,6 @@ def _record_names(connection, registry):
     an instance with no app migration to run. `name` stays empty for existing rows: an app that wants
     names for them fills them itself (evlet.sequences.backfill or a RunData migration).
     """
-    from .naming import add_columns, fill_titles
     for table, model in registry.models.items():
         add_columns(connection, table, model)
         fill_titles(connection, table, model)
@@ -79,7 +86,6 @@ def _record_times(connection, registry):
 
 def _unsaved_changes(connection):
     """The table of unsaved changes people leave on saved records (evlet/unsaved.py)."""
-    from .unsaved import ensure
     # It refers to evlet_users; on a new database startup creates both, users first.
     if connection.table_exists('evlet_users'):
         ensure(connection)
@@ -89,7 +95,6 @@ def _fixed_ids(connection, registry):
     """Make the database refuse an UPDATE that changes a model table's id (evlet/identity.py). New tables
     have the trigger from the start, and every app migration batch adds it again; this step covers an
     instance with nothing to migrate."""
-    from .identity import add_id_guard
     for table in registry.models:
         if connection.table_exists(table):
             add_id_guard(connection, table)
@@ -99,7 +104,6 @@ def _administrator(connection):
     """Add the built-in Administrator (evlet/auth.py) to a database from before it existed, with no password.
     A new database has no users table yet; startup creates the Administrator there. Also renames the 0.4.2
     Administrator to admin; refuses when another account named admin is not an active admin."""
-    from .auth import ensure_administrator
     if connection.table_exists('evlet_users'):
         ensure_administrator(connection)
 
@@ -109,10 +113,6 @@ def _state_manager(connection, registry):
     evlet_overrides take the kinds "state" and "rule", turn
     confirmable revisions into releases with their snapshots and lifecycle states into State values, then give
     every record that is in a release step and has no release a v0 release (no snapshot)."""
-    import json
-    from .database import Session
-    from .activity import SCALAR_COLUMNS, stored_table
-    from .statemanager import digest, ensure_releases, releasing, store, tree, versioned
     entries = stored_table(connection)
     if connection.table_exists(entries):
         present = connection.columns(entries)
@@ -168,7 +168,6 @@ def _state_manager(connection, registry):
 def _saved(session, registry, model, record_id):
     """A saved record with its owned rows at every depth in `_rows`, for its content hash."""
     record = session.get(model, record_id)
-    from .database import ROW_LIMIT
     order = lambda child: ('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',)
     record._rows = {}
     for child in (child for child in registry.children if child.parent is model):
@@ -194,7 +193,6 @@ def _create_requests(connection):
 
 def _unsaved_versions(connection):
     """Version unsaved changes per account, so a newer draft is never replaced by an older one (evlet/unsaved.py)."""
-    from .unsaved import ensure
     if connection.table_exists('evlet_users'):
         ensure(connection)
 
@@ -208,7 +206,6 @@ def _activity(connection):
     """0016: the record history is Activity. Rename evlet_journal, evlet_journal_hashed, their index and append-only
     triggers to evlet_activity names, keeping every row (ids, hashes and chains are unchanged: no table name is
     hashed), and rename the `journal` operation of stored Controls permission overrides to `activity`."""
-    from .activity import rename_legacy
     rename_legacy(connection)
     if connection.table_exists('evlet_overrides'):
         for row in connection.run(qb.select('evlet_overrides', 'key', 'value').where(kind='perm')).all():
@@ -218,7 +215,6 @@ def _activity(connection):
                 connection.run(qb.update('evlet_overrides', value=json.dumps(value, sort_keys=True)).where(kind='perm', key=row['key']))
 
 def _prompt_tickets(connection):
-    from .prompts import ensure_tickets
     ensure_tickets(connection)
 
 STEPS = (

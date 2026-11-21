@@ -597,7 +597,6 @@ RELATED_ROWS, RELATED_MAX = 5, 20
 def layout_filters(registry, model, source, filters, where):
     """A block's filters as [[field, operator, value], ...] on source, validated like list filters. A Ref('field')
     value compares with that field of the record, sent as {"$expr": "ref", "args": [field]}."""
-    from ..declarations import Ref
     from ..query import ChildGroup, KIND_OPERATORS, SqlQuery, conditions
     from ..models import ValidationError
     if filters is None:

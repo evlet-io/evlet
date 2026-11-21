@@ -25,6 +25,8 @@ from .database import ConflictError, NotFoundError
 from .mcp import SUPPORTED, MCPServer
 from .tools import Dispatch
 from .models import ValidationError
+from .app import HTTPError
+from .business import Download
 
 ACCESS_SECONDS, REFRESH_SECONDS, CODE_SECONDS, KEEP = 3600, 30 * 86400, 300, 30 * 86400
 MAX_CLIENTS, MAX_PER_USER, LIGHT_RATE = 1000, 20, 120
@@ -157,8 +159,6 @@ class Assistants:
     # ---------- /.well-known and /_/ ----------
 
     def dispatch(self, scope, raw):
-        from .app import HTTPError
-        from .business import Download
         path, method = scope['path'], scope['method']
         names = [key.lower() for key, _ in scope.get('headers', [])]
         if any(names.count(name) > 1 for name in (b'host', b'origin', b'authorization', b'content-type')):
@@ -392,7 +392,6 @@ class Assistants:
     # ---------- the MCP endpoint ----------
 
     def mcp(self, scope, raw, origin):
-        from .app import HTTPError
         token = self.auth.bearer(scope)
         row = None
         if token and ACCESS.fullmatch(token):

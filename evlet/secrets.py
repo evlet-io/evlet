@@ -28,6 +28,7 @@ import tempfile
 import threading
 
 from . import qb
+from .models import Registry
 
 KEY_ENV = 'EVLET_SECRET_KEY'
 UNREADABLE = 'Saved secrets could not be read. The secret key changed or the stored data was altered.'
@@ -242,7 +243,6 @@ def rotate(database_path, key):
 
 def _rotate_locked(database_path, key):
     from .database import Database
-    from .models import Registry
     database = Database(database_path, Registry(), must_exist=True)
     done, failed = 0, []
     fresh = secrets.token_bytes(32)

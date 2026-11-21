@@ -16,8 +16,13 @@ from .audit import COLUMNS as AUDIT_COLUMNS, add_columns as add_audit_columns, c
 from .fields import Field, Integer, Link, MAX_INTEGER, MISSING, Reference
 from .identity import RecordId
 from . import indexes as model_indexes, ledger as ledgers
-from .models import identifier, storage_name
+from .models import identifier, storage_name, Child
 from .naming import declared_name, standard
+from .calc import CalcError, Document, Num, is_finite, to_decimal
+from .currencies import MONEY_SCALE
+from .declarations import State
+from .reactivity import evaluate, graph, round_field
+from .sections import create_store
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +106,6 @@ def _metadata(connection):
     connection.ensure_table(SCHEMA)
     connection.ensure_table(HISTORY)
     # Section rows of Tables declared with sections=True (evlet/sections.py); framework-owned, so no app migration.
-    from .sections import create_store
     create_store(connection)
 
 
@@ -122,7 +126,6 @@ def _currency_scale(definition, scale):
 
 def upgraded_definition(saved):
     """A saved definition (JSON text) as it reads once its Currency amounts are at MONEY_SCALE."""
-    from .currencies import MONEY_SCALE
     return json.dumps(_currency_scale(json.loads(saved), MONEY_SCALE), sort_keys=True, separators=(',', ':'))
 
 
@@ -152,7 +155,6 @@ def money_scale(connection, registry, saved, *, allow=True):
     A new database, or one already moved, is left alone. `allow=False` (an instance being served) refuses instead,
     so the move only happens inside `evlet migrate`, after its backup. An amount that would not fit the 64-bit
     column names its record and nothing is changed."""
-    from .currencies import MONEY_SCALE
     connection.ensure_table(MONEY)
     row = connection.run(qb.select('evlet_money', 'scale').where(id=1)).one()
     if row is not None:
@@ -696,7 +698,6 @@ class AddTable:
         return self.storage_name or f'{self.parent}_{self.name}'
 
     def model(self):
-        from .models import Child
         for name in (self.parent, self.name, self.table(), self.owner_field):
             identifier(name)
         if not isinstance(self.child, type) or not issubclass(self.child, Child) or self.child is Child:
@@ -990,7 +991,6 @@ def _recompute(connection, registry, operations, versions, *, include_posted=Fal
     `"posted": true` in its entry. Records whose results change get a `recomputed` Activity entry. Returns
     (records skipped, posted records changed)."""
     from .database import Session
-    from .calc import CalcError
     from .activity import recomputed
     session = Session(connection, registry)
     covered, skipped, changes = {}, set(), {}
@@ -1082,9 +1082,7 @@ def _rows(session, model, record_id, child):
 
 def _recompute_finite(session, registry, plan, model, operation, skipped, changes, posted=None):
     from datetime import datetime, timezone
-    from .calc import Document, Num, is_finite, to_decimal
     from .documents import fill_lookups, MESSAGES
-    from .fields import Integer
     root = registry.root_of(model)
     owned = {child.model: child for child in registry.children}
     path, item = [], model
@@ -1145,7 +1143,6 @@ def _recompute_finite(session, registry, plan, model, operation, skipped, change
 
 def _recompute_legacy(session, model, operation, skipped, changes, posted=None):
     from .documents import Draft
-    from .reactivity import evaluate, graph, round_field
     if model.__tables__ or model.__sources__ or any(field.query is not None for field in model.__declared_fields__.values()) \
             or any(child.model is model for child in session.registry.children):
         raise SchemaError(f'{operation.table}: Recompute supports string formulas only on models without tables or queries')
@@ -1732,7 +1729,6 @@ def field_code(field):
     """(Python for a frozen copy of a field, class names it uses). A frozen copy keeps only what is stored."""
     from . import __all__ as exported
     from .controls_export import UNKNOWN, call
-    from .declarations import State
     if isinstance(field, State):
         # Steps and the default are what a State stores; its rules, labels and colours are behaviour, not schema.
         steps = ', '.join(f'State.Step({step.key!r}' + (', final=True' if step.final else '') + ')' for step in field.steps.values())

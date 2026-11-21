@@ -15,9 +15,13 @@ from zoneinfo import ZoneInfo
 from . import qb, secrets as vault
 from .adapter import Column, TableDefinition
 from .auth import (ADMINISTRATOR, ADMINISTRATOR_NAME, AccessError, User, _encode, _scrypt, hashing_slot, is_administrator,
-                   password_hash)
+                   password_hash, LocalAuth, ROLE_ID)
 from .fields import MISSING, Email, Field
 from .models import ValidationError, checked_body
+from .business import Download
+from .images import check_dimensions
+from .routing import host_name
+from .unsaved import Unsaved
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +139,6 @@ class AppSettings(_Declared):
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        from .auth import ROLE_ID
         if isinstance(cls.editors, str) or not isinstance(cls.editors, (tuple, list)) or any(not isinstance(role, str) or not ROLE_ID.fullmatch(role) for role in cls.editors):
             raise ValueError(f'{cls.__name__}.editors takes a tuple of role ids')
         sections = cls.sections if cls.sections is not None else {'General': tuple(cls.__fields__)}
@@ -360,7 +363,6 @@ class Settings:
 
     def page(self, scope, path):
         """GET /settings[/...]: True serves the page, False is a 404, a tuple redirects."""
-        from .business import Download
         rest = path.removeprefix('/settings').strip('/')
         portal_host = self.business.auth.realm(scope) == 'portal'
         if rest and rest not in (PORTAL_PAGES if portal_host else PAGES) and (portal_host or not re.fullmatch(r'app/[a-z][a-z0-9_]{0,62}', rest)):
@@ -531,7 +533,6 @@ class Settings:
         return self.me(scope, user)['profile']
 
     def photo(self, user):
-        from .business import Download
         with self.database._connection() as connection:
             row = connection.run(qb.select(qb.table('evlet_user_profile', 'p'), qb.all_columns('a'))
                                  .join(qb.table('evlet_attachments', 'a'), qb.eq('a.id', qb.col('p.photo_file')))
@@ -555,7 +556,6 @@ class Settings:
             raise ValidationError({'photo': 'Use a PNG, JPG or WebP image.'})
         if len(content) > PHOTO_LIMIT:
             raise ValidationError({'photo': 'That photo is over 2 MB. Choose a smaller one.'})
-        from .images import check_dimensions
         check_dimensions(content, 'photo')
         with self.database.transaction() as tx:
             old = self.profile(tx.connection, user.id)['photo_file']
@@ -635,7 +635,6 @@ class Settings:
             tx.connection.run(qb.delete('evlet_email_tokens').where(qb.or_(qb.eq('user_id', user.id), qb.le('expires', now))))
             tx.connection.run(qb.insert('evlet_email_tokens', token_hash=hashlib.sha256(token.encode()).hexdigest(), user_id=user.id,
                                         new_email=address, expires=now + 86400))
-        from .routing import host_name
         host = host_name(dict(scope.get('headers', [])).get(b'host', b'')) or 'localhost'
         link = f'http://{host}:{routes.port}/settings/profile?confirm={token}'
         # Development only, until outgoing mail is set up: the link is logged and shown on the page.
@@ -676,7 +675,6 @@ class Settings:
                                   .on_conflict('user_id', 'scope', 'key').do_update(value=qb.col('excluded.value')))
             if clean.get('keep_unsaved') is False:
                 # Turning it off forgets what was kept, in the same transaction.
-                from .unsaved import Unsaved
                 Unsaved.clear_user(tx.connection, user.id)
         return {'saved': sorted(clean)}
 
@@ -1172,7 +1170,6 @@ def clear_two_step(connection, user_id):
 
 def reset_two_step(connection, actor, user_id, username):
     """Clear a person's two-step sign-in and revoke every credential, API keys included; they set it up again at their next sign-in. Audited."""
-    from .auth import LocalAuth
     from .controls import audit
     clear_two_step(connection, user_id)
     LocalAuth.end_sessions(connection, user_id, keys=True)

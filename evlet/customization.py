@@ -24,6 +24,10 @@ from .statemanager import State
 from .database import ConflictError
 from .models import ValidationError
 from .ui.metadata import FLOWS, OPEN_IN, PANEL_BLOCKS, PANEL_KINDS, label_for, list_tabs_for, starts_valid, view_for
+from .documents import host_today
+from .expressions import ConditionError, parse
+from .migrations import field_columns
+from .sequences import NamingRules, SERIES_ID, check_order, compile_naming, parse_series, preview_name, split, upgrade_counters
 
 PROPS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required', 'read_only', 'default', 'options_add', 'options_hidden')
 DISPLAY = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden')
@@ -104,7 +108,6 @@ def activated(database, layer):
 
 
 def add_column(connection, table, name, field):
-    from .migrations import field_columns
     connection.add_column(table, field_columns(name, field)[0])
 
 
@@ -448,7 +451,6 @@ class Customization:
             raise ValueError(str(exc).replace(f'{model.__name__}.Meta.', 'The list view ')) from None
 
     def check_naming(self, model, _, value, saved=False):
-        from .sequences import SERIES_ID, check_order
         if not isinstance(value, list) or not 1 <= len(value) <= 20:
             raise ValueError('Keep between 1 and 20 series.')
         series = []
@@ -467,8 +469,6 @@ class Customization:
         return series
 
     def compile_naming(self, model, series):
-        from .expressions import ConditionError
-        from .sequences import compile_naming
         try:
             return compile_naming(model, model.Meta.naming, series)
         except ConditionError as exc:
@@ -810,8 +810,6 @@ class Customization:
 
     def cleanup(self, connection, model, name):
         """Take a field out of every override that names it. Returns how many overrides changed."""
-        from .expressions import ConditionError, parse
-        from .sequences import parse_series
         model_name, changed = model.__name__, 0
 
         def write(kind, key, value):
@@ -877,7 +875,6 @@ class Customization:
         return model, self.naming[model]
 
     def counters(self, model_name):
-        from .sequences import split
         model, rules = self.naming_model(model_name)
         table = self.registry.name_for(model)
         with self.business.database._connection() as connection:
@@ -899,7 +896,6 @@ class Customization:
     @staticmethod
     def series_of(rules, prefix):
         """The series whose prefix pattern matches a counter prefix, with its literal suffix."""
-        from .sequences import split
         for item, parts, _ in rules.series:
             head, _, tail = split(parts)
             pattern = ''.join(re.escape(part) if isinstance(part, str) else r'\d{4}' if part[1:] == ('YYYY',) else r'\d{2}' if part[0] == 'date' else r'[^\s]*' for part in head)
@@ -921,7 +917,6 @@ class Customization:
         table = self.registry.name_for(model)
         with self.business.database.transaction() as tx:
             connection = tx.connection
-            from .sequences import upgrade_counters
             upgrade_counters(connection)
             row = connection.run(qb.select('evlet_sequence', 'last', 'last_name').where(model=table, field=rules.field, scope_key=prefix, period='')).one()
             floor = issued(prefix, row[1]) if row else None
@@ -938,9 +933,6 @@ class Customization:
         return self.counters(model_name)
 
     def try_name(self, model_name, body):
-        from .documents import host_today
-        from .expressions import ConditionError, parse
-        from .sequences import NamingRules, check_order, parse_series, preview_name
         model, rules = self.naming_model(model_name)
         if not isinstance(body, dict) or set(body) - {'values', 'series'} or not isinstance(body.get('values', {}), dict):
             raise ValidationError({'_form': 'Send values and, to try a draft, series.'})

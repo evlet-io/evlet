@@ -22,8 +22,10 @@ reads and writes; migrations (evlet/migrations.py) create the tables.
 from datetime import datetime, timezone
 import hashlib
 import json
-from . import qb
+from . import qb, fields as types
 from .models import build_step
+from .fields import DateTime
+from .indexes import schema as index_schema, normalize
 
 # Field types a ledger model may declare, matched exactly (a subclass such as State, LongText, Email or
 # Duration is a different type).
@@ -79,7 +81,6 @@ def declared(name, namespace, bases):
 
 def timestamp_fields(timestamps):
     """The engine fields Meta.timestamps adds, as {name: DateTime}."""
-    from .fields import DateTime
     names = {'created': ('created_at',), 'modified': ('modified_at',), 'both': TIMESTAMP_FIELDS}.get(timestamps, ())
     result = {}
     for key in names:
@@ -99,7 +100,6 @@ def class_options(name, namespace, bases, fields, tables, sources):
 def check_class(name, namespace, bases, fields, tables, sources):
     """Refuse what a ledger model cannot have, with a message naming it. Returns the Meta options as
     (append_only, timestamps, indexes)."""
-    from . import fields as types
     meta = meta_of(name, namespace, bases)
     unknown = sorted(key for key in vars(meta) if not key.startswith('_') and key not in META) if isinstance(meta, type) else []
     if unknown:
@@ -144,7 +144,6 @@ def check_class(name, namespace, bases, fields, tables, sources):
             raise ValueError(f'{name}.{key}: Select colors are a screen option; a ledger model has no screens')
         if field.default is types.CurrentUser:
             raise ValueError(f'{name}.{key}: default=CurrentUser needs a signed-in person; trusted code writes ledger rows')
-    from .indexes import normalize
     indexes = normalize(name, option(meta, 'indexes', ()), {**fields, **timestamp_fields(timestamps)})
     return append_only, timestamps, indexes
 
@@ -155,7 +154,6 @@ def schema(model):
     (created_at, modified_at), so they are not repeated here."""
     if not is_ledger(model):
         return None
-    from .indexes import schema as index_schema
     return {'append_only': model.__append_only__, 'indexes': index_schema(model)}
 
 
@@ -231,7 +229,6 @@ def describe(database):
     """One dict per ledger model of a database: `model`, `table`, `rows`, `append_only`, `activity` ("off",
     "on" or "tamper evident"), `timestamps` and `period` (the field name, with " per <scope>" when scoped).
     Read in one snapshot; `evlet ledger list` prints it."""
-    from .models import identifier
     registry = database.registry
     models = [(name, model) for name, model in registry.models.items() if is_ledger(model)]
     activities, periods = getattr(registry, 'activities', {}), getattr(registry, 'periods', {})

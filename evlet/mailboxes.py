@@ -31,7 +31,7 @@ import threading
 import time
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
-from . import qb
+from . import qb, activity
 from .adapter import Column, TableDefinition
 from .auth import AccessError, User, is_loopback
 from . import secrets as vault
@@ -41,6 +41,9 @@ from .connectors import (ADDRESS, NOT_ALLOWED, PUBLIC_ONLY, REJECTED, TIMEOUT, U
 from .controls import NOT_FOUND, audit
 from .fields import Email
 from .models import ValidationError, checked_body
+from .business import Download
+from .images import for_email
+from .jobs import Task
 
 logger = logging.getLogger(__name__)
 SETTING = 'mail.personal'
@@ -167,7 +170,6 @@ def link_message(business, tx, user, model, record_id, key, data, field=None):
     `field` names the Email field of the record that matched; the Activity hides `party` from readers who
     can't read that field. Returns the entry id, or None when the record already has the message.
     """
-    from . import activity
     if model not in business.activities:
         return None
     entry = {**data, 'source': 'mailbox', **({'field': field} if field else {})}
@@ -308,7 +310,6 @@ class Mailboxes:
         for connector in CONNECTORS:
             business.connectors.register('evlet', connector)
         if business.jobs is not None:
-            from .jobs import Task
             if TASK in business.jobs.tasks:
                 raise ValueError(f'The task name {TASK} is reserved')
             business.jobs.tasks[TASK] = Task(TASK, self.run_job, max_attempts=1, external=True)
@@ -527,7 +528,6 @@ class Mailboxes:
         """/_/mail/callback. GET (from the provider, without the session cookie): a page that posts the code
         and state back from this origin. POST (with the cookie): checks the session, the origin and the
         state, finishes the sign-in and redirects to the email settings page."""
-        from .business import Download
         if self.business.assistants.origin(scope) is None:
             raise AccessError(404, NOT_FOUND)
         headers = dict(scope.get('headers', []))
@@ -678,7 +678,6 @@ class Mailboxes:
                 self.business.policy.record(tx, user, record[0], record[1], 'update')
                 if html is not None:
                     # Rich text images of the record go inline (cid:), never as links.
-                    from .images import for_email
                     html, inline = for_email(self.business, tx, record[0], record[1], html)
         with self.database._connection() as connection:
             row = self.row(connection, user.id)

@@ -13,6 +13,13 @@ import tempfile
 
 from .models import Child, Model, Registry
 from .permissions import Policy, Rule
+from .declarations import Extend
+from .documents import argument_schema
+from .forms import Forms, Report, metadata as form_metadata
+from .jobs import Task
+from .migrations import Migration, UNFINISHED
+from .services import collect_service
+from .workspaces import Workspace
 
 VERSION = 1
 AREAS = ('models', 'reports', 'services', 'migrations', 'workspaces')
@@ -48,7 +55,6 @@ def module_names(package):
 
 def unfinished_migrations(package):
     """Refuse a migration file that still has a line evlet makemigration could not finish, before importing it."""
-    from .migrations import UNFINISHED
     for path in package.source_files():
         if path.suffix != '.py' or not path.is_relative_to(package.source_root):
             continue
@@ -63,10 +69,6 @@ def unfinished_migrations(package):
 
 def discover(package, modules=None):
     from .instances import AppDefinition
-    from .migrations import Migration
-    from .forms import Report
-    from .workspaces import Workspace
-    from .declarations import Extend
     unfinished_migrations(package)
     models, migrations, seen, reports, endpoints, tasks, schedules, workspaces, extensions = [], [], set(), [], [], [], [], [], []
     collected_ids = set()
@@ -79,7 +81,6 @@ def discover(package, modules=None):
             workspaces.extend(value for key, value in vars(module).items() if isinstance(value, Workspace) and key not in foreign
                               and all(value is not other for other in workspaces))
         if name == package.name + '.services' or name.startswith(package.name + '.services.'):
-            from .services import collect_service
             collected = collect_service(package, module)
             endpoints.extend(collected[0]); tasks.extend(collected[1]); schedules.extend(collected[2])
             declared = background(package, module, collected_ids)
@@ -138,7 +139,6 @@ def background(package, module, seen):
     seen holds the ids already collected for this app, so an object imported into another services module, or
     bound to two names, registers once. Two different objects with one name reach clash(), which refuses them."""
     from .instances import AppSchedule, Schedule
-    from .jobs import Task
     tasks, schedules = [], []
     for value in vars(module).values():
         if id(value) in seen or not isinstance(value, (Task, Schedule)) or isinstance(value, AppSchedule):
@@ -239,11 +239,9 @@ def describe(packages):
     registry = Registry(*(model for _, definition in definitions for model in definition.models),
                         extensions=tuple(extension for _, definition in definitions for extension in definition.extensions))
     policy = Policy(registry, rules={key: value for _, definition in definitions for key, value in definition.permissions.items()})
-    from .forms import Forms, metadata as form_metadata
     from types import SimpleNamespace
     forms = Forms(SimpleNamespace(registry=registry, actions={(model, name): value for model in registry.models.values() for name, value in vars(model).items() if hasattr(value, '__action__')}),
                   [report for _, definition in definitions for report in definition.reports])
-    from .documents import argument_schema
     for model in registry.models.values():
         for value in vars(model).values():
             # Actions with declared inputs are validated by their fields; others need typed signatures.

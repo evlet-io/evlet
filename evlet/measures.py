@@ -17,9 +17,11 @@ from urllib.parse import parse_qs
 
 from . import qb
 from .auth import AccessError, allow, record_in
-from .fields import COLORS, Boolean, Date, DateTime, Decimal, Integer, Link, LongText, Reference, Tags
+from .fields import COLORS, Boolean, Date, DateTime, Decimal, Integer, Link, LongText, Reference, Tags, Field
 from .models import build_step, Model, ValidationError
 from .query import SqlQuery
+from .calc import CalcError, Expr, MAX_DAY, _Context, compile_expression, lift, parse
+from .database import Session
 
 FUNCTIONS = ('count', 'count_distinct', 'sum', 'min', 'max')
 MAX_GROUP_FIELDS, MAX_MEASURES, MAX_GROUPS = 4, 8, 500
@@ -269,7 +271,6 @@ def compile_where(registry, model, where):
     """(finite IR, fields read). The IR is checked here; Compiled.counted builds its condition."""
     if where is None:
         return None, frozenset()
-    from .calc import CalcError, Expr, _Context, compile_expression, lift
     try:
         expression = where if isinstance(where, Expr) else lift(where)
         ir, result, _ = compile_expression(expression, _Context(model, (), None, {}, registry=registry, measure=True), 'where')
@@ -317,7 +318,6 @@ def stored(model, node, reads):
 
 def today_value(node):
     """A Today parameter for today(), today() + or - days(n) and month_start(); None for anything else."""
-    from .calc import MAX_DAY, parse
     if node['$expr'] == 'today':
         return Today()
     if node['$expr'] == 'month_start':
@@ -374,7 +374,6 @@ def comparison(model, op, left, right, reads, zone):
     if literal == 'boolean':
         value = int(value)
     elif literal == 'decimal':
-        from .calc import parse
         number = parse(value)
         exact = Fraction(number.coef, 10 ** number.scale) * 10 ** getattr(field, 'scale', 0)
         if exact.denominator != 1:
@@ -700,8 +699,6 @@ def allowed(policy, user, item):
 
 def expression_names(node):
     """Field names an authoring expression refers to (the head of a Link path)."""
-    from .calc import Expr
-    from .fields import Field
     if isinstance(node, Field):
         return {node.name}
     if not isinstance(node, Expr):
@@ -926,7 +923,6 @@ def parse_groups(text):
 
 def route(business, scope, user, model, parts):
     """GET-only measure routes on a model."""
-    from .database import Session
     allow(scope['method'], 'GET')
     record_id = record_in(parts) if len(parts) == 5 else None
     business.policy.require(user, model, 'read')

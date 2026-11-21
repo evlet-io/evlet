@@ -11,6 +11,10 @@ from pathlib import Path
 
 from .controls import SCHEDULE, SCOPES, SETTINGS
 from .models import ValidationError, storage_name
+from .auth import Security
+from .declarations import Ref
+from .forms import Chart
+from .meaning import Related
 
 PROPS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required', 'read_only', 'default')
 UNKNOWN = '...'
@@ -45,7 +49,6 @@ def literal(value):
         return '[' + ', '.join(map(literal, value)) + ']'
     if isinstance(value, dict) and all(isinstance(key, str) for key in value):
         return '{' + ', '.join(f'{key!r}: {literal(item)}' for key, item in value.items()) + '}'
-    from .declarations import Ref
     if isinstance(value, Ref):
         return f'Ref({value.path!r})'
     return UNKNOWN
@@ -58,8 +61,6 @@ def call(name, args=(), kwargs=None):
 def block_code(block, sections, main=None):
     """Python source for one Meta.layout block; a section as `sections` (a Controls layout, by title) has it.
     `main` is the name of the Main block's fields (its title, or the model's label)."""
-    from .forms import Chart
-    from .meaning import Related
     from .ui.metadata import Html, Main, Section, TableSection
     if isinstance(block, Main):
         if isinstance(block.fields, str):
@@ -268,7 +269,6 @@ class Exporter:
         # Security(...) in config.py sets the sign-in rules. The block keeps what config.py sets today, with the overrides on top.
         rules = ('session_hours', 'lockout', 'password_min', 'two_step')
         if any(f'security.{name}' in values for name in rules):
-            from .auth import Security
             current, default = self.controls.business.auth.security, Security()
             security = {name: values.get(f'security.{name}', getattr(current, name)) for name in rules}
             # config.py's rules that Controls cannot change come along as they are.

@@ -24,6 +24,8 @@ import tempfile
 
 from . import qb
 from .auth import User
+from .framework import state, upgrade
+from .migrations import migrate
 
 __all__ = ['TestApp', 'Client', 'TestResponse']
 
@@ -162,9 +164,7 @@ class TestApp:
     __test__ = False  # Not a pytest test class.
 
     def __init__(self, path, *, apps=None, instance=None, directory=None):
-        from .framework import state, upgrade
         from .instances import INSTALLED_APPS, build_instance, read_instance, register_schedules
-        from .migrations import migrate
         from .packages import read_package, resolve_packages
         path = Path(path).resolve()
         self._owned = directory is None

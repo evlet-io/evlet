@@ -37,6 +37,10 @@ from .connector import ConnectorError, NoRedirect
 from .models import ValidationError, checked_body
 from .permissions import calling
 from .tools import ApprovalNeeded, NAMES, Tool, label, redacted
+from .business import Download
+from .database import Session
+from .jobs import Task
+from .services import Calendar
 
 logger = logging.getLogger(__name__)
 NOT_FOUND = 'Route not found'
@@ -603,7 +607,6 @@ class Eva:
             {'name': {'type': 'string', 'maxLength': 120}, 'content': {'type': 'string', 'maxLength': 500_000}, 'rows': {'type': 'object'}},
             ('name',), kind='write', origins=('eva', 'schedule'), label='Creating {name}'), self.create_file_tool)
         if business.jobs is not None:
-            from .jobs import Task
             business.jobs.tasks['eva_task'] = Task('eva_task', self.task_job, max_attempts=1, external=True)
 
     def initialize(self):
@@ -1496,7 +1499,6 @@ class Eva:
         search = search[:100]
         found = []
         person = self.person(user.id)
-        from .database import Session
         with self.database._connection() as connection:
             # One read snapshot for the search and the permission checks.
             connection.snapshot()
@@ -1540,7 +1542,6 @@ class Eva:
         return self.store(user.id, None, entry['name'], 'evlet', json.dumps({'model': body['model'], 'id': body['id'], 'file_id': body['file_id']}), content)
 
     def download(self, user, file_id):
-        from .business import Download
         from urllib.parse import quote
         with self.database._connection() as connection:
             row = connection.run(qb.select('evlet_eva_files', 'name', 'content').where(id=file_id, user_id=user.id)).one()
@@ -1679,7 +1680,6 @@ class Eva:
         return row is not None and json.loads(row['value']) is False
 
     def public_task(self, row, connection):
-        from .services import Calendar
         try:
             upcoming = Calendar(row['cron'], row['timezone']).next(int(time.time()))
         except ValueError:
@@ -1714,7 +1714,6 @@ class Eva:
         return row
 
     def task_values(self, body, partial=False):
-        from .services import Calendar
         allowed = {'name', 'instructions', 'cron', 'timezone', 'allow_changes', 'active'}
         if not isinstance(body, dict) or set(body) - allowed or (not partial and not {'name', 'instructions', 'cron'} <= set(body)):
             raise ValidationError({'_form': 'Send name, instructions and cron, with timezone and allow_changes if needed'})
@@ -1758,7 +1757,6 @@ class Eva:
 
     def schedule(self, user, task_id, cron, zone, active):
         """The task's calendar schedule in Evlet's jobs system, replaced whole when the timing changes."""
-        from .services import Calendar
         name = f'eva_task_{task_id}'
         with self.database.transaction() as tx:
             tx.connection.run(qb.delete('evlet_calendar_schedules').where(name=name))
@@ -1807,7 +1805,6 @@ class Eva:
     def parse(self, user, body):
         if not isinstance(body, dict) or set(body) - {'text', 'timezone'} or not isinstance(body.get('text'), str) or len(body['text']) > 4000:
             raise ValidationError({'text': 'Describe the task in up to 4,000 characters'})
-        from .services import Calendar
         zone = body.get('timezone') or getattr(self.business, 'timezone', None) or 'UTC'
         try:
             ZoneInfo(zone)

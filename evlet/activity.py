@@ -27,6 +27,9 @@ from .identity import RecordId, text as text_id
 from .models import build_step, ValidationError
 from . import qb
 from .adapter import Column, TableDefinition
+from .database import Session
+from .migrations import SchemaError
+from .sections import changes as section_changes
 
 SCALARS = ('rule', 'remark', 'level', 'base', 'rules_version')
 SCALAR_COLUMNS = (Column('rule', 'TEXT'), Column('remark', 'TEXT'), Column('level', 'INTEGER'), Column('base', 'INTEGER'),
@@ -131,7 +134,6 @@ def rename_legacy(connection):
 
     Framework step 0016_activity runs it, and migrate() too before any app migration, since app migrations
     (Recompute, ledger rows written in RunData) can write entries and run before the framework steps."""
-    from .migrations import SchemaError
     if connection.table_exists(LEGACY_TABLE):
         if connection.table_exists(TABLE.name):
             # Only an empty table can be in the way: one made before the rename ran.
@@ -311,7 +313,6 @@ def tree_changes(business, model, before, after, skip=()):
         old_sections = getattr(before, '_sections', {}).get(child.name, []) if before is not None else []
         new_sections = getattr(after, '_sections', {}).get(child.name, []) if after is not None else []
         if old_sections or new_sections:
-            from .sections import changes as section_changes
             headings = section_changes(old_sections, new_sections, old_rows, new_rows)
             if headings:
                 collection['sections'] = headings
@@ -722,7 +723,6 @@ def schema(business, user, model):
 
 def route(business, scope, body, user, model, record_id):
     """GET (?limit=&offset=&kind=) and POST /api/{model}/{id}/activity."""
-    from .database import Session
     method = scope['method']
     if method == 'POST':
         if not isinstance(body, dict) or not isinstance(body.get('kind'), str):

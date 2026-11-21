@@ -189,6 +189,50 @@ def test_function_level_upward_imports_are_allowed_explicitly():
     assert not new, 'Imports must point to the same or a lower layer; move the code instead:\n' + '\n'.join(new)
 
 
+# Function-level imports of a strictly lower layer that stay lazy, as (importing module, imported module). Any other
+# import of a lower layer belongs at module level: no cycle is possible, since lower layers never import upward at
+# module level. This list only shrinks.
+ALLOWED_LAZY_LOWER = {
+    # the imported module is not loaded by `import evlet` or `evlet --help`; kept off the startup path
+    ('activity', 'richtext'),
+    ('business', 'images'),
+    ('business', 'mentions'),
+    ('business', 'unsaved'),
+    ('images', 'richtext'),
+    ('sequences', 'expressions'),
+    ('statemanager', 'expressions'),
+    ('tools', 'controls'),
+    # tests monkeypatch the imported name on its own module, so it is looked up per call
+    ('business', 'measures'),
+    ('business', 'prompts'),
+    ('controls', 'currencies'),
+    # the imported name clashes with a local or module-level name of the importing module
+    ('business', 'activity'),
+    ('business', 'statemanager'),
+    ('framework', 'audit'),
+    # inside try/except
+    ('migrations', 'naming'),
+}
+
+
+def lazy_lower_imports():
+    for module in layered_modules():
+        for target, line, in_function in imports(module):
+            if in_function and module in LAYER and not is_top(target) and LAYER[target] < LAYER[module]:
+                yield module, target, line
+
+
+def test_lower_layer_imports_are_module_level():
+    new = [f'evlet/{module}.py:{line} ({NAME[LAYER[module]]}) imports {target} ({NAME[LAYER[target]]}) inside a function'
+           for module, target, line in lazy_lower_imports() if (module, target) not in ALLOWED_LAZY_LOWER]
+    assert not new, 'Import modules of a lower layer at module level:\n' + '\n'.join(new)
+
+
+def test_lazy_lower_allowlist_only_shrinks():
+    stale = sorted(ALLOWED_LAZY_LOWER - {(module, target) for module, target, _ in lazy_lower_imports()})
+    assert not stale, f'These lazy imports are gone; delete them from ALLOWED_LAZY_LOWER in tests/test_layers.py: {stale}'
+
+
 def test_upward_allowlist_only_shrinks():
     stale = sorted(ALLOWED_UPWARD - {(module, target) for module, target, _, _ in upward_imports()})
     assert not stale, f'These upward imports are gone; delete them from ALLOWED_UPWARD in tests/test_layers.py: {stale}'

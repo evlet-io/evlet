@@ -11,11 +11,12 @@ import time
 from urllib.parse import parse_qs
 
 from . import qb
-from .auth import AccessError, User
+from .auth import AccessError, User, PUBLIC, client_network
 from .documents import Context, typed_arguments
 from .permissions import trusted
 from .identity import RecordId
 from .models import ValidationError
+from .prompts import is_prompt, outcome_of
 
 
 def api(function=None, *, method='POST', permission=None, name=None, public=False, tool=False):
@@ -59,7 +60,6 @@ PUBLIC_LIMITS = ((60, 30), (3600, 300))
 def public_limit(business, scope, endpoint):
     """Count a public call per endpoint and client address; refuse with 429 and Retry-After past either window."""
     from .app import HTTPError
-    from .auth import client_network
     now = int(time.time())
     address = client_network(business.auth.client_address(scope))
     client = hashlib.sha256(f'public:{endpoint.name}:{address}'.encode()).hexdigest()
@@ -187,7 +187,6 @@ def dispatch(business, scope, body, user):
     if scope['method'] != endpoint.method: raise AccessError(405, 'Method not allowed')
     if endpoint.public:
         public_limit(business, scope, endpoint)
-        from .auth import PUBLIC
         user = User(0, 'public', PUBLIC)
     permission_model, operation = endpoint.permission
     model = business.registry.resolve(permission_model)
@@ -209,7 +208,6 @@ def dispatch(business, scope, body, user):
     with business.context(user, readonly=endpoint.method == 'GET') as context:
         with trusted():
             result = endpoint.function(context, **arguments)
-        from .prompts import is_prompt, outcome_of
         if is_prompt(result):
             # A prompt without a record: the ticket names this endpoint, checked again on submit.
             if endpoint.method != 'POST':

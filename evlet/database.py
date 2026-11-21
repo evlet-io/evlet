@@ -20,13 +20,15 @@ from .identity import FIXED_ID, RecordId, new_id, sequential
 from .currencies import check_amounts
 from .models import ValidationError
 from .query import SqlQuery
-from .naming import has_title, title_of
+from .naming import has_title, title_of, add_columns
 from . import images, ledger, periods
 from .ledger import is_ledger
 from .permissions import CALLER
 from .sequences import name_new, raw_write
 from . import qb, writes
 from .sqlite import SQLiteConnection
+from .indexes import violated
+from .sections import forget
 
 # Most rows one list call returns, and most rows one child collection may hold in an editor.
 ROW_LIMIT = 100
@@ -67,7 +69,6 @@ def conflict(registry, failure):
     integrity_failure): ValidationError naming the fields of a unique Meta.indexes entry (evlet/indexes.py),
     ConflictError for a write an append-only table refuses (evlet/ledger.py) or an id change
     (evlet/identity.py), and ConflictError for any other unique or foreign key."""
-    from .indexes import violated
     text = failure.message
     if text.endswith(' ' + ledger.APPEND_ONLY):
         return ConflictError(f'{text}: its rows are never changed or deleted')
@@ -767,7 +768,6 @@ class Session:
     def add_standard_columns(self, model):
         """For a data migration that fills names: give the model's table the standard name and title
         columns now instead of in framework step 0003, which runs after app migrations. Idempotent."""
-        from .naming import add_columns
         add_columns(self.connection, self.registry.name_for(model), model)
         audit.add_columns(self.connection, self.registry.name_for(model))
 
@@ -787,7 +787,6 @@ class Session:
         current = self.get(model, record_id)
         periods.check(self, model, before=current._values)
         record_id = current.id
-        from .sections import forget
         forget(self.connection, self.registry, model, [record_id])
         self.connection.run(qb.delete(self.registry.name_for(model)).where(id=record_id))
         # The record's images (rich text and Image fields) go with it.

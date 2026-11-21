@@ -20,11 +20,19 @@ apps post and reverse. See docs/states-actions.md.
 import inspect
 from types import MappingProxyType
 
-from .auth import AccessError, allow, has_role, record_in
-from .fields import MISSING
-from .models import build_step
+from .auth import AccessError, allow, has_role, record_in, PORTAL, ROLES
+from .fields import MISSING, COLORS, Link, Reference
+from .models import build_step, ValidationError, checked_body
 # The declarations live in core, where models and sequences import them; evlet.statemanager.State still works.
 from .declarations import KEY, REMARK_LENGTH, Level, Remark, Rule, State, Step, _key, check_rules  # noqa: F401
+from . import periods, qb
+from .adapter import Column, TableDefinition
+from .audit import actor_id, created
+from .calc import Budget, CalcError, F, _Context, compile_expression, evaluate, is_finite, lift, pending, ready
+from .database import storage_columns
+from .identity import RecordId
+from .naming import standard
+from .permissions import CALLER, CHUNK, trusted
 
 # Hooks
 
@@ -110,7 +118,6 @@ def configure(model):
 def check_item(item, extra=()):
     """Run the @validate hooks of one draft (a document, a Table row or a form) with it read only, as the last
     check of a settle, then `extra` checks (those an evlet.Extend adds); returns its errors. Assigning raises."""
-    from .models import ValidationError
     names = [name for kind, _, name in getattr(item._definition, '__hooks__', ()) if kind == 'validate']
     checks = [getattr(item._definition, name) for name in names] + list(extra)
     if not checks:
@@ -137,8 +144,6 @@ def run_hooks(context, draft, kind, state_name=None):
     """Run @state, @state.exit or @release hooks on the root draft, with self.context's transaction session
     open, as trusted code. A ValueError refuses the save."""
     from .documents import handler_context
-    from .models import ValidationError
-    from .permissions import trusted
     model = draft._definition
     names = [name for k, states, name in model.__hooks__ if k == kind and (not states or state_name in states)]
     if not names:
@@ -205,7 +210,6 @@ def allowed(user, roles, users, values):
 
 def state_write(model, scalars, current, *, readable=None):
     """Ordinary writes may echo a readable state; hidden inputs stay for uniform permission rejection."""
-    from .models import ValidationError
     name = model.__state__
     if name is None or name not in scalars or readable is not None and name not in readable:
         return
@@ -237,8 +241,6 @@ def check_state_lock(context, draft, before):
 
     Fields declared versioned=False may still change. Adding, removing or reordering rows at any depth is
     a change. Values are compared as the caller submitted them, before calculations."""
-    from .models import ValidationError
-    from .permissions import CALLER
     state_name = locked_state(draft._definition, before._values)
     if state_name is None:
         return
@@ -320,7 +322,6 @@ def find_rule(context, model, key):
 
 
 def clean_remark(remark):
-    from .models import ValidationError
     if remark is None or remark == '':
         return None
     if not isinstance(remark, str) or '\x00' in remark or len(remark.strip()) > REMARK_LENGTH:
@@ -354,7 +355,6 @@ def begin_move(context, model, draft, before, key, remark):
 
 def checked_move(context, model, draft, before, key, remark):
     from .guards import Guards, check_guard
-    from .models import ValidationError
     rule = find_rule(context, model, key) if isinstance(key, str) else None
     if rule is None:
         raise AccessError(404, 'Move not found')
@@ -427,7 +427,6 @@ def stay(context, model, record):
     A change to versioned content during the stay (an edit, an action, a restore, a Recompute) ends it too: the
     approvals before it no longer count, and the levels are decided again from the current values (None)."""
     import json
-    from . import qb
     cache = context.__dict__.setdefault('_stays', {})
     if model not in context._business.activities:
         return [], None
@@ -466,14 +465,12 @@ def waiting(context, model, record, rule):
 def may_approve(context, model, record, rule, index, approvals):
     """Whether the user may approve this level: named by it, approved no other level of this rule in this stay,
     and not the record's creator unless the rule says self_approve=True."""
-    from .audit import actor_id
     from .activity import actor_of
     level, user = rule.levels[index], context.user
     if not allowed(user, level.roles, level.users, record._values) or actor_of(user) in {row['actor'] for row in approvals}:
         return False
     if rule.self_approve:
         return True
-    from . import qb
     creator = context._tx.connection.run(qb.select(context._business.registry.name_for(model), 'evlet_created_by').where(id=record.id)).value()
     return creator is None or creator != actor_id(user)
 
@@ -482,7 +479,6 @@ def who_may(context, model, record, rule, guards=None):
     """False when this user may not use the rule on the saved record now; otherwise the approval level it approves
     (an index) or None. An approval with no level that applies is an ordinary move for those who may change the
     record. A reject rule is for the approvers of the level waiting on an approval rule out of the same state."""
-    from .permissions import CALLER
     if rule.system:
         # Only trusted app code (a job, an action or a hook) uses a rule with by=(); a caller never does.
         return False if CALLER.get() else None
@@ -502,7 +498,6 @@ def who_may(context, model, record, rule, guards=None):
 def approve(context, model, record, rule, level, remark, values):
     """Record the approval of one level that is not the last: an `approved` entry, and no change to the record."""
     from . import activity
-    from .models import ValidationError
     if values:
         raise ValidationError({'_form': f'{rule.label} saves values with its last approval'})
     if not activity.keeps_activity(context, model):
@@ -523,8 +518,6 @@ def last_level(context, model, record, rule, level):
 
 def awaiting(context, model):
     """Ids of the records whose waiting approval level this user may approve now ("Awaiting my approval")."""
-    from . import qb
-    from .permissions import CHUNK
     from .guards import Guards, check_guard
     rules = [rule for rule in rules_of(context, model) if rule.levels] if model.__state__ else []
     if not context._business.policy.allows(context.user, model, 'update'):
@@ -561,11 +554,9 @@ class _StateOnly:
         self.name, self.value, self.document, self.lookups, self.misses, self.row, self.at = name, value, self, {}, set(), None, 'move'
 
     def read(self, scope, field):
-        from .calc import pending, ready
         return ready(self.value) if scope == 'self' and field == self.name else pending('COMPUTE_INPUT_MISSING', ['move'])
 
     def today_result(self):
-        from .calc import pending
         return pending('COMPUTE_INPUT_MISSING', ['move'])
 
     def causes(self):
@@ -579,7 +570,6 @@ def move_asks(business, model, rule):
     cache = business.__dict__.setdefault('_move_asks', {})
     key = (model, rule)
     if key not in cache:
-        from .calc import Budget, CalcError, _Context, compile_expression, evaluate, lift
         name = model.__state__
         tables = {child.name: child.model for child in business.registry.children if child.parent is model}
 
@@ -617,7 +607,6 @@ def check_move_values(context, model, rule, values):
 
     A key that names no field this role can read (unknown or hidden) gets one form error, so the answer
     never confirms a hidden field."""
-    from .models import ValidationError
     business = context._business
     wanted, readable = set(writable_asks(business, context.user, model, rule)), business.policy.fields(context.user, model)
     errors = {key if key in readable else '_form': 'This move does not take this value' for key in values if key not in wanted}
@@ -656,7 +645,6 @@ def state_schema(business, user, model):
 def moves_available(business, context, model, record, guards_now, updatable, locks):
     """`_moves` and `_locked` for a detail: rules out of the current state, with a plain-English reason when
     one is blocked. `primary` marks a rule declared primary=True; without one, screens use the first allowed. Listed for every role that can read the State; reasons over unreadable inputs are generic."""
-    from . import periods
     from .guards import blocked_reason, readable, saved_locks
     policy, user = business.policy, context.user
     field = model.__declared_fields__[model.__state__]
@@ -707,7 +695,6 @@ def moves_available(business, context, model, record, guards_now, updatable, loc
 # Releases: numbered versions of a document, with lazy snapshots
 
 def releases_table():
-    from .adapter import Column, TableDefinition
     # A release row (snapshot 0) keeps number, state, hash, actor, time and {approvals, remark}; a snapshot row
     # (snapshot 1) is appended once, before the document first diverges from that release. Nothing is updated.
     return TableDefinition('evlet_releases', (
@@ -766,7 +753,6 @@ def digest(model, data, registry):
 def latest(connection, name, record_id):
     """The latest release of a record ({number, hash, state, snapshotted}) or None, in one statement. Once it has its
     snapshot, the hash is the snapshot's: the content the record had when it first diverged."""
-    from . import qb
     row = connection.run(qb.select('evlet_releases', 'number', 'snapshot', 'hash', 'state').where(model=name, record_id=record_id)
                          .order_by('-number', '-snapshot').limit(1)).one()
     return None if row is None else {'number': row['number'], 'hash': row['hash'], 'state': row['state'], 'snapshotted': bool(row['snapshot'])}
@@ -774,7 +760,7 @@ def latest(connection, name, record_id):
 
 def store(connection, registry, model, record_id, number, *, snapshot, state, data, hash, actor, drifted=False):
     import json
-    from . import activity, qb
+    from . import activity
     connection.run(qb.insert('evlet_releases', model=registry.name_for(model), record_id=record_id, number=number, snapshot=int(snapshot),
                              at=activity.now(), actor=actor, state=state, hash=hash, drifted=int(drifted),
                              data=json.dumps(data, sort_keys=True, separators=(',', ':'), ensure_ascii=False)))
@@ -817,7 +803,6 @@ def prepare_release(context, model, draft):
     last version's again when it did not. Returns the last version ({number, hash, ...}) or None."""
     import json
     from types import SimpleNamespace
-    from . import qb
     registry = context._business.registry
     name = registry.name_for(model)
     last = latest(context._tx.connection, name, draft.id) if draft.id else None
@@ -867,7 +852,6 @@ def saved(context, model, record_id):
 def version_of(context, model, record):
     """`_version` for a detail: {number, released, state}; number is None before the first release. Two indexed
     reads: the latest release and whether the activity changed versioned content since."""
-    from . import qb
     name = context._business.registry.name_for(model)
     last = latest(context._tx.connection, name, record.id)
     if last is None:
@@ -909,7 +893,6 @@ def readable_version(context, model, record_id):
 def versions(context, model, record_id):
     """Every release of the record, newest first, as {items: [{number, state, at, actor, remark, approvals}]}."""
     import json
-    from . import qb
     readable_version(context, model, record_id)
     rows = context._tx.connection.run(qb.select('evlet_releases', 'number', 'state', 'at', 'actor', 'data')
                                       .where(model=context._business.registry.name_for(model), record_id=record_id, snapshot=0)
@@ -926,7 +909,6 @@ def versions(context, model, record_id):
 def content_of(context, model, record_id, number):
     """The versioned content of release `number`: its snapshot, or the live record while it still is that release."""
     import json
-    from . import qb
     name = context._business.registry.name_for(model)
     row = context._tx.connection.run(qb.select('evlet_releases', 'data').where(model=name, record_id=record_id, number=number, snapshot=1)).one()
     if row is not None:
@@ -939,7 +921,6 @@ def content_of(context, model, record_id, number):
 
 def shown_tree(context, model, data):
     """A version as this user may read it: today's field, Link and row permissions, also on rows deleted since."""
-    from .identity import RecordId
     from .activity import Visibility, shown_value
     business, policy = context._business, context._business.policy
     visibility = Visibility(business, context._tx, context.user)
@@ -993,7 +974,6 @@ def version_diff(context, model, record_id, first, second):
 
 def route(business, scope, body, user, model, parts):
     """POST /api/{model}/{id}/restore ({version, remark}), GET .../versions, .../versions/{n} and .../versions/{a}/diff/{b or current}."""
-    from .models import ValidationError, checked_body
     record_id = record_in(parts)
     if parts[4] == 'restore':
         if len(parts) != 5 or scope['method'] != 'POST':
@@ -1027,9 +1007,7 @@ def route(business, scope, body, user, model, parts):
 
 def dependents(context, model, record_id):
     """Live documents that link to this one (a Link or a Reference, from them or their Table rows), as [(model, id)]."""
-    from . import qb
     from .documents import owner_of
-    from .fields import Link, Reference
     registry, connection = context._business.registry, context._tx.connection
     owners = {child.model for child in registry.children}
     found = {}
@@ -1052,8 +1030,6 @@ def dependents(context, model, record_id):
 def restorable(model, data, current, registry):
     """(values, dropped): the release's source values for a write (Table rows as full lists) and the fields it held
     that the model no longer has. A field added since takes its default; versioned=False fields are left out."""
-    from .calc import is_finite
-    from .naming import standard
     values, dropped = {}, sorted(key for key in data if key not in ('id', 'children') and key not in model.__fields__)
     for name, field in model.__fields__.items():
         if not field.versioned or name == model.__state__ or field.compute is not None or field.query is not None or field.fetch \
@@ -1074,11 +1050,6 @@ def restorable(model, data, current, registry):
 def recreate(context, model, data, current):
     """Insert the Table rows the release held that were deleted since, under their original ids, with the checks of
     a normal create: the row model's create permission, the fields this role may write, and readable Links."""
-    from . import qb
-    from .audit import created
-    from .database import storage_columns
-    from .fields import Link
-    from .identity import RecordId
     registry, policy, user = context._business.registry, context._business.policy, context.user
     for child in (child for child in registry.children if child.parent is model):
         saved = {str(row.id): row for row in current._rows.get(child.name, ())}
@@ -1107,7 +1078,6 @@ def recreate(context, model, data, current):
 
 def restore(context, model, record_id, number, remark):
     """Write release `number`'s content onto the record as a new change (logged `restored`), then recalculate."""
-    from .models import ValidationError
     business, user = context._business, context.user
     if not releasing(model) or not business.policy.allows(user, model, 'restore'):
         raise AccessError(403, 'Your role cannot restore this record')
@@ -1127,7 +1097,6 @@ def restore(context, model, record_id, number, remark):
     current = saved(context, model, record_id)
     values, dropped = restorable(model, data, current, business.registry)
     # A unique value another record has taken since stays as it is now, and is reported.
-    from . import qb
     kept = [name for name, field in model.__fields__.items() if field.unique and values.get(name) is not None
             and values[name] != field.serialize(current._values.get(name)) and context._tx.connection.run(
                 qb.select(business.registry.name_for(model), 'id').where(qb.ne('id', record_id), **{name: field.clean(values[name])})).one()]
@@ -1167,8 +1136,6 @@ def condition(business, model, text, guard_key, guards):
 
 def runtime_by(business, model, value):
     """`by` from JSON: role names and {"field": name}; roles must exist on the instance."""
-    from .auth import PORTAL, ROLES
-    from .calc import F
     known = {*ROLES, PORTAL, *(getattr(business.controls, 'roles', None) or {})} if getattr(business, 'controls', None) else {*ROLES, PORTAL}
     if not isinstance(value, list):
         raise ValueError('by is a list of roles and {"field": name} user fields')
@@ -1185,7 +1152,6 @@ def runtime_by(business, model, value):
 
 def runtime_rule(business, model, key, value, base, guards):
     """A Rule from an override: a change to code rule `base` (None for an added rule) by key."""
-    from .calc import F
     allowed = {'label', 'by', 'when', 'remark', 'levels', 'ask', 'primary', 'reject', 'self_approve', 'from', 'to'}
     if not isinstance(value, dict) or set(value) - allowed or base is not None and {'from', 'to'} & set(value):
         raise ValueError(f'{key}: change ' + ', '.join(sorted(allowed - ({'from', 'to'} if base else set()))))
@@ -1220,7 +1186,6 @@ def runtime_rule(business, model, key, value, base, guards):
 def compile_overrides(business, model, items, problems=None):
     """{steps, rules, guards} of one model's overrides [(kind, name, value)]. With `problems` an override that does
     not fit is ignored and reported (an orphan, after an upgrade); without, it raises (a save is refused)."""
-    from .fields import COLORS
     field = model.__declared_fields__[model.__state__]
     steps = {key: step.public() for key, step in field.steps.items()}
     code = {rule.key: rule for rule in field.rules}
@@ -1280,7 +1245,6 @@ def check_overrides(business, connection, changes):
     """The save-time check of a batch of state and rule changes [(kind, key, value)]: each model's whole rule set,
     with what is stored and every change of the batch (None deletes), must hold. Raises ValueError."""
     import json
-    from . import qb
     pending = {}
     for kind, key, value in changes:
         pending.setdefault(override_target(business.registry, key)[0], {})[kind, key] = value

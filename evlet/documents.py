@@ -7,19 +7,22 @@ import inspect
 import json
 import re
 
-from . import qb
+from . import qb, images, periods, sequences
 from .auth import AccessError, User, has_role
-from .database import ConflictError, ROW_LIMIT, conflict
-from .declarations import Ref
-from .fields import CurrentUser, MISSING, Link
+from .database import ConflictError, ROW_LIMIT, conflict, ReadSession, insert, storage_columns, stored_values
+from .declarations import Ref, Table
+from .fields import CurrentUser, MISSING, Link, Integer
 from .identity import RecordId
-from .naming import drop_echoes
+from .naming import drop_echoes, has_title
 from .permissions import CALLER, CHUNK, Policy, Rule, trusted
 from .models import ASSIGNED_ID, ValidationError, refuse_id
 from .query import SqlQuery
-from .reactivity import evaluate, graph, round_field, plans
+from .reactivity import evaluate, graph, round_field, plans, references
 from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal
 from . import sections
+from .audit import actor_id, modified
+from .currencies import check_amounts
+from .sequences import ASSIGNED_BY_ENGINE, sequence_write
 
 
 class Snapshot:
@@ -286,7 +289,6 @@ class Draft:
             if name == self._definition.__state__:
                 raise ValidationError({name: 'This changes only through its moves'})
             if self._definition.__declared_fields__[name].kind == 'sequence':
-                from .sequences import ASSIGNED_BY_ENGINE
                 raise ValidationError({name: ASSIGNED_BY_ENGINE})
             self._values[name] = value
             self._assigned.add(name)
@@ -393,7 +395,6 @@ class Context:
         if correlation_id is not None and (not isinstance(correlation_id, str) or len(correlation_id) > 200):
             raise ValueError('correlation_id must be text of at most 200 characters')
         if not readonly:
-            from .audit import actor_id
             tx._change_source, tx._change_correlation = source, correlation_id
             # Writes are recorded under this user; the engine's own contexts keep the person's.
             if actor_id(user) is not None:
@@ -421,7 +422,6 @@ class Context:
         derive() and before_close() get it read only (evlet.database.ReadSession): get, list, count,
         related and aggregate inside the write's transaction, and no writes."""
         if self._session_open == 'read':
-            from .database import ReadSession
             return ReadSession(self._tx)
         if not self._session_open:
             raise AccessError(403, 'The transaction session is available only to a state manager hook or an '
@@ -644,7 +644,6 @@ def load_draft(context, model, record_id, values, *, preview=False, complete=Fal
     if current is None:
         drop_empty_name(business.registry, model, scalars)
     from .statemanager import state_write
-    from .sequences import sequence_write
     readable = business.policy.fields(user, model)
     state_write(model, scalars, current, readable=readable)
     sequence_write(model, scalars, current, readable)
@@ -702,7 +701,6 @@ def row_bounds(business, child):
     legacy roots keep the 100-row limit; finite-v1 tables may load up to the engine limit so that a
     collection saved before max_rows was lowered can still be edited down.
     """
-    from .declarations import Table
     table = child.parent.__tables__.get(child.name)
     if not isinstance(table, Table) or table.child not in child.model.__mro__:
         return 0, ROW_LIMIT, ROW_LIMIT
@@ -716,7 +714,6 @@ def owned_rows(tx, child, owner_ids, *, scope=None, limit=None):
     One statement per chunk of owner IDs. `scope` is a row-scope condition (Policy.scope) from the
     policy. With a limit each owner keeps its first `limit` rows while `total` counts them all.
     """
-    from .permissions import CHUNK
     model = child.model
     link = f'record.{child.link}'
     order = ('record.evlet_position', 'record.id') if 'evlet_position' in model.__fields__ else ('record.id',)
@@ -1619,7 +1616,6 @@ def locked_change(item, old, name):
 
 def from_wire(field, value):
     """A value the finite engine wrote (initial or cleared), as the field's Python value."""
-    from .fields import Integer
     if isinstance(field, Integer) and not isinstance(field, Link) and isinstance(value, str) and re.fullmatch(r'-?[0-9]+', value):
         value = int(value)
     return None if value is None else field.validate(value)
@@ -1651,7 +1647,6 @@ def resolve_lookups(context, document):
 
 def fill_lookups(registry, tx, document):
     """Supply a document's Link path values from this transaction (see resolve_lookups)."""
-    from .database import ROW_LIMIT
     asked = set()  # Each record is queried at most once per settle, found or not.
     for _ in range(MAX_HOPS):
         wanted = {}
@@ -1777,7 +1772,6 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None,
             value = None
             if result.state == 'ready' and result.value is not None:
                 if field['result_type'] == 'decimal':
-                    from .fields import Integer
                     value = int(to_decimal(result.value)) if isinstance(definition, Integer) else to_decimal(result.value)
                 else:
                     value = result.value
@@ -1859,7 +1853,6 @@ def freeze_draft(draft):
 
 
 def source_values(draft, allowed=None, behaviors=('compute',)):
-    from .reactivity import references
     sources = draft._definition.__sources__
     used = {name: set(source.fields) for name, source in sources.items()}
     if allowed is not None:
@@ -1880,14 +1873,11 @@ def source_values(draft, allowed=None, behaviors=('compute',)):
 
 
 def write_snapshot(tx, draft, before=None, *, reload=True):
-    from .database import insert, storage_columns, stored_values
-    from .naming import has_title
     model = draft._definition
     # References are checked when they change; a saved one is not rechecked on every write.
     tx.check_references(model, {name: draft._values.get(name) for name in model.__fields__
                                  if before is None or before._values.get(name) != draft._values.get(name)})
     # Amounts carry at most their currency's places (calculated ones were rounded to them already).
-    from .currencies import check_amounts
     check_amounts(tx, model, draft._values)
     # The standard title follows its source on every write (evlet/naming.py).
     if has_title(model):
@@ -1897,12 +1887,10 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
     if draft.id is None:
         object.__setattr__(draft, 'id', insert(tx.connection, table, names, values, id_title=has_title(model), actor=tx.actor))
     else:
-        from .audit import modified
         stamp_names, stamp_values = modified(tx.actor)
         names, values = [*names, *stamp_names], [*values, *stamp_values]
         tx.connection.run(qb.update(table, **dict(zip(names, values))).where(id=draft.id))
     # Rich text and Image fields: link held images, refuse other records' and delete the ones no longer used.
-    from . import images
     holders = images.holders(model)
     if holders and (before is None or any(before._values.get(name) != draft._values.get(name) for name in holders)):
         images.settle(tx, model, draft.id, draft._values)
@@ -1921,7 +1909,6 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     from . import guards, statemanager
     business, tx, user = context._business, context._tx, context.user
     # Two Contexts for different users may share one transaction: this write is recorded under this one.
-    from .audit import actor_id
     if actor_id(user) is not None:
         tx.actor = actor_id(user)
     # Required fields and retired options set in Controls apply to what people send, not to app code.
@@ -2018,7 +2005,6 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     if person:
         business.controls.custom.enforce(model, draft._values, before._values if before else None)
     # Document numbers and names are assigned on the settled draft, in this transaction.
-    from . import sequences
     numbers = sequences.assign(context, model, draft, before, rule)
     rules = sequences.naming_rules(business.registry, model)
     if rules is not None and rules.field == 'name' and rules.system and (before is None or before._values.get('name') in (None, '')) \
@@ -2048,7 +2034,6 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         add_outcome(result, outcome, business.registry)
         return result
     # A closed period (Meta.period) refuses the write whether the saved or the new date is in it.
-    from . import periods
     if not within:  # A closed period protects content, not process.
         periods.check(tx, model, before=before._values if before is not None else None, after=draft._values)
     record = write_snapshot(tx, draft, before)
@@ -2269,7 +2254,6 @@ def persist_rows(context, model, draft, before, owner_id, keys):
 
 def write_positions(tx, model, positions):
     """Store new row positions, one statement per chunk of rows."""
-    from .permissions import CHUNK
     items, table = list(positions.items()), tx.registry.name_for(model)
     for start in range(0, len(items), CHUNK):
         part = dict(items[start:start + CHUNK])
@@ -2281,7 +2265,6 @@ def delete_rows(business, tx, model, record_ids):
 
     Callers have checked permissions for the whole subtree. One statement per table level and chunk.
     """
-    from .permissions import CHUNK
     ids = list(dict.fromkeys(record_ids))
     if not ids:
         return

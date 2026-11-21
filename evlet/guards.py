@@ -9,9 +9,15 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from .auth import AccessError, has_role, is_administrator
-from .fields import MISSING, Link, Reference
+from .fields import MISSING, Link, Reference, Boolean, Integer
 from .models import ValidationError, build_step
 from .permissions import CALLER
+from .calc import (
+    Budget, CalcError, Document, LIMITS, MAX_HOPS, Scope, _Context, compile_expression, compile_plan, error,
+    evaluate, is_finite, lift,
+)
+from .database import ROW_LIMIT
+from .reactivity import template
 
 
 @dataclass(frozen=True)
@@ -32,7 +38,6 @@ def compile_guards(registry, models, plans, child_models):
     The plan evaluates guards over the whole saved document; the root plan reads the saved root values
     (stored results as values) for guards that read no owned rows and no virtual results.
     """
-    from .calc import CalcError, _Context, compile_expression, compile_plan, lift
     from .statemanager import conditions
     guards, guard_plans, root_plans = {}, {}, {}
     for model in models:
@@ -120,8 +125,6 @@ def stored_reads(registry, model, plan):
     A Link path reads the Link field. Row models are the tables a finite aggregate reads as a set.
     Creation defaults and conditions are not results, so what they read does not matter here.
     """
-    from .calc import is_finite
-    from .reactivity import template
     members = [model] + [child.model for child in registry.children if registry.root_of(child.model) is model]
     nodes, _, inputs, owners = template(registry, model)
     keys = {}
@@ -213,7 +216,6 @@ def check_posted(context, draft, before):
 
 def saved_data(item):
     """A saved document tree as finite-engine data: source values with internal keys, at every depth."""
-    from .calc import is_finite
     values = {name: item._values.get(name) for name, field in item._definition.__declared_fields__.items()
               if not is_finite(field) and name not in getattr(item._definition, '__internal_fields__', ())}
     values['_key'], values['id'] = 's' + str(item.id), item.id
@@ -233,7 +235,6 @@ class Guards:
         self.documents = {}
 
     def session(self, whole):
-        from .calc import Document
         from .documents import host_today, resolve_lookups
         business = self.context._business
         if whole not in self.documents:
@@ -250,8 +251,6 @@ class Guards:
         return self.documents[whole]
 
     def result(self, guard):
-        from .calc import Budget, CalcError, MAX_HOPS, Scope, evaluate, error
-        from .database import ROW_LIMIT
         business = self.context._business
         try:
             try:
@@ -365,7 +364,6 @@ def loaded_document(business, model, record, loaded, context=None):
     Over a row limit it is None too, so the guard loads the document itself and reports the limit.
     With a `context` the drafts can be settled (Business.add_virtual_values).
     """
-    from .calc import LIMITS
     from .documents import Draft, row_bounds
     if loaded is None or loaded.get('partial'):
         return None
@@ -435,7 +433,6 @@ def availability(business, context, model, record, loaded=None):
 def saved_locks(context, model, load):
     """Root fields whose locked_when holds on the saved record, decided as a save decides them:
     a rule that is not decided locks the field."""
-    from .calc import CalcError, Document
     from .documents import host_today, resolve_lookups
     business = context._business
     names = {name for name, field in model.__declared_fields__.items() if field.locked_when is not None}
@@ -462,7 +459,6 @@ def action_schema(business, user, model, name):
         result['arguments'] = argument_schema(method, skip=1)
         result['inputs'] = []
         return result
-    from .fields import Boolean, Integer
     result['inputs'] = [field_schema(field) for field in inputs.values()]
     # The scalar form the current UI renders: text for everything except whole numbers and Booleans.
     result['arguments'] = []

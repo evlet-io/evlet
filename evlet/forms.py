@@ -5,12 +5,14 @@ import json
 import re
 
 from .auth import AccessError, allow, has_role
-from .models import Model, ValidationError
+from .models import Model, ValidationError, identifier, resolve_sources
 from .documents import Record, settle, walk
 from .permissions import trusted
 from .prompts import draft_values, form_draft
 from .ui.metadata import field_schema, source_schema
-from .reactivity import evaluate, plans, serialized
+from .reactivity import evaluate, plans, serialized, graph
+from .currencies import round_money
+from .fields import Boolean, Currency, Date, Decimal, Integer, Link, Text
 
 
 @dataclass(frozen=True)
@@ -25,7 +27,6 @@ class Column:
     source: str | None = None
 
     def __post_init__(self):
-        from .models import identifier
         identifier(self.name)
         if self.source is not None and (not isinstance(self.source, str) or self.source.count('.') != 1):
             raise ValueError("A column source is 'model.field'")
@@ -153,8 +154,6 @@ class Forms:
             if len({column.name for column in report.columns}) != len(report.columns): raise ValueError('Duplicate report column')
             self.check(report)
             self.reports[name] = report
-        from .models import resolve_sources
-        from .reactivity import graph
         for definition in self.reports.values():
             resolve_sources(business.registry, definition)
             graph(business.registry, definition)
@@ -250,7 +249,6 @@ class Forms:
         # Rows from context.list carry the standard name and title; a report shows them only as columns.
         result['rows'] = [{key: value for key, value in row.items() if key in allowed or key not in ('name', 'title')} for row in result['rows']]
         if any(set(row) - allowed for row in result['rows']): raise ValueError('Report rows must match declared columns')
-        from .fields import Text, Integer, Decimal, Currency, Date, Boolean, Link
         from decimal import Decimal as Number
         # A link column holds record ids, which the response writes as text ids.
         types = {'text': Text, 'integer': Integer, 'decimal': Decimal, 'currency': Currency, 'date': Date, 'boolean': Boolean, 'link': lambda: Link(None)}
@@ -405,7 +403,6 @@ def money_cell(value, column):
     if column.type != 'currency' or not column.unit or not re.fullmatch('[A-Z]{3}', column.unit) or value in (None, ''):
         return value
     from decimal import Decimal, InvalidOperation
-    from .currencies import round_money
     try:
         return format(round_money(value if isinstance(value, Decimal) else str(value), column.unit), 'f')
     except (InvalidOperation, ValueError):

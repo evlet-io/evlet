@@ -233,7 +233,6 @@ def systemd_unit(root, instance, port=8000, user='evlet'):
 
     It runs the web requests and the job queue in one process (--jobs), so job steps take their turn in the same
     write queue as people's saves. Secrets go in /etc/evlet/<instance>.env, which the unit reads when it exists."""
-    import re
     from .setup import python_in
     root = Path(root)
     # systemd expands % and $ and splits on spaces; keep the paths literal.

@@ -12,6 +12,9 @@ from .naming import title_sources
 from .fields import Link, Reference
 from .models import build_step, Model, refuse_id, ValidationError
 from .query import Condition, SqlQuery, child_tables, conditions
+from .calc import is_finite
+from .declarations import Ref
+from .reactivity import plans, references
 
 
 # IDs per batched permission or row statement; well under SQLite's bound-parameter limit.
@@ -465,8 +468,6 @@ class Policy:
         return result
 
     def _derivation_allowed(self, user, model, name, visiting):
-        from .reactivity import plans, references
-        from .calc import is_finite
         # Counted so a test can check that each formula is walked once per role (test_formula_and_record_values.py).
         self.__dict__['_derivation_walks'] = self.__dict__.get('_derivation_walks', 0) + 1
         field = model.__declared_fields__[name]
@@ -488,7 +489,6 @@ class Policy:
                 if isinstance(source.target, type) and (not self.allows(user, source.target, 'read') or self.rule(user, source.target).scope is not None
                                                         or not self.field_readable(user, source.target, parts[1], visiting)):
                     return False
-                from .declarations import Ref
                 for dependency in [value.path for value in source.filters.values() if isinstance(value, Ref)] + list(getattr(source.target, '__depends__', ())):
                     dep_parts = dependency.split('.')
                     owner = next((child.parent for child in self.registry.children if child.model is model), None) if dep_parts[0] == 'parent' else model
@@ -535,7 +535,6 @@ class Policy:
         on a governed model, in the role's read fields, and every input it reads readable. It stays out of
         records, lists and the schema, but formulas that read it are readable, and the browser computes it
         from the shipped plan (its formula reads only what the role can read already)."""
-        from .calc import is_finite
         field = model.__declared_fields__.get(name)
         if field is None or not field.hidden or field.stored or not is_finite(field) or model not in self.governed:
             return False
