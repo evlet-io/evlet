@@ -15,7 +15,7 @@ import re
 from . import qb
 from .adapter import Column as StoredColumn, TableDefinition
 from .auth import AccessError, has_role
-from .fields import RichText
+from .fields import RichText, size_text
 from .models import Model, ValidationError
 from .richtext import sanitise
 
@@ -459,7 +459,7 @@ class Prints:
     def catalog(self, user):
         models = [{'model': self.business.registry.name_for(model), **entry}
                   for model in self.business.registry.models.values() for entry in self.for_model(user, model)]
-        reports = getattr(getattr(self.business, 'forms', None), 'reports', {})
+        reports = self.business.forms.reports if self.business.forms else {}
         return {'available': available(), 'models': models,
                 'reports': [{'report': name, **entry} for name, report in reports.items() for entry in self.for_report(user, report)]}
 
@@ -512,7 +512,6 @@ class Prints:
         business = self.business
         if model not in business.attachments:
             raise AccessError(409, 'This record does not keep attachments')
-        from .business import size_text
         from .documents import Context
         from .statemanager import check_attachments
         check_attachments(Context(business, tx, user, readonly=True), model, tx.get(model, record_id))
@@ -530,7 +529,7 @@ class Prints:
         return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []
 
     def report_pdf(self, report_name, design_name, body, user):
-        reports = getattr(getattr(self.business, 'forms', None), 'reports', {})
+        reports = self.business.forms.reports if self.business.forms else {}
         report = reports.get(report_name)
         if report is None or not has_role(user, report.roles):
             raise AccessError(403, 'Report is unavailable')

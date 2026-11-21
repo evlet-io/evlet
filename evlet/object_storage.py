@@ -6,7 +6,7 @@ import secrets
 
 from . import qb
 from .adapter import Column, TableDefinition
-from .storage import MAX_FILE, SQLiteStorage, StorageError
+from .storage import KEY, MAX_FILE, ExternalStorage, StorageError
 
 
 OBJECT_STORE = TableDefinition('evlet_object_store', (
@@ -17,7 +17,9 @@ OBJECT_STORE = TableDefinition('evlet_object_store', (
 ), checks=(qb.eq('id', 1),))
 
 
-class S3Storage(SQLiteStorage):
+class S3Storage(ExternalStorage):
+    noun, kind = 'object', 's3'
+
     def __init__(self, client, *, bucket, prefix, tenant):
         if not isinstance(bucket, str) or not re.fullmatch('[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]', bucket):
             raise ValueError('Use an explicit bucket name')
@@ -62,21 +64,14 @@ class S3Storage(SQLiteStorage):
             stream.close()
 
     def _key(self, key):
-        if not isinstance(key, str) or not re.fullmatch('[0-9a-f]{64}', key):
-            raise StorageError('Invalid private object key')
-        return self.prefix + 'objects/' + key
+        return self.prefix + 'objects/' + self._checked(key)
 
-    def add(self, tx, model, record_id, name, content):
-        if self.database is None or not self.database.owns(tx):
-            raise StorageError('Attachment transaction belongs to another database')
-        key = secrets.token_hex(32)
+    def _put(self, key, content):
         try:
             self._binding()
             self.client.put_object(Bucket=self.bucket, Key=self._key(key), Body=content, ContentLength=len(content), ContentType='application/octet-stream', IfNoneMatch='*', Metadata={'sha256': hashlib.sha256(content).hexdigest()})
         except Exception as exc:
             raise StorageError('Private object upload failed') from exc
-        return tx.connection.run(qb.insert('evlet_attachments', model=model, record_id=record_id, name=name, content=b'',
-                                           storage_key=key, file_size=len(content), storage_kind='s3').returning_id()).id
 
     def read(self, row):
         if row['storage_key'] is None:
@@ -101,9 +96,8 @@ class S3Storage(SQLiteStorage):
 
     def remove(self, key):
         """Delete one object whose metadata row is already gone, such as a replaced photo."""
-        with self.database._connection() as connection:
-            if connection.run(qb.select('evlet_attachments', qb.value(1)).where(qb.eq('storage_key', qb.value(key)))).one():
-                return
+        if self._referenced(key):
+            return
         try:
             self._binding()
             self.client.delete_object(Bucket=self.bucket, Key=self._key(key))
@@ -123,7 +117,7 @@ class S3Storage(SQLiteStorage):
                     for item in response.get('Contents', []):
                         full_key = item['Key']
                         key = full_key.removeprefix(self.prefix + 'objects/')
-                        if re.fullmatch('[0-9a-f]{64}', key) and self._key(key) == full_key and key not in referenced:
+                        if re.fullmatch(KEY, key) and self._key(key) == full_key and key not in referenced:
                             self.client.delete_object(Bucket=self.bucket, Key=full_key)
                             removed += 1
                     if not response.get('IsTruncated'):

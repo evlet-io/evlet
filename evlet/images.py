@@ -23,7 +23,7 @@ import re
 import struct
 import time
 
-from .fields import Image, RichText
+from .fields import Image, RichText, size_text
 from .models import ValidationError
 from . import qb
 from .adapter import Column
@@ -165,10 +165,6 @@ def limits(business):
         return settings['files.image_max_kb'] * 1024, settings['files.images_per_record']
     except (AttributeError, KeyError, TypeError):
         return DEFAULT_LIMITS
-
-
-def size_text(size):
-    return f'{size // (1024 * 1024)} MiB' if size % (1024 * 1024) == 0 else f'{size // 1024} KiB'
 
 
 def initialize(database):

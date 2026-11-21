@@ -20,9 +20,8 @@ import hashlib
 import json
 import re
 from types import MappingProxyType
-from urllib.parse import parse_qs
 
-from .auth import AccessError, User
+from .auth import AccessError, User, allow, page_query, record_in
 from .fields import Link, Reference
 from .identity import RecordId, text as text_id
 from .models import build_step, ValidationError
@@ -737,43 +736,29 @@ def route(business, scope, body, user, model, record_id):
             from .mentions import send_emails
             send_emails(business, emails)
         return 201, entry, []
-    if method != 'GET':
-        raise AccessError(405, 'Method not allowed')
-    try:
-        raw = scope.get('query_string', b'')
-        query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=3) if len(raw) <= 256 else None
-        if query is None or set(query) - {'limit', 'offset', 'kind'} or any(len(values) != 1 for values in query.values()):
-            raise ValueError()
-        limit, offset = query.get('limit', [str(PAGE)])[0], query.get('offset', ['0'])[0]
-        kind = query.get('kind', [None])[0]
-        if not re.fullmatch('[0-9]{1,19}', limit) or not re.fullmatch('[0-9]{1,19}', offset) or kind not in (None, *ENGINE_KINDS, *USER_KINDS):
-            raise ValueError()
-    except (ValueError, UnicodeError):
-        raise ValidationError({'query': f'Use a limit of 1 to {MAX_PAGE} entries, a nonnegative offset and a known kind'})
+    allow(method, 'GET')
+    message = f'Use a limit of 1 to {MAX_PAGE} entries, a nonnegative offset and a known kind'
+    limit, offset, query = page_query(scope.get('query_string', b''), default=PAGE, maximum=None, message=message, extra=('kind',))
+    kind = query['kind']
+    if kind not in (None, *ENGINE_KINDS, *USER_KINDS):
+        raise ValidationError({'query': message})
     from .documents import Context
     with business.database._connection() as connection:
         # One read snapshot.
         connection.snapshot()
         context = Context(business, Session(connection, business.registry), user, readonly=True)
-        return 200, entries(context, model, record_id, limit=int(limit), offset=int(offset), kind=kind), []
+        return 200, entries(context, model, record_id, limit=limit, offset=offset, kind=kind), []
 
 
 def history_route(business, scope, user, model, parts):
     """GET /api/{model}/{id}/history?limit=&offset=: the activity page Context.history returns."""
-    from .identity import path_id
-    if len(parts) != 5 or path_id(parts[3]) is None:
+    if len(parts) != 5:
         raise AccessError(404, 'Record not found')
-    if scope['method'] != 'GET':
-        raise AccessError(405, 'Method not allowed')
-    try:
-        query = parse_qs(scope.get('query_string', b'').decode('ascii'), keep_blank_values=True)
-        if set(query) - {'limit', 'offset'} or any(len(values) != 1 for values in query.values()):
-            raise ValueError()
-        page = {key: int(values[0]) for key, values in query.items()}
-    except (ValueError, UnicodeError):
-        raise ValidationError({'query': 'Use a limit and a nonnegative offset'}) from None
+    record_id = record_in(parts)
+    allow(scope['method'], 'GET')
+    limit, offset, _ = page_query(scope.get('query_string', b''), default=PAGE, maximum=None, message='Use a limit and a nonnegative offset')
     with business.context(user, readonly=True) as context:
-        return 200, context.history(model, path_id(parts[3]), **page), []
+        return 200, context.history(model, record_id, limit=limit, offset=offset), []
 
 
 # Verification

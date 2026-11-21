@@ -495,8 +495,9 @@ class Application:
         except ValueError:
             raise AccessError(403, 'Unrecognized host or origin') from None
 
-    async def _event_stream(self, scope, receive, send):
-        page = await self._work.run('read', self.business.event_page, scope)
+    async def _sse(self, receive, send, name, frames):
+        """Send frames(wait) as text/event-stream. frames is an async generator of SSE frames; between pages it
+        awaits wait(timeout, *tasks), which is True once the client has gone or the application is stopping."""
         await send({'type': 'http.response.start', 'status': 200, 'headers': [
             (b'content-type', b'text/event-stream'), (b'cache-control', b'no-store'),
             (b'x-accel-buffering', b'no'), (b'x-content-type-options', b'nosniff')]})
@@ -506,43 +507,27 @@ class Application:
         disconnect = asyncio.create_task(disconnected())
         self._loop = asyncio.get_running_loop()
         stopping = asyncio.create_task(self._stopping.wait())
-        self._event_streams += 1
-        pump = self._event_pump
-        if pump is None or pump.done() or pump.get_loop() is not asyncio.get_running_loop():
-            self._event_changed = asyncio.Event()
-            self._event_pump = asyncio.create_task(self._pump_events())
-        ends = asyncio.get_running_loop().time() + 25
+
+        async def wait(timeout, *tasks):
+            done, _ = await asyncio.wait({disconnect, stopping, *tasks}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+            return disconnect in done or stopping in done
+
+        stream = frames(wait)
         try:
-            while True:
-                encoded = ('id: ' + page['cursor'] + '\nevent: evlet\ndata: ' + json.dumps(jsonable(page)) + '\n\n').encode()
-                await send({'type': 'http.response.body', 'body': encoded, 'more_body': True})
-                remaining = ends - asyncio.get_running_loop().time()
-                if remaining <= 0:
-                    return
-                # Sleep until the shared poller sees a new event (or briefly, while a backlog remains), and
-                # read a page at least every STREAM_RECHECK seconds so an ended session ends the stream.
-                changed = asyncio.create_task(self._event_changed.wait())
-                try:
-                    done, _ = await asyncio.wait({disconnect, stopping, changed}, return_when=asyncio.FIRST_COMPLETED,
-                                                 timeout=0.05 if page['more'] else min(STREAM_RECHECK, remaining))
-                finally:
-                    changed.cancel()
-                if disconnect in done or stopping in done:
-                    return
-                headers = [(key, value) for key, value in scope.get('headers', []) if key != b'last-event-id']
-                headers.append((b'last-event-id', page['cursor'].encode()))
-                try:
-                    page = await self._work.run('read', self.business.event_page, {**scope, 'headers': headers})
-                except (AccessError, Busy):
-                    await send({'type': 'http.response.body', 'body': b'event: unavailable\ndata: {}\n\n', 'more_body': True})
-                    return
-                except Exception:
-                    logger.exception('Event stream failed')
-                    return
+            try:
+                async for body in stream:
+                    try:
+                        await send({'type': 'http.response.body', 'body': body, 'more_body': True})
+                    except OSError:
+                        return
+            except (AccessError, Busy):
+                await send({'type': 'http.response.body', 'body': b'event: unavailable\ndata: {}\n\n', 'more_body': True})
+            except Exception:
+                logger.exception('%s failed', name)
         except OSError:
             return
         finally:
-            self._event_streams -= 1
+            await stream.aclose()
             disconnect.cancel()
             stopping.cancel()
             await asyncio.gather(disconnect, stopping, return_exceptions=True)
@@ -550,6 +535,38 @@ class Application:
                 await send({'type': 'http.response.body', 'body': b'', 'more_body': False})
             except OSError:
                 pass
+
+    async def _event_stream(self, scope, receive, send):
+        page = await self._work.run('read', self.business.event_page, scope)
+
+        async def frames(wait):
+            current, ends = page, asyncio.get_running_loop().time() + 25
+            while True:
+                yield ('id: ' + current['cursor'] + '\nevent: evlet\ndata: ' + json.dumps(jsonable(current)) + '\n\n').encode()
+                remaining = ends - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    return
+                # Sleep until the shared poller sees a new event (or briefly, while a backlog remains), and
+                # read a page at least every STREAM_RECHECK seconds so an ended session ends the stream.
+                changed = asyncio.create_task(self._event_changed.wait())
+                try:
+                    if await wait(0.05 if current['more'] else min(STREAM_RECHECK, remaining), changed):
+                        return
+                finally:
+                    changed.cancel()
+                headers = [(key, value) for key, value in scope.get('headers', []) if key != b'last-event-id']
+                headers.append((b'last-event-id', current['cursor'].encode()))
+                current = await self._work.run('read', self.business.event_page, {**scope, 'headers': headers})
+
+        self._event_streams += 1
+        pump = self._event_pump
+        if pump is None or pump.done() or pump.get_loop() is not asyncio.get_running_loop():
+            self._event_changed = asyncio.Event()
+            self._event_pump = asyncio.create_task(self._pump_events())
+        try:
+            await self._sse(receive, send, 'Event stream', frames)
+        finally:
+            self._event_streams -= 1
 
     def _latest_event(self):
         with self.business.gate.shared():
@@ -591,52 +608,27 @@ class Application:
     async def _eva_stream(self, scope, receive, send):
         """One Eva run's events as SSE: stored events after Last-Event-ID, then new ones as they are written, for about
         25 seconds or until the run ends. A reconnect continues from the last id, so nothing runs twice."""
-        if scope['method'] != 'GET':
-            raise HTTPError(405, 'Method not allowed', [(b'allow', b'GET')])
+        self._method(scope['method'], ('GET',))
         last = dict(scope.get('headers', [])).get(b'last-event-id', b'0')
         after = int(last) if last.isdigit() and len(last) <= 19 else 0
         page = await self._work.run('read', self._eva_page, scope, after)
-        await send({'type': 'http.response.start', 'status': 200, 'headers': [
-            (b'content-type', b'text/event-stream'), (b'cache-control', b'no-store'),
-            (b'x-accel-buffering', b'no'), (b'x-content-type-options', b'nosniff')]})
-        async def disconnected():
-            while (await receive())['type'] != 'http.disconnect':
-                pass
-        disconnect = asyncio.create_task(disconnected())
-        self._loop = asyncio.get_running_loop()
-        stopping = asyncio.create_task(self._stopping.wait())
-        deadline = asyncio.get_running_loop().time() + 25
-        try:
+
+        async def frames(wait):
+            current, seen, deadline = page, after, asyncio.get_running_loop().time() + 25
             while True:
-                for item in page['items']:
-                    after = item['id']
-                    await send({'type': 'http.response.body', 'body': f"id: {item['id']}\nevent: {item['type']}\ndata: {json.dumps(item)}\n\n".encode(), 'more_body': True})
-                if page['done']:
-                    await send({'type': 'http.response.body', 'body': b'event: end\ndata: {}\n\n', 'more_body': True})
+                for item in current['items']:
+                    seen = item['id']
+                    yield f"id: {item['id']}\nevent: {item['type']}\ndata: {json.dumps(item)}\n\n".encode()
+                if current['done']:
+                    yield b'event: end\ndata: {}\n\n'
                     return
                 if asyncio.get_running_loop().time() > deadline:
                     return
-                done, _ = await asyncio.wait({disconnect, stopping}, timeout=0.05 if len(page['items']) >= 200 else 0.25, return_when=asyncio.FIRST_COMPLETED)
-                if done:
+                if await wait(0.05 if len(current['items']) >= 200 else 0.25):
                     return
-                try:
-                    page = await self._work.run('read', self._eva_page, scope, after)
-                except (AccessError, Busy):
-                    await send({'type': 'http.response.body', 'body': b'event: unavailable\ndata: {}\n\n', 'more_body': True})
-                    return
-                except Exception:
-                    logger.exception('Eva stream failed')
-                    return
-        except OSError:
-            return
-        finally:
-            disconnect.cancel()
-            stopping.cancel()
-            await asyncio.gather(disconnect, stopping, return_exceptions=True)
-            try:
-                await send({'type': 'http.response.body', 'body': b'', 'more_body': False})
-            except OSError:
-                pass
+                current = await self._work.run('read', self._eva_page, scope, seen)
+
+        await self._sse(receive, send, 'Eva stream', frames)
 
     @staticmethod
     def _invalid_constant(value):

@@ -34,7 +34,7 @@ import re
 from urllib.parse import parse_qs
 
 from . import qb
-from .auth import AccessError
+from .auth import AccessError, allow
 from .calc import Expr
 from .database import Session
 from .declarations import Ref
@@ -51,8 +51,7 @@ WORD = re.compile(r'[^\W_]+', re.UNICODE)
 
 def route(business, scope, user, model):
     """GET /api/{model}/search: up to `limit` options this person may read, ranked by the typed text."""
-    if scope['method'] not in ('GET', 'HEAD'):
-        raise AccessError(405, 'Method not allowed')
+    allow(scope['method'], 'GET', 'HEAD')
     text, link, values, limit = parameters(scope)
     policy = business.policy
     policy.require(user, model, 'read')

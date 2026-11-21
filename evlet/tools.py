@@ -358,7 +358,7 @@ class Tools:
     def services(self, user):
         """Business services an app marked for assistants (@api(..., tool=True)) that this user may call."""
         found = []
-        for endpoint in getattr(self.business, 'apis', ()):
+        for endpoint in self.business.apis:
             if not getattr(endpoint, 'tool', False) or endpoint.public:
                 continue
             try:
@@ -746,7 +746,7 @@ class Tools:
         with self.database._connection() as connection:
             pending = qb.eq('status', 'pending') if pending_only else qb.TRUE
             cancelled = set()
-            eva = getattr(self.business, 'eva', None) is not None
+            eva = self.business.eva is not None
             if eva and pending_only:
                 stopped = qb.select('evlet_eva_runs', 'id').where(user_id=user.id, status='cancelled')
                 pending = qb.and_(pending, qb.or_(qb.is_null('run_id'), qb.not_in('run_id', stopped)))
@@ -768,7 +768,7 @@ class Tools:
                 raise AccessError(404, 'Approval not found')
             if row['status'] != 'pending' or row['expires_at'] <= now:
                 raise AccessError(409, 'This approval was already answered or has expired.')
-            eva = getattr(self.business, 'eva', None)
+            eva = self.business.eva
             if eva is not None and row['run_id'] and row['origin'] == 'eva':
                 eva.record_answer(tx.connection, user, row, approve)
             tx.connection.run(qb.update('evlet_tool_approvals', status='approved' if approve else 'declined', decided_at=now).where(id=approval_id))
@@ -828,7 +828,7 @@ class Tools:
         if match and method == 'POST':
             checked_body(body, {'approve'}, 'Send approve: true or false', exact=True, field='approve')
             decided = self.decide(user, int(match[1]), body['approve'])
-            eva = getattr(self.business, 'eva', None)
+            eva = self.business.eva
             if eva is not None and decided['run_id'] and decided['origin'] == 'eva':
                 eva.answered(user, decided, scope)
             return 200, decided, []

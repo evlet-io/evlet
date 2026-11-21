@@ -14,6 +14,8 @@ from .writes import sync_directory
 # The largest private file read back: a rich text image of 8 MiB at most (Controls, files.image_max_kb).
 # Attachments and profile photos have their own lower limits.
 MAX_FILE = 8 * 1024 * 1024
+# A private file's storage key: 32 random bytes in hex.
+KEY = '[0-9a-f]{64}'
 
 
 class StorageError(RuntimeError):
@@ -55,7 +57,33 @@ class SQLiteStorage:
         return row['content']
 
 
-class LocalFileStorage(SQLiteStorage):
+class ExternalStorage(SQLiteStorage):
+    """Bytes kept outside the database under a random 64-hex-digit key; the metadata row commits with the record
+    change. Subclasses set noun and kind and write the bytes in _put (raising StorageError on failure)."""
+    noun, kind = 'file', None
+
+    def _checked(self, key):
+        if not isinstance(key, str) or not re.fullmatch(KEY, key):
+            raise StorageError(f'Invalid private {self.noun} key')
+        return key
+
+    def _put(self, key, content):
+        raise NotImplementedError
+
+    def add(self, tx, model, record_id, name, content):
+        if self.database is None or not self.database.owns(tx):
+            raise StorageError('Attachment transaction belongs to another database')
+        key = secrets.token_hex(32)
+        self._put(key, content)
+        return tx.connection.run(qb.insert('evlet_attachments', model=model, record_id=record_id, name=name, content=b'',
+                                           storage_key=key, file_size=len(content), storage_kind=self.kind).returning_id()).id
+
+    def _referenced(self, key):
+        with self.database._connection() as connection:
+            return connection.run(qb.select('evlet_attachments', qb.value(1)).where(qb.eq('storage_key', qb.value(key)))).one() is not None
+
+
+class LocalFileStorage(ExternalStorage):
     """Immutable private files. Deletes remove metadata; collect reclaims files.
 
     A failed transaction may leave an unreferenced file. Collection holds the
@@ -101,14 +129,9 @@ class LocalFileStorage(SQLiteStorage):
                 raise StorageError('File storage belongs to another database')
 
     def _path(self, key):
-        if not isinstance(key, str) or not re.fullmatch('[0-9a-f]{64}', key):
-            raise StorageError('Invalid private file key')
-        return self.root / key
+        return self.root / self._checked(key)
 
-    def add(self, tx, model, record_id, name, content):
-        if self.database is None or not self.database.owns(tx):
-            raise StorageError('Attachment transaction belongs to another database')
-        key = secrets.token_hex(32)
+    def _put(self, key, content):
         try:
             self._check_binding()
             fd = os.open(self._path(key), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -119,8 +142,6 @@ class LocalFileStorage(SQLiteStorage):
             sync_directory(self.root)
         except (OSError, UnicodeError) as exc:
             raise StorageError('Private file storage is unavailable') from exc
-        return tx.connection.run(qb.insert('evlet_attachments', model=model, record_id=record_id, name=name, content=b'',
-                                           storage_key=key, file_size=len(content)).returning_id()).id
 
     def read(self, row):
         if row['storage_key'] is None:
@@ -142,10 +163,8 @@ class LocalFileStorage(SQLiteStorage):
         """Delete one file whose metadata row is already gone, such as a replaced photo."""
         try:
             self._check_binding()
-            with self.database._connection() as connection:
-                if connection.run(qb.select('evlet_attachments', qb.value(1)).where(qb.eq('storage_key', qb.value(key)))).one():
-                    return
-            self._path(key).unlink(missing_ok=True)
+            if not self._referenced(key):
+                self._path(key).unlink(missing_ok=True)
         except (OSError, UnicodeError) as exc:
             raise StorageError('Private file storage is unavailable') from exc
 
@@ -157,7 +176,7 @@ class LocalFileStorage(SQLiteStorage):
                 referenced = {row[0] for row in tx.connection.run(qb.select('evlet_attachments', 'storage_key').where(qb.not_null('storage_key')))}
                 removed = 0
                 for path in self.root.iterdir():
-                    if re.fullmatch('[0-9a-f]{64}', path.name) and path.name not in referenced:
+                    if re.fullmatch(KEY, path.name) and path.name not in referenced:
                         path.unlink()
                         removed += 1
                 return removed

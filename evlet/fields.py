@@ -830,6 +830,14 @@ def duration_text(seconds):
     return ("P" + (f"{days}D" if days else "") + ("T" + clock if clock else "")) if days or clock else "PT0S"
 
 
+def size_text(size):
+    """A byte limit as people read it: 2 MiB, 512 KiB, 1536 bytes."""
+    for unit, scale in (("MiB", 1024 * 1024), ("KiB", 1024)):
+        if size % scale == 0:
+            return f"{size // scale} {unit}"
+    return "1 byte" if size == 1 else f"{size} bytes"
+
+
 class Duration(Integer):
     """Whole seconds stored as an integer; serialized as ISO 8601 (PT1H30M). Accepts that format or seconds."""
     kind = "duration"
