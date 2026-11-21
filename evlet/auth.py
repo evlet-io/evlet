@@ -170,6 +170,14 @@ class OIDC:
         object.__setattr__(self, 'subjects', MappingProxyType(values))
 
 
+def top_navigation(scope):
+    """Whether a request is a browser's top-level page load: GET or HEAD with Sec-Fetch-Mode: navigate and
+    Sec-Fetch-Dest: document (or no Sec-Fetch-Dest). Frames, fetches, form posts and subresources are not."""
+    headers = dict(scope.get('headers', []))
+    return (scope.get('method') in ('GET', 'HEAD') and headers.get(b'sec-fetch-mode') == b'navigate'
+            and headers.get(b'sec-fetch-dest', b'document') == b'document')
+
+
 def is_administrator(user):
     """Whether user (a User or an account row) is the built-in Administrator."""
     if isinstance(user, dict) or hasattr(user, 'keys'):
@@ -552,8 +560,12 @@ class LocalAuth:
         if not isinstance(role, str) or not connection.run(qb.select('evlet_roles', 'id').where(id=role)).one():
             raise ValidationError({'role': 'Choose an existing role'})
 
-    def guard(self, scope):
-        protected = {b'host', b'origin', b'cookie', b'x-csrf-token', b'x-evlet-request', b'sec-fetch-site', b'authorization'}
+    def guard(self, scope, navigation=False):
+        """Reject requests from unknown hosts or origins, cross-site requests and unprotected writes.
+        navigation=True is passed only by browser page routes: a cross-site request is then let through
+        when it is a top-level page navigation (a link on another site), which reads no data and changes nothing."""
+        protected = {b'host', b'origin', b'cookie', b'x-csrf-token', b'x-evlet-request', b'sec-fetch-site',
+                     b'sec-fetch-mode', b'sec-fetch-dest', b'authorization'}
         seen = set()
         for key, _ in scope.get('headers', []):
             key = key.lower()
@@ -568,7 +580,7 @@ class LocalAuth:
         origin = headers.get(b'origin')
         if origin is not None and origin.decode('latin1') not in self.origins:
             raise AccessError(403, 'Unrecognized origin')
-        if headers.get(b'sec-fetch-site') == b'cross-site':
+        if headers.get(b'sec-fetch-site') == b'cross-site' and not (navigation and top_navigation(scope)):
             raise AccessError(403, 'Cross-site request rejected')
         # A key in the Authorization header is never sent by a browser on its own, so it needs no CSRF header.
         if scope['method'] not in ('GET', 'HEAD') and headers.get(b'x-evlet-request') != b'1' and not API_KEY.fullmatch(self.bearer(scope) or ''):

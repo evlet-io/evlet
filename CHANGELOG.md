@@ -61,6 +61,12 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **Links from other sites open the page.** A link to an Evlet page from an email, a chat, a search
+  result or another website answered 403 `Cross-site request rejected`. A top-level page load
+  (`GET`/`HEAD`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`) of a browser page now gets
+  the page, and the visitor signs in there if their session cookie didn't come with the link. `/api/`,
+  frames, fetches and every write stay rejected cross-site
+  ([docs/business-capabilities.md](docs/business-capabilities.md)).
 - **A `DropIndex` by an index's first names after its field was renamed and the name reused.** 0.4.17 renamed the
   field in `Meta.indexes` entries, so after `RenameField("party", "kind", "role_kind")` and a new `AddField` named
   `kind`, a later `DropIndex("party", ("kind", "record_id"), unique=True)` resolved `kind` to the new field, left
