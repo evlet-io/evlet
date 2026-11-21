@@ -44,6 +44,8 @@ CREATE_REQUESTS = TableDefinition('evlet_create_requests', (
     Column('principal', 'TEXT', required=True), Column('model', 'TEXT', required=True), Column('key', 'TEXT', required=True),
     Column('request_hash', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True),
     Column('expires', 'INTEGER', required=True)), primary_key=('principal', 'model', 'key'))
+# What a route handler returns to hand the request on to the next route (Business._route).
+PASS = object()
 # A record's files beside its rich text images (purpose "image").
 FILES = qb.or_(qb.is_null('purpose'), qb.ne('purpose', 'image'))
 
@@ -345,6 +347,18 @@ class Business:
 
     def schema(self, user):
         result = self.registry.ui_schema()
+        self._application_schema(user, result)
+        available = {name for name, model in self.registry.models.items() if self.policy.allows(user, model, 'read')}
+        result['models'] = [entry for entry in result['models'] if entry['name'] in available]
+        for entry in result['models']:
+            self._model_schema(user, entry)
+        # Named sidebars, after the models and reports above are filtered for this role (evlet.workspaces).
+        if self.workspaces is not None:
+            result['workspaces'] = self.workspaces.schema(user, result)
+        return result
+
+    def _application_schema(self, user, result):
+        """The schema's application-wide parts: reports, printing, capabilities, currencies, tenant and zone."""
         if self.forms and self.forms.reports:
             result['reports'] = self.forms.catalog(user)
             if self.prints is not None:
@@ -369,175 +383,188 @@ class Business:
         # The IANA zone the server dates today() in (Instance.timezone, UTC by default), so the browser's
         # calculation previews and date pickers pick the same day as the save.
         result['timezone'] = self.timezone or 'UTC'
-        available = {name for name, model in self.registry.models.items() if self.policy.allows(user, model, 'read')}
-        result['models'] = [entry for entry in result['models'] if entry['name'] in available]
-        for entry in result['models']:
-            model = self.registry.models[entry['name']]
-            readable, writable = self.policy.fields(user, model), self.policy.fields(user, model, write=True)
-            if 'behavior' in entry:
-                from .reactivity import references, plans
-                available_behavior = {}
-                for name, behavior in entry['behavior'].items():
-                    if name not in readable: continue
-                    # References to protected inputs stay private, including defaults and conditions.
-                    allowed = {}
-                    for key, value in behavior.items():
-                        original = plans(model)[name][key]
-                        dependencies = set().union(*(references(item) for item in original.values())) if key == 'filters' else references(original)
-                        def available(path):
-                            parts = path.split('.')
-                            if len(parts) == 1: return path in readable
-                            if len(parts) == 2 and parts[0] == 'parent':
-                                owner = next((child.parent for child in self.children.values() if child.model is model), None)
-                                return owner is not None and parts[1] in self.policy.fields(user, owner)
-                            return False
-                        if all(available(path) for path in dependencies):
-                            allowed[key] = value
-                        elif key == 'compute' and self.policy.derivation_allowed(user, model, name):
-                            allowed[key] = value
-                        elif key == 'filters':
-                            allowed['filters_blocked'] = True
-                    available_behavior[name] = allowed
-                entry['behavior'] = available_behavior
-                from .reactivity import references
-                used_sources = {}
-                for path in (path for name in readable for path in references(plans(model)[name].get('compute'))):
-                    if path.count('.') == 1: used_sources.setdefault(path.split('.')[0], set()).add(path.split('.')[1])
-                if 'sources' in entry:
-                    entry['sources'] = {name: {key: value for key, value in outputs.items() if key in used_sources[name]}
-                                        for name, outputs in entry['sources'].items() if name in used_sources}
-                def ordered(key):
-                    head, _, rest = key.partition('.')
-                    if not rest:
-                        return head in readable or head in model.__tables__ and owned_readable(head) is not None
-                    fields = owned_readable(head)
-                    return fields is not None and rest in fields
 
-                def owned_readable(name):
-                    """Readable fields of an owned table's rows, or None when the rows are hidden."""
-                    child = next((item.model for item in self.children.values() if item.parent is model and item.name == name), None)
-                    return self.policy.fields(user, child) if child is not None and self.policy.allows(user, child, 'read') else None
-                if 'order' in entry:
-                    entry['order'] = [key for key in entry['order'] if ordered(key)]
-            expressions = self.field_expressions(user, model)
-            # operators: what a list filter may use on the field (evlet.query); none when it is not stored.
-            entry['fields'] = [{**field, 'read_only': field['name'] not in writable, 'stored': model.__declared_fields__[field['name']].stored,
-                                'operators': operators_for(model, field['name']), **expressions.get(field['name'], EMPTY_EXPRESSIONS)}
-                               for field in entry['fields'] if field['name'] in readable]
-            entry['fields'] = [self.currency_for(user, model, field, readable) for field in entry['fields']]
-            entry['list_fields'] = [name for name in entry['list_fields'] if name == 'id' or name in readable]
-            entry['search_fields'] = [name for name in entry['search_fields'] if name in readable]
-            entry['layout'] = [{**group, 'fields': [name for name in group['fields'] if name in readable]} for group in entry.get('layout', [])]
-            # Controls overrides: labels, rules, options, layout and list view on this instance.
-            self.controls.custom.merge(entry, model, readable, writable)
-            # List tabs only for roles that can count by their field (evlet.measures.list_tabs).
-            from .measures import tabs_visible
-            if 'list_tabs' in entry and not tabs_visible(self, user, model, entry['list_tabs']['field']):
-                del entry['list_tabs']
-            if entry['title_field'] not in readable:
-                entry['title_field'] = 'id'
-            # Meta.focus is display only; like key_fields it is left out for a role that cannot read the field.
-            if 'focus' in entry and entry['focus'] not in readable:
-                del entry['focus']
-            # The record's image field, likewise only for a role that can read it.
-            if 'image' in entry and entry['image'] not in readable:
-                del entry['image']
-            # The field naming fills: the record page shows it as the document number, and until it has one,
-            # when it will ("Assigned on save", "Assigned on issued").
-            naming = self.registry.naming.get(model)
-            if naming is not None and naming.field in readable:
-                placeholder = None if naming.manual else 'Assigned on save' if naming.assign_on == 'create' else \
-                    f'Assigned on {naming.assign_on.replace("_", " ")}'
-                entry['naming'] = {'field': naming.field, 'assign_on': naming.assign_on, 'manual': naming.manual, 'placeholder': placeholder}
-                for field in entry['fields']:
-                    if field['name'] == naming.field and placeholder and not field.get('placeholder'):
-                        field['placeholder'] = placeholder
-            entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
-            # The designs this role may print the model with; absent when there are none.
-            designs = self.prints.for_model(user, model) if self.prints is not None else []
-            if designs:
-                entry['prints'] = designs
-            from .permissions import corrects
-            entry['permissions'].update({op: self.policy.allows(user, model, op) for op in CORRECTIONS if corrects(model, op)})
-            entry['child_only'] = model in self.child_models
-            from .documents import row_bounds
-            from .sections import enabled as sections_enabled, total_fields
-            # row_changes: the parent's save takes {create, update, delete, order} change sets (document route);
-            # otherwise it takes only full row lists without _key (legacy ChildTable on a plain model).
-            entry['children'] = [{'name': child.name, 'model': self.registry.name_for(child.model), 'link': child.link, 'label': child.label,
-                                  'row_changes': bool(getattr(model, '__declaration_mode__', False)),
-                                  # Whether list filters may match the parent on these rows (no row scope of their own).
-                                  'filterable': self.policy.rule(user, child.model).scope is None,
-                                  **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child))),
-                                  # Table(copy=False): Duplicate leaves these rows out of the new record (display only).
-                                  **({'copy': False} if getattr(getattr(model, '__tables__', {}).get(child.name), 'copy', True) is False else {}),
-                                  # Table(totals=...): the owner's fields shown under the table, in order (docs/ui.md).
-                                  **({'totals': list(totals)} if (totals := getattr(getattr(model, '__tables__', {}).get(child.name), 'totals', ())) else {}),
-                                  # Table(sections=True): rows may include section rows {"id", "section"}; each shows the sums
-                                  # of its rows for the fields the total line sums (computed by the client, never stored).
-                                  **({'sections': True, 'section_sums': list(total_fields(model, child.name))}
-                                     if sections_enabled(model, child.name) else {}),
-                                  # A Table that derive() fills (derived=True) is read only on the form; the save sends none of its rows.
-                                  **({'read_only': True} if child.name in getattr(model, '__derives__', ()) else {})}
-                                 for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
-            # What derive() fills on every save and preview (derived=True): "field", "table" or "table.field". The form asks
-            # the server for a preview when the person pauses, so these show before the save. Only readable names are listed.
-            derives = [name for name in getattr(model, '__derives__', ())
-                       if name.split('.')[0] in readable or any(child['name'] == name.split('.')[0] for child in entry['children'])]
-            if derives:
-                entry['derives'] = derives
-            # Meta.panel keeps only what it names: a ChildTable given to the Application (not a Table field, so
-            # unknown when the model was defined) stays out of the side panel too.
-            panel = entry.get('panel')
-            if panel and 'order' in panel:
-                extra = [child['name'] for child in entry['children'] if child['name'] not in getattr(model, '__tables__', {})
-                         and child['name'] not in panel['order'] and child['name'] not in panel.get('tabs', ())]
-                if extra:
-                    entry['panel'] = {**panel, 'tabs': sorted({*panel.get('tabs', ()), *extra})}
-            from .guards import action_schema
-            from .statemanager import state_schema
-            entry['actions'] = [{'name': action.name, 'label': action.label,
-                                 **(action_schema(self, user, model, action.name) if hasattr(getattr(model, action.name, None), '__action__') else {})}
-                                for action in self.actions.values() if action.model is model and has_role(user, action.roles) and self.policy.allows(user, model, 'update')]
-            state = state_schema(self, user, model)
-            if state is not None:
-                entry['state'] = state
-            entry['attachments'] = model in self.attachments
-            from .measures import schema as measure_schema
-            if self.registry.measures.get(model):
-                entry['measures'] = measure_schema(self, user, model)
-            if entry['attachments']:
-                entry['attachment_limits'] = self.attachment_limits[model].public()
-            from .activity import schema as activity_schema
-            entry.update(activity_schema(self, user, model))
-            meaning = self.registry.meaning[model]
-            if meaning.key_fields:
-                entry['key_fields'] = [name for name in meaning.key_fields if name in readable]
-            # Meta.cards, like key_fields, only what this role may read: a field it can read, or a per-record
-            # measure whose fields it can read.
-            cards = getattr(self.registry, 'cards', {}).get(model)
-            if cards:
-                from .measures import available
-                measured = {item.name for item in available(self, user, model, True)}
-                entry['cards'] = [name for name in cards if name in readable or name in measured]
-            # The status badge (Meta.status), only for roles that can read its field.
-            if meaning.status is not None and meaning.status in readable:
-                entry['status'] = meaning.status
-            relations = [relation.public(self.registry, self.relation_order(user, relation))
-                         for relation in self.visible_relations(user, model)]
-            if relations:
-                entry['relations'] = relations
-            # Meta.layout's blocks: Related and Chart blocks only over what this role may read.
-            if 'record_layout' in entry:
-                from .ui.metadata import layout_for_role
-                entry['record_layout'] = layout_for_role(self, user, model, entry['record_layout'], readable)
-            plan = self.registry.plans.get(model)
-            if plan is not None:
-                entry['calculation'] = self.calculation_projection(user, model, plan)
-        # Named sidebars, after the models and reports above are filtered for this role (evlet.workspaces).
-        if self.workspaces is not None:
-            result['workspaces'] = self.workspaces.schema(user, result)
-        return result
+    def _model_schema(self, user, entry):
+        """Narrow one model's schema entry to what this role may read, write and run."""
+        model = self.registry.models[entry['name']]
+        readable, writable = self.policy.fields(user, model), self.policy.fields(user, model, write=True)
+        if 'behavior' in entry:
+            self._behavior_schema(user, model, entry, readable)
+        self._fields_schema(user, model, entry, readable, writable)
+        entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
+        # The designs this role may print the model with; absent when there are none.
+        designs = self.prints.for_model(user, model) if self.prints is not None else []
+        if designs:
+            entry['prints'] = designs
+        from .permissions import corrects
+        entry['permissions'].update({op: self.policy.allows(user, model, op) for op in CORRECTIONS if corrects(model, op)})
+        entry['child_only'] = model in self.child_models
+        entry['children'] = self._children_schema(user, model)
+        # What derive() fills on every save and preview (derived=True): "field", "table" or "table.field". The form asks
+        # the server for a preview when the person pauses, so these show before the save. Only readable names are listed.
+        derives = [name for name in getattr(model, '__derives__', ())
+                   if name.split('.')[0] in readable or any(child['name'] == name.split('.')[0] for child in entry['children'])]
+        if derives:
+            entry['derives'] = derives
+        # Meta.panel keeps only what it names: a ChildTable given to the Application (not a Table field, so
+        # unknown when the model was defined) stays out of the side panel too.
+        panel = entry.get('panel')
+        if panel and 'order' in panel:
+            extra = [child['name'] for child in entry['children'] if child['name'] not in getattr(model, '__tables__', {})
+                     and child['name'] not in panel['order'] and child['name'] not in panel.get('tabs', ())]
+            if extra:
+                entry['panel'] = {**panel, 'tabs': sorted({*panel.get('tabs', ()), *extra})}
+        from .guards import action_schema
+        from .statemanager import state_schema
+        entry['actions'] = [{'name': action.name, 'label': action.label,
+                             **(action_schema(self, user, model, action.name) if hasattr(getattr(model, action.name, None), '__action__') else {})}
+                            for action in self.actions.values() if action.model is model and has_role(user, action.roles) and self.policy.allows(user, model, 'update')]
+        state = state_schema(self, user, model)
+        if state is not None:
+            entry['state'] = state
+        entry['attachments'] = model in self.attachments
+        from .measures import schema as measure_schema
+        if self.registry.measures.get(model):
+            entry['measures'] = measure_schema(self, user, model)
+        if entry['attachments']:
+            entry['attachment_limits'] = self.attachment_limits[model].public()
+        from .activity import schema as activity_schema
+        entry.update(activity_schema(self, user, model))
+        self._record_schema(user, model, entry, readable)
+
+    def _behavior_schema(self, user, model, entry, readable):
+        """Field behavior, calculation sources and list order, only over inputs this role may read."""
+        from .reactivity import references, plans
+
+        def available(path):
+            parts = path.split('.')
+            if len(parts) == 1: return path in readable
+            if len(parts) == 2 and parts[0] == 'parent':
+                owner = next((child.parent for child in self.children.values() if child.model is model), None)
+                return owner is not None and parts[1] in self.policy.fields(user, owner)
+            return False
+        available_behavior = {}
+        for name, behavior in entry['behavior'].items():
+            if name not in readable: continue
+            # References to protected inputs stay private, including defaults and conditions.
+            allowed = {}
+            for key, value in behavior.items():
+                original = plans(model)[name][key]
+                dependencies = set().union(*(references(item) for item in original.values())) if key == 'filters' else references(original)
+                if all(available(path) for path in dependencies):
+                    allowed[key] = value
+                elif key == 'compute' and self.policy.derivation_allowed(user, model, name):
+                    allowed[key] = value
+                elif key == 'filters':
+                    allowed['filters_blocked'] = True
+            available_behavior[name] = allowed
+        entry['behavior'] = available_behavior
+        used_sources = {}
+        for path in (path for name in readable for path in references(plans(model)[name].get('compute'))):
+            if path.count('.') == 1: used_sources.setdefault(path.split('.')[0], set()).add(path.split('.')[1])
+        if 'sources' in entry:
+            entry['sources'] = {name: {key: value for key, value in outputs.items() if key in used_sources[name]}
+                                for name, outputs in entry['sources'].items() if name in used_sources}
+
+        def ordered(key):
+            head, _, rest = key.partition('.')
+            if not rest:
+                return head in readable or head in model.__tables__ and owned_readable(head) is not None
+            fields = owned_readable(head)
+            return fields is not None and rest in fields
+
+        def owned_readable(name):
+            """Readable fields of an owned table's rows, or None when the rows are hidden."""
+            child = next((item.model for item in self.children.values() if item.parent is model and item.name == name), None)
+            return self.policy.fields(user, child) if child is not None and self.policy.allows(user, child, 'read') else None
+        if 'order' in entry:
+            entry['order'] = [key for key in entry['order'] if ordered(key)]
+
+    def _fields_schema(self, user, model, entry, readable, writable):
+        """Fields, list and search fields, layout, Controls overrides and display fields for this role."""
+        expressions = self.field_expressions(user, model)
+        # operators: what a list filter may use on the field (evlet.query); none when it is not stored.
+        entry['fields'] = [{**field, 'read_only': field['name'] not in writable, 'stored': model.__declared_fields__[field['name']].stored,
+                            'operators': operators_for(model, field['name']), **expressions.get(field['name'], EMPTY_EXPRESSIONS)}
+                           for field in entry['fields'] if field['name'] in readable]
+        entry['fields'] = [self.currency_for(user, model, field, readable) for field in entry['fields']]
+        entry['list_fields'] = [name for name in entry['list_fields'] if name == 'id' or name in readable]
+        entry['search_fields'] = [name for name in entry['search_fields'] if name in readable]
+        entry['layout'] = [{**group, 'fields': [name for name in group['fields'] if name in readable]} for group in entry.get('layout', [])]
+        # Controls overrides: labels, rules, options, layout and list view on this instance.
+        self.controls.custom.merge(entry, model, readable, writable)
+        # List tabs only for roles that can count by their field (evlet.measures.list_tabs).
+        from .measures import tabs_visible
+        if 'list_tabs' in entry and not tabs_visible(self, user, model, entry['list_tabs']['field']):
+            del entry['list_tabs']
+        if entry['title_field'] not in readable:
+            entry['title_field'] = 'id'
+        # Meta.focus is display only; like key_fields it is left out for a role that cannot read the field.
+        if 'focus' in entry and entry['focus'] not in readable:
+            del entry['focus']
+        # The record's image field, likewise only for a role that can read it.
+        if 'image' in entry and entry['image'] not in readable:
+            del entry['image']
+        # The field naming fills: the record page shows it as the document number, and until it has one,
+        # when it will ("Assigned on save", "Assigned on issued").
+        naming = self.registry.naming.get(model)
+        if naming is not None and naming.field in readable:
+            placeholder = None if naming.manual else 'Assigned on save' if naming.assign_on == 'create' else \
+                f'Assigned on {naming.assign_on.replace("_", " ")}'
+            entry['naming'] = {'field': naming.field, 'assign_on': naming.assign_on, 'manual': naming.manual, 'placeholder': placeholder}
+            for field in entry['fields']:
+                if field['name'] == naming.field and placeholder and not field.get('placeholder'):
+                    field['placeholder'] = placeholder
+
+    def _children_schema(self, user, model):
+        """The owned tables of a model that this role may read."""
+        from .documents import row_bounds
+        from .sections import enabled as sections_enabled, total_fields
+        # row_changes: the parent's save takes {create, update, delete, order} change sets (document route);
+        # otherwise it takes only full row lists without _key (legacy ChildTable on a plain model).
+        return [{'name': child.name, 'model': self.registry.name_for(child.model), 'link': child.link, 'label': child.label,
+                 'row_changes': bool(getattr(model, '__declaration_mode__', False)),
+                 # Whether list filters may match the parent on these rows (no row scope of their own).
+                 'filterable': self.policy.rule(user, child.model).scope is None,
+                 **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child))),
+                 # Table(copy=False): Duplicate leaves these rows out of the new record (display only).
+                 **({'copy': False} if getattr(getattr(model, '__tables__', {}).get(child.name), 'copy', True) is False else {}),
+                 # Table(totals=...): the owner's fields shown under the table, in order (docs/ui.md).
+                 **({'totals': list(totals)} if (totals := getattr(getattr(model, '__tables__', {}).get(child.name), 'totals', ())) else {}),
+                 # Table(sections=True): rows may include section rows {"id", "section"}; each shows the sums
+                 # of its rows for the fields the total line sums (computed by the client, never stored).
+                 **({'sections': True, 'section_sums': list(total_fields(model, child.name))}
+                    if sections_enabled(model, child.name) else {}),
+                 # A Table that derive() fills (derived=True) is read only on the form; the save sends none of its rows.
+                 **({'read_only': True} if child.name in getattr(model, '__derives__', ()) else {})}
+                for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
+
+    def _record_schema(self, user, model, entry, readable):
+        """Key fields, cards, status, relations, record layout and calculation, only over what this role may read."""
+        meaning = self.registry.meaning[model]
+        if meaning.key_fields:
+            entry['key_fields'] = [name for name in meaning.key_fields if name in readable]
+        # Meta.cards, like key_fields, only what this role may read: a field it can read, or a per-record
+        # measure whose fields it can read.
+        cards = getattr(self.registry, 'cards', {}).get(model)
+        if cards:
+            from .measures import available
+            measured = {item.name for item in available(self, user, model, True)}
+            entry['cards'] = [name for name in cards if name in readable or name in measured]
+        # The status badge (Meta.status), only for roles that can read its field.
+        if meaning.status is not None and meaning.status in readable:
+            entry['status'] = meaning.status
+        relations = [relation.public(self.registry, self.relation_order(user, relation))
+                     for relation in self.visible_relations(user, model)]
+        if relations:
+            entry['relations'] = relations
+        # Meta.layout's blocks: Related and Chart blocks only over what this role may read.
+        if 'record_layout' in entry:
+            from .ui.metadata import layout_for_role
+            entry['record_layout'] = layout_for_role(self, user, model, entry['record_layout'], readable)
+        plan = self.registry.plans.get(model)
+        if plan is not None:
+            entry['calculation'] = self.calculation_projection(user, model, plan)
 
     def docs_path(self, scope, user):
         """Where Docs are for this request, or None: off, on a sub-host, or outside Docs(roles=...)."""
@@ -558,49 +585,68 @@ class Business:
             with using(self.database):
                 return self._dispatch(scope, body)
 
-    def _dispatch(self, scope, body):
+    # The routes, in the order they are tried: (method or None for any, exact paths, path prefixes, handler).
+    # A handler that returns PASS hands the request on to the next route; a request no route answers is a
+    # model route (_model_route). The order is load-bearing: the public routes are tried before the session
+    # is checked, /api/_services/ is tried on both sides of it, and the narrower /api/_settings/me/... mounts
+    # come before /api/_settings/.
+    _PUBLIC_ROUTES = (
+        ('GET', ('/api/auth/session',), (), '_session_route'),
+        ('POST', ('/api/auth/setup',), (), '_setup_route'),
+        ('POST', ('/api/auth/login',), (), '_login_route'),
+        (None, (), ('/api/_services/',), '_public_service_route'),
+    )
+    _ROUTES = (
+        (None, ('/api/_tools',), ('/api/_tools/',), '_tools_route'),
+        (None, ('/api/_eva',), ('/api/_eva/',), '_eva_route'),
+        (None, ('/api/_settings/me/ai',), ('/api/_settings/me/ai/', '/api/_oauth/'), '_assistants_route'),
+        (None, ('/api/_settings/me/keys',), ('/api/_settings/me/keys/',), '_keys_route'),
+        # /api/_settings/me/email is the sign-in address change (Settings); the mailbox has its own routes.
+        (None, ('/api/_settings/me/mailbox',), ('/api/_settings/me/mailbox/',), '_mailbox_route'),
+        (None, ('/api/_controls',), ('/api/_controls/',), '_controls_route'),
+        (None, ('/api/_unsaved',), ('/api/_unsaved/',), '_unsaved_route'),
+        (None, (), ('/api/_settings/',), '_settings_route'),
+        (None, (), ('/api/_services/',), '_service_route'),
+        (None, (), ('/api/_prompts/',), '_prompts_route'),
+        (None, ('/api/_prints',), (), '_prints_route'),
+        (None, (), ('/api/_reports/',), '_report_print_route'),
+        (None, ('/api/_reports',), ('/api/_reports/',), '_reports_route'),
+        ('POST', (), ('/api/_draft/',), '_draft_route'),
+        ('POST', ('/api/auth/logout',), (), '_logout_route'),
+        ('POST', ('/api/auth/password',), (), '_password_route'),
+        (None, (), ('/api/auth/users',), '_accounts_route'),
+        ('GET', ('/api/schema',), (), '_schema_route'),
+        ('GET', ('/api/_discovery',), (), '_catalog_route'),
+        ('GET', (), ('/api/_discovery/',), '_describe_route'),
+        ('GET', ('/api/_events',), (), '_events_route'),
+        (None, ('/api/_inbox',), ('/api/_inbox/',), '_inbox_route'),
+        ('GET', (), ('/api/_jobs/',), '_job_route'),
+    )
+
+    def _route(self, routes, scope, body, user):
+        """The answer of the first route in routes that matches the request and answers it, or PASS."""
         path, method = scope['path'], scope['method']
+        for want, exact, prefixes, handler in routes:
+            if (want is None or want == method) and (path in exact or path.startswith(prefixes)):
+                answer = getattr(self, handler)(scope, body, user)
+                if answer is not PASS:
+                    return answer
+        return PASS
+
+    def _dispatch(self, scope, body):
         self.auth.guard(scope)
-        if path == '/api/auth/session' and method == 'GET':
-            info = dict(self.application or {})
-            if self.tenant:
-                info.update(name=self.tenant['label'], playground=False)
-            try:
-                user, csrf = self.auth.session(scope)
-                if 'docs' in info:
-                    info['docs'] = self.docs_path(scope, user)
-                extra = {'application': info} if info else {}
-                # An account without a password yet (the Administrator after a development link) sets one first.
-                if self.auth.password_needed(user):
-                    extra.update(password_needed=True, password_min=self.auth.minimum(user.role))
-                return 200, {'user': user.public(), 'csrf': csrf, **({'tenant': self.tenant} if self.tenant else {}), **extra}, []
-            except AccessError as exc:
-                if exc.status != 401:
-                    raise
-                if 'docs' in info:
-                    info['docs'] = self.docs_path(scope, None)
-                extra = {'application': info} if info else {}
-                # First-run setup creates an admin, so it asks for config.py's admin minimum.
-                if self.oidc is not None and (provider := self.oidc.options(scope)) is not None:
-                    extra['oidc'] = provider
-                if self.auth.allow_setup and self.auth.setup_needed():
-                    extra['password_min'] = self.auth.minimum('admin')
-                # Security(admin_sign_in=True): the sign-in page starts with the Administrator's username.
-                if getattr(self.auth, 'security', None) is not None and self.auth.security.admin_sign_in and self.auth.realm(scope) == 'desk':
-                    extra['sign_in'] = {'username': ADMINISTRATOR}
-                return 200, {'user': None, 'setup': self.auth.allow_setup and self.auth.setup_needed(), **({'tenant': self.tenant} if self.tenant else {}), **extra}, []
-        if path == '/api/auth/setup' and method == 'POST':
-            self.auth.setup(scope, body)
-            return 201, {'created': True}, []
-        if path == '/api/auth/login' and method == 'POST':
-            payload, headers = self.auth.login(scope, body)
-            return 200, payload, headers
-        if path.startswith('/api/_services/'):
-            from .services import dispatch, endpoint_for
-            endpoint = endpoint_for(self, path)
-            if endpoint is not None and endpoint.public:
-                return dispatch(self, scope, body, None)
-        user, csrf = self.auth.session(scope)
+        answer = self._route(self._PUBLIC_ROUTES, scope, body, None)
+        if answer is not PASS:
+            return answer
+        user = self._narrowed(scope, self.auth.session(scope)[0])
+        answer = self._route(self._ROUTES, scope, body, user)
+        if answer is not PASS:
+            return answer
+        return self._model_route(scope, body, user)
+
+    def _narrowed(self, scope, user):
+        """The signed-in user as this request may act: assistants and API keys reach less."""
+        path, method = scope['path'], scope['method']
         if user.access is None and dict(scope.get('headers', [])).get(b'x-evlet-client') == b'mcp':
             # The local MCP connector: the same narrowing as a remote assistant.
             user = self.assistants.narrow(user)
@@ -613,132 +659,224 @@ class Business:
             reading = path == '/api/_tools/execute' or (inner and path.startswith('/api/_reports/') and not path.endswith('/evaluate'))
             if method not in ('GET', 'HEAD') and not user.access.write and not reading:
                 raise AccessError(403, 'AI assistants can only read here.' if assistant else 'This key can only read.')
-        if path == '/api/_tools' or path.startswith('/api/_tools/'):
-            return self.tools.api(scope, body, user)
-        if path == '/api/_eva' or path.startswith('/api/_eva/'):
-            if self.eva is None:
-                raise AccessError(404, 'Route not found')
-            return self.eva.api(scope, body, user)
-        if path == '/api/_settings/me/ai' or path.startswith(('/api/_settings/me/ai/', '/api/_oauth/')):
-            return self.assistants.api(scope, body, user)
-        if path == '/api/_settings/me/keys' or path.startswith('/api/_settings/me/keys/'):
-            return self.controls.my_keys(scope, body, user)
-        # /api/_settings/me/email is the sign-in address change (Settings); the mailbox has its own routes.
-        if path == '/api/_settings/me/mailbox' or path.startswith('/api/_settings/me/mailbox/'):
-            return self.mailboxes.api(scope, body, user)
-        if path == '/api/_controls' or path.startswith('/api/_controls/'):
-            return self.controls.dispatch(scope, body, user)
-        if path == '/api/_unsaved' or path.startswith('/api/_unsaved/'):
-            return self.unsaved.api(scope, body, user)
-        if path.startswith('/api/_settings/'):
-            return self.settings.dispatch(scope, body, user)
-        if path.startswith('/api/_services/'):
-            from .services import dispatch
-            return dispatch(self, scope, body, user)
-        if path.startswith('/api/_prompts/'):
-            from .prompts import dispatch
-            return dispatch(self, scope, body, user)
-        prints = self.prints
-        if prints is not None and path == '/api/_prints':
-            allow(method, 'GET')
-            return 200, prints.catalog(user), []
-        if prints is not None and path.startswith('/api/_reports/') and path.count('/') == 5 and path.split('/')[4] == 'prints':
-            allow(method, 'POST')
-            _, _, _, report, _, design = path.split('/')
-            return prints.report_pdf(report, design, body, user)
-        if self.forms and (path == '/api/_reports' or path.startswith('/api/_reports/')):
-            return self.forms.dispatch(scope, body, user)
-        if path.startswith('/api/_draft/') and method == 'POST':
-            from .documents import load_draft, settle, source_values, walk
-            model = self.registry.resolve(path.removeprefix('/api/_draft/'))
-            if not getattr(model, '__declaration_mode__', False) or model in self.child_models or self.registry.api.get(model) is None:
-                raise AccessError(404, 'Draft evaluation is unavailable')
-            if self.registry.api.get(model) == 'read':
-                raise AccessError(403, read_only(model))
-            if set(body) - {'id', 'values', 'revision', 'calculation'} or not isinstance(body.get('values', {}), dict):
-                raise ValidationError({'draft': 'Invalid draft request'})
-            record_id = body.get('id')
-            if record_id is not None:
-                try:
-                    record_id = RecordId(record_id)
-                except ValueError:
-                    raise ValidationError({'draft': 'Invalid draft request'}) from None
-            if 'calculation' in body:
-                self.check_calculation(model, body['calculation'])
-            with self.context(user, readonly=True) as context:
-                draft, previous = load_draft(context, model, record_id, body.get('values', {}), preview=True)
-                # A record that keeps its saved results on a save shows those in the preview too.
-                from .documents import keeps_saved_results
-                kept = bool(keeps_saved_results(context, model, previous))
-                errors, states = settle(context, draft, complete=False, previous=previous, kept=kept)
-                # Every serialized row, by model, so Links the user cannot follow are emptied in one batch per model.
-                serialized = {}
-                def values(item):
-                    allowed = self.policy.fields(user, item._definition)
-                    def shown(field, value):
-                        # Invalid submitted values are reported in errors; the preview sends null.
-                        try: return field.serialize(value)
-                        except Exception: return None
-                    result = {'id': item.id, '_key': item.key, '_sources': source_values(item, allowed), **{name: shown(field, item._values.get(name))
-                              for name, field in item._definition.__declared_fields__.items() if name in allowed and not name.startswith('evlet_')}}
-                    serialized.setdefault(item._definition, []).append(result)
-                    return result
-                allowed_errors = set()
-                saved_rows = {}
-                for _, item in walk(draft):
-                    if item is not draft and item.id:
-                        saved_rows.setdefault(item._definition, []).append(item.id)
-                shown = {(definition, row_id) for definition, ids in saved_rows.items()
-                         for row_id in self.policy.visible(context._tx, user, definition, ids)}
+        return user
 
-                def tree(item, prefix):
-                    result = values(item)
-                    allowed_errors.update(prefix + name for name in result if name not in ('_key', 'id', '_sources'))
-                    owned = [child for child in self.children.values() if child.parent is item._definition]
-                    if owned or item is draft:
-                        result['children'] = {}
-                    for child in owned:
-                        if not self.policy.allows(user, child.model, 'read'):
-                            continue
-                        rows = []
-                        for row in item._rows.get(child.name, []):
-                            if row.id and (child.model, row.id) not in shown:
-                                continue
-                            rows.append(tree(row, prefix + child.name + '.' + row.key + '.'))
-                        result['children'][child.name] = rows
-                    return result
-                result = tree(draft, '')
-                for definition, rows in serialized.items():
-                    self.policy.hide_unfollowable(context._tx, user, definition, rows)
-                errors = {key: value for key, value in errors.items() if key in allowed_errors}
-                states = {key: value for key, value in states.items() if key in allowed_errors}
-            return 200, {'values': result, 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
-        if path == '/api/auth/logout' and method == 'POST':
-            return 204, None, self.auth.logout(scope)
-        if path == '/api/auth/password' and method == 'POST':
-            payload, headers = self.settings.first_password(scope, user, body)
-            return 200, payload, headers
-        if path.startswith('/api/auth/users'):
-            return self.accounts(scope, body, user)
-        if path == '/api/schema' and method == 'GET':
-            return 200, self.schema(user), []
-        if path == '/api/_discovery' and method == 'GET':
-            return 200, Discovery(self, user).catalog(scope.get('query_string', b'')), []
-        if path.startswith('/api/_discovery/') and method == 'GET':
-            if scope.get('query_string'):
-                raise ValidationError({'query': 'Model descriptions take no query parameters'})
-            return 200, Discovery(self, user).describe(path.removeprefix('/api/_discovery/')), []
-        if path == '/api/_events' and method == 'GET':
-            return 200, self.event_page(scope), []
-        if path == '/api/_inbox' or path.startswith('/api/_inbox/'):
-            from .mentions import route as inbox
-            return inbox(self, scope, body, user)
-        if path.startswith('/api/_jobs/') and method == 'GET' and self.jobs:
-            value = path.removeprefix('/api/_jobs/')
-            if not re.fullmatch('[1-9][0-9]{0,18}', value) or int(value) > 2**63-1:
-                raise AccessError(404, 'Job not found')
-            return 200, self.jobs.status(int(value), user), []
-        parts = path.split('/')
+    def _session_route(self, scope, body, user):
+        """GET /api/auth/session: who is signed in, or what the sign-in page needs."""
+        info = dict(self.application or {})
+        if self.tenant:
+            info.update(name=self.tenant['label'], playground=False)
+        try:
+            user, csrf = self.auth.session(scope)
+            if 'docs' in info:
+                info['docs'] = self.docs_path(scope, user)
+            extra = {'application': info} if info else {}
+            # An account without a password yet (the Administrator after a development link) sets one first.
+            if self.auth.password_needed(user):
+                extra.update(password_needed=True, password_min=self.auth.minimum(user.role))
+            return 200, {'user': user.public(), 'csrf': csrf, **({'tenant': self.tenant} if self.tenant else {}), **extra}, []
+        except AccessError as exc:
+            if exc.status != 401:
+                raise
+            if 'docs' in info:
+                info['docs'] = self.docs_path(scope, None)
+            extra = {'application': info} if info else {}
+            # First-run setup creates an admin, so it asks for config.py's admin minimum.
+            if self.oidc is not None and (provider := self.oidc.options(scope)) is not None:
+                extra['oidc'] = provider
+            if self.auth.allow_setup and self.auth.setup_needed():
+                extra['password_min'] = self.auth.minimum('admin')
+            # Security(admin_sign_in=True): the sign-in page starts with the Administrator's username.
+            if getattr(self.auth, 'security', None) is not None and self.auth.security.admin_sign_in and self.auth.realm(scope) == 'desk':
+                extra['sign_in'] = {'username': ADMINISTRATOR}
+            return 200, {'user': None, 'setup': self.auth.allow_setup and self.auth.setup_needed(), **({'tenant': self.tenant} if self.tenant else {}), **extra}, []
+
+    def _setup_route(self, scope, body, user):
+        self.auth.setup(scope, body)
+        return 201, {'created': True}, []
+
+    def _login_route(self, scope, body, user):
+        payload, headers = self.auth.login(scope, body)
+        return 200, payload, headers
+
+    def _public_service_route(self, scope, body, user):
+        """A public API endpoint, before the session is checked; any other service waits for it."""
+        from .services import dispatch, endpoint_for
+        endpoint = endpoint_for(self, scope['path'])
+        if endpoint is not None and endpoint.public:
+            return dispatch(self, scope, body, None)
+        return PASS
+
+    def _tools_route(self, scope, body, user):
+        return self.tools.api(scope, body, user)
+
+    def _eva_route(self, scope, body, user):
+        if self.eva is None:
+            raise AccessError(404, 'Route not found')
+        return self.eva.api(scope, body, user)
+
+    def _assistants_route(self, scope, body, user):
+        return self.assistants.api(scope, body, user)
+
+    def _keys_route(self, scope, body, user):
+        return self.controls.my_keys(scope, body, user)
+
+    def _mailbox_route(self, scope, body, user):
+        return self.mailboxes.api(scope, body, user)
+
+    def _controls_route(self, scope, body, user):
+        return self.controls.dispatch(scope, body, user)
+
+    def _unsaved_route(self, scope, body, user):
+        return self.unsaved.api(scope, body, user)
+
+    def _settings_route(self, scope, body, user):
+        return self.settings.dispatch(scope, body, user)
+
+    def _service_route(self, scope, body, user):
+        from .services import dispatch
+        return dispatch(self, scope, body, user)
+
+    def _prompts_route(self, scope, body, user):
+        from .prompts import dispatch
+        return dispatch(self, scope, body, user)
+
+    def _prints_route(self, scope, body, user):
+        """GET /api/_prints: the print designs this role may use, when printing is configured."""
+        if self.prints is None:
+            return PASS
+        allow(scope['method'], 'GET')
+        return 200, self.prints.catalog(user), []
+
+    def _report_print_route(self, scope, body, user):
+        """POST /api/_reports/{report}/prints/{design}: a report printed with a design."""
+        path = scope['path']
+        if self.prints is None or path.count('/') != 5 or path.split('/')[4] != 'prints':
+            return PASS
+        allow(scope['method'], 'POST')
+        _, _, _, report, _, design = path.split('/')
+        return self.prints.report_pdf(report, design, body, user)
+
+    def _reports_route(self, scope, body, user):
+        if not self.forms:
+            return PASS
+        return self.forms.dispatch(scope, body, user)
+
+    def _logout_route(self, scope, body, user):
+        return 204, None, self.auth.logout(scope)
+
+    def _password_route(self, scope, body, user):
+        payload, headers = self.settings.first_password(scope, user, body)
+        return 200, payload, headers
+
+    def _accounts_route(self, scope, body, user):
+        return self.accounts(scope, body, user)
+
+    def _schema_route(self, scope, body, user):
+        return 200, self.schema(user), []
+
+    def _catalog_route(self, scope, body, user):
+        return 200, Discovery(self, user).catalog(scope.get('query_string', b'')), []
+
+    def _describe_route(self, scope, body, user):
+        if scope.get('query_string'):
+            raise ValidationError({'query': 'Model descriptions take no query parameters'})
+        return 200, Discovery(self, user).describe(scope['path'].removeprefix('/api/_discovery/')), []
+
+    def _events_route(self, scope, body, user):
+        return 200, self.event_page(scope), []
+
+    def _inbox_route(self, scope, body, user):
+        from .mentions import route as inbox
+        return inbox(self, scope, body, user)
+
+    def _job_route(self, scope, body, user):
+        """GET /api/_jobs/{id}: a background job's status, when jobs are configured."""
+        if not self.jobs:
+            return PASS
+        value = scope['path'].removeprefix('/api/_jobs/')
+        if not re.fullmatch('[1-9][0-9]{0,18}', value) or int(value) > 2**63-1:
+            raise AccessError(404, 'Job not found')
+        return 200, self.jobs.status(int(value), user), []
+
+    def _draft_route(self, scope, body, user):
+        """POST /api/_draft/{model}: a document's unsaved values settled as a save would, without saving."""
+        from .documents import load_draft, settle
+        model = self.registry.resolve(scope['path'].removeprefix('/api/_draft/'))
+        if not getattr(model, '__declaration_mode__', False) or model in self.child_models or self.registry.api.get(model) is None:
+            raise AccessError(404, 'Draft evaluation is unavailable')
+        if self.registry.api.get(model) == 'read':
+            raise AccessError(403, read_only(model))
+        if set(body) - {'id', 'values', 'revision', 'calculation'} or not isinstance(body.get('values', {}), dict):
+            raise ValidationError({'draft': 'Invalid draft request'})
+        record_id = body.get('id')
+        if record_id is not None:
+            try:
+                record_id = RecordId(record_id)
+            except ValueError:
+                raise ValidationError({'draft': 'Invalid draft request'}) from None
+        if 'calculation' in body:
+            self.check_calculation(model, body['calculation'])
+        with self.context(user, readonly=True) as context:
+            draft, previous = load_draft(context, model, record_id, body.get('values', {}), preview=True)
+            # A record that keeps its saved results on a save shows those in the preview too.
+            from .documents import keeps_saved_results
+            kept = bool(keeps_saved_results(context, model, previous))
+            errors, states = settle(context, draft, complete=False, previous=previous, kept=kept)
+            result, allowed_errors = self._draft_values(context, user, draft)
+            errors = {key: value for key, value in errors.items() if key in allowed_errors}
+            states = {key: value for key, value in states.items() if key in allowed_errors}
+        return 200, {'values': result, 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
+
+    def _draft_values(self, context, user, draft):
+        """A settled draft's values and rows as this user may see them, and the error keys it may see."""
+        from .documents import source_values, walk
+        # Every serialized row, by model, so Links the user cannot follow are emptied in one batch per model.
+        serialized = {}
+
+        def values(item):
+            allowed = self.policy.fields(user, item._definition)
+
+            def shown(field, value):
+                # Invalid submitted values are reported in errors; the preview sends null.
+                try: return field.serialize(value)
+                except Exception: return None
+            result = {'id': item.id, '_key': item.key, '_sources': source_values(item, allowed), **{name: shown(field, item._values.get(name))
+                      for name, field in item._definition.__declared_fields__.items() if name in allowed and not name.startswith('evlet_')}}
+            serialized.setdefault(item._definition, []).append(result)
+            return result
+        allowed_errors = set()
+        saved_rows = {}
+        for _, item in walk(draft):
+            if item is not draft and item.id:
+                saved_rows.setdefault(item._definition, []).append(item.id)
+        shown = {(definition, row_id) for definition, ids in saved_rows.items()
+                 for row_id in self.policy.visible(context._tx, user, definition, ids)}
+
+        def tree(item, prefix):
+            result = values(item)
+            allowed_errors.update(prefix + name for name in result if name not in ('_key', 'id', '_sources'))
+            owned = [child for child in self.children.values() if child.parent is item._definition]
+            if owned or item is draft:
+                result['children'] = {}
+            for child in owned:
+                if not self.policy.allows(user, child.model, 'read'):
+                    continue
+                rows = []
+                for row in item._rows.get(child.name, []):
+                    if row.id and (child.model, row.id) not in shown:
+                        continue
+                    rows.append(tree(row, prefix + child.name + '.' + row.key + '.'))
+                result['children'][child.name] = rows
+            return result
+        result = tree(draft, '')
+        for definition, rows in serialized.items():
+            self.policy.hide_unfollowable(context._tx, user, definition, rows)
+        return result, allowed_errors
+
+    def _model_route(self, scope, body, user):
+        """/api/{Model}/...: a model's records, images and files, when no other route answered."""
+        parts = scope['path'].split('/')
         model = self.registry.models.get(parts[2]) if len(parts) >= 3 and parts[:2] == ['', 'api'] else None
         if model is None or model in self.child_models or self.registry.api.get(model) is None:
             raise AccessError(404, 'Route not found')
