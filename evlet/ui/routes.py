@@ -96,16 +96,20 @@ def _serves(application, frontend, base, rest):
 
 
 def _config(application, scope, host, frontend, base):
-    """The page config block. realm is the host's sign-in realm, which decides the session cookie."""
+    """The page config block. realm is the host's sign-in realm, which decides the session cookie.
+
+    version is the Evlet release once signed in and "" before, so a visitor cannot pick out a release."""
     from ..routing import host_name
+    from .serving import version
     routes = application.routes
     name = host_name(host) or ''
+    user = _user(application, scope)
     if application.business:
-        docs = application.business.docs_path(scope, _user(application, scope) if routes.docs_roles else None)
+        docs = application.business.docs_path(scope, user if routes.docs_roles else None)
     else:
         docs = routes.docs_path if routes.docs and name not in routes.sub_hosts() else None
     return {'frontend': frontend, 'base': base, 'api': '/api', 'realm': routes.realm(host), 'host': name, 'docs': docs,
-            'theme': _theme(application, scope)}
+            'theme': _theme(application, scope), 'version': version() if user is not None else ''}
 
 
 THEMES = ('light', 'dark', 'system')

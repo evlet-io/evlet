@@ -75,8 +75,12 @@ so it can show its own sign-in screen; its data still goes through the API check
 Every page the framework serves gets one non-executable block in `<head>`:
 
 ```html
-<script id="evlet-config" type="application/json">{"frontend":"crm.customer_portal","base":"/","api":"/api","realm":"portal","host":"portal.acme.com","docs":null,"theme":"system","version":"0.4.0"}</script>
+<script id="evlet-config" type="application/json">{"frontend":"crm.customer_portal","base":"/","api":"/api","realm":"portal","host":"portal.acme.com","docs":null,"theme":"system","version":""}</script>
 ```
+
+`version` is the Evlet release once the visitor is signed in, and `""` before sign-in (on the
+sign-in page, and on Docs or a frontend opened signed out), so an anonymous visitor cannot pick
+out the release. The field is always present. Asset URLs carry content hashes, not the version.
 
 Pages on a public host carry no block at all ([Public websites](#public-websites)).
 The desk shell's router and API client read `base`, `docs` and `api` from it, so one
@@ -85,6 +89,14 @@ the host's realm, which decides the session cookie: a portal frontend also mount
 the primary host reports `desk` there. `theme` is the signed-in person's theme (`light`,
 `dark` or `system`; see [settings.md](settings.md)); the framework's own pages also carry it
 as `data-theme` on `<html>`, and a static or server frontend may read it from the block.
+
+The pages Evlet serves send one Content-Security-Policy. Its `img-src` is `'self' https: data:`,
+since records may hold `https` image URLs. To allow only some image hosts, set
+`EVLET_IMAGE_ORIGINS` for the server process to exact, lowercase `https` origins separated by
+spaces (`EVLET_IMAGE_ORIGINS="https://cdn.example.com https://img.example.com"`): `img-src`
+becomes `'self'`, those origins and `data:`. An empty value allows no other host. An origin with a
+path, a wildcard or another scheme stops the server from starting. The variable is read once at
+startup; the rendered tenant Caddyfile uses the value of the process that renders it.
 
 `evlet.controls` serves Controls ([controls.md](controls.md)), and `evlet.settings` serves
 Settings ([settings.md](settings.md)) and redirects `/settings/accounts` to `/controls/users`. Flat-layout apps cannot
