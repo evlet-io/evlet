@@ -993,13 +993,13 @@ before the page changes or the tab closes.
 ## A small application
 
 ```python
-from evlet import App, Model, Text, Boolean
+from evlet import DevApp, Model, Text, Boolean
 
 class Note(Model):
     title = Text(required=True)
     done = Boolean(default=False)
 
-app = App(name="notes", models=[Note])
+app = DevApp(name="notes", models=[Note])
 ```
 
 Run `uvicorn app:app --host 127.0.0.1 --port 8000 --reload`. Open
@@ -1007,7 +1007,7 @@ http://127.0.0.1:8000, create the first administrator, then sign in. Notes has a
 and a record view. Search, filters, sort and paging run through the model query API.
 Role, field and record permissions stay on the server.
 
-`App` is a local convenience entry point. Its default database is `.data/notes.sqlite3`;
+`DevApp` (named `App` before 0.4.x; that name still works and warns) is a local convenience entry point. Its default database is `.data/notes.sqlite3`;
 its default authentication allows initial setup and insecure cookies only on exact
 loopback origins on port 8000. A deployed site must supply its database and explicit
 `LocalAuth` configuration.

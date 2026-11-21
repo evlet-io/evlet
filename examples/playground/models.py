@@ -196,8 +196,8 @@ class Project(Model):
         State.Step('planned', 'Planned'),
         State.Step('active', 'Active', color='blue'),
         State.Step('done', 'Done', color='green', lock=True),
-        rules=(State.Rule('planned', 'active', 'Start project', key='start', primary=True),
-               State.Rule('active', 'done', 'Complete project', key='complete')))
+        rules=(State.Move('planned', 'active', 'Start project', key='start', primary=True),
+               State.Move('active', 'done', 'Complete project', key='complete')))
     # The currency is the Projects app setting "Project currency" (Settings, Projects).
     budget = Currency(minimum='0', default='0.00', currency='settings.projects.currency')
     progress = Integer(minimum=0, maximum=100, default=0, label='Progress', suffix='%')

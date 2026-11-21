@@ -7,7 +7,7 @@ Status: implemented foundation, not a production business application framework.
 | Object | What it is |
 | --- | --- |
 | `Application` | The ASGI app object you build in Python from a `Database`, usually with `LocalAuth`. |
-| `App` | A shortcut `Application` with local defaults for a quick start. It creates `.data/NAME.sqlite3` and loopback-only `LocalAuth` unless you pass your own. |
+| `DevApp` | A shortcut `Application` with local defaults for a quick start (named `App` before 0.4.x). It creates `.data/NAME.sqlite3` and loopback-only `LocalAuth` unless you pass your own. |
 | `Registry` | Your models. Pass it to `Database`; there is no global registry. |
 | `AppDefinition` | The registration object in `hooks.py` for the nested app layout (`evlet app NAME --legacy`). Flat apps are discovered without it. |
 | `Instance` | One customer's isolated data directory, set in `instances/NAME/config.py` and served by `evlet serve NAME`. |
@@ -102,7 +102,7 @@ points upward; every module must be in the map.
 | 7 | `ai` | Eva, MCP, tools | eva, tools, mcp, connector, connectors, assistants, mailboxes |
 | 8 | `site` | Sites, apps, deployment, app tests | instances, packages, builds, deployment, tenancy, serverless, testing |
 
-The state manager's declarations (`State`, `State.Step`, `State.Rule`, `State.Level`, `State.Remark`) live in
+The state manager's declarations (`State`, `State.Step`, `State.Move`, `State.Level`, `State.Remark`) live in
 `evlet/declarations.py` in core, so models and sequences import them downward; `evlet/statemanager.py` (engine)
 runs them and re-exports them.
 

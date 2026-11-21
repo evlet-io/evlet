@@ -43,24 +43,28 @@ look the rest up when a guide calls for one:
 | `api`, `cron` | An HTTP endpoint or a scheduled function in `services/` ([jobs-realtime.md](jobs-realtime.md)) |
 
 Computed fields and conditions use `F` from `evlet.calc` ([finite-calculations.md](finite-calculations.md)).
+String formulas (`compute="qty * rate"`, `visible_if=`) are the older language and round differently
+([Two formula languages](finite-calculations.md#two-formula-languages)); do not start with them.
 Migration operations (`AddField`, `RenameField` and the rest) are written for you by
 `evlet makemigration`. Tests use `evlet.testing` ([testing.md](testing.md)).
 
-Some names look alike but belong to different things:
+Some names look alike but belong to different things. Three were renamed in 0.4.x to say what
+they are; the old names still work and warn ([api-stability.md](api-stability.md#renamed-in-04x-old-names-deprecated)):
 
-- **`App`, `AppDefinition`, `Application`.** A flat app needs none of them. `Application` is the
-  ASGI application that serves an instance; the CLI builds it. `App` is a shortcut for a local
-  script that serves models without a project (defaults for a database and sign-in).
-  `AppDefinition` is the registration object of the older nested layout (below). In the CLI,
-  "app" means an app package in `apps/`.
-- **`Rule` and `State.Rule`.** `evlet.Rule` is a permission rule (who may read, create, update).
-  `State.Rule` is a move between two steps of a `State`.
+- **`DevApp`, `AppDefinition`, `Application`.** A flat app needs none of them. `Application` is the
+  ASGI application that serves an instance; the CLI builds it. `DevApp` (formerly `App`) is a
+  shortcut for a local script that serves models without a project (defaults for a database and
+  sign-in). `AppDefinition` is the registration object of the older nested layout (below). In the
+  CLI, "app" means an app package in `apps/`.
+- **`Rule` and `State.Move`.** `evlet.Rule` is a permission rule (who may read, create, update).
+  `State.Move` (formerly `State.Rule`) is a move between two steps of a `State`, passed in its
+  `rules=(...)`.
 - **`Table`, `ChildTable`, `TableSection`.** `Table(...)` is the field that holds a document's
   owned rows. `ChildTable` is its older, nested-layout equivalent; do not use it in new apps.
   `TableSection` places a `Table` in a record layout.
-- **`Link`, `Reference`, `Ref`.** `Link('Customer')` points at a record of one model (a foreign
-  key). `Reference` points at a record of any model, without a foreign key. `Ref('customer.name')`
-  is a path to a value, used in defaults and filters, not a field.
+- **`Link`, `AnyLink`, `Ref`.** `Link('Customer')` points at a record of one model (a foreign
+  key). `AnyLink()` (formerly `Reference`) points at a record of any model, without a foreign key.
+  `Ref('customer.name')` is a path to a value, used in defaults and filters, not a field.
 - **`Query`.** `evlet.Query` is a typed lookup that several derived fields share. The module
   `evlet.query` is internal.
 - **`Response`.** `evlet.Response` is what a server frontend handler returns ([routing.md](routing.md)). `evlet.testing.TestResponse`

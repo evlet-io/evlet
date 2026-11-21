@@ -157,7 +157,7 @@ def test_a_ledger_model_takes_stored_fields_and_ledger_options():
     (Sequence('{n:05}'), 'not Sequence'),
     (Tags(), 'not Tags'),
     (MultiSelect(('a',)), 'not MultiSelect'),
-    (Reference(), 'not Reference'),
+    (Reference(), 'not AnyLink'),  # the class was renamed; Reference still works
     (Email(), 'not Email'),
     (Duration(), 'not Duration'),
     (Integer(compute=lambda record: 1), 'computed fields'),

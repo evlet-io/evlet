@@ -8,8 +8,10 @@ from ..models import Registry
 from ..auth import LocalAuth
 
 
-class App(Application):
-    """Local application defaults. Supply database/auth explicitly for a deployed site."""
+class DevApp(Application):
+    """Local development defaults for a script that serves models without a project: a SQLite file in .data/
+    and loopback sign-in with first-admin setup. Supply database/auth explicitly for a deployed site.
+    Named App before 0.4.x; that name still works and warns (docs/api-stability.md)."""
 
     def __init__(
         self, name, *, models=(), database=None, auth=None, **options
@@ -32,3 +34,11 @@ class App(Application):
                 allow_setup=True,
             )
         super().__init__(database, auth=auth, name=name, **options)
+
+
+def __getattr__(name):
+    if name == 'App':
+        from ..fields import renamed_warning
+        renamed_warning('App', 'DevApp')
+        return DevApp
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

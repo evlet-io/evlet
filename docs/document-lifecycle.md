@@ -20,9 +20,9 @@ class Order(Model):
         State.Step("confirmed", "Confirmed", color="green", release=True),
         State.Step("cancelled", "Cancelled", color="rose", final=True),
         rules=(
-            State.Rule("draft", "confirmed", "Confirm", primary=True),
-            State.Rule("confirmed", "draft", "Reopen", remark="required"),
-            State.Rule(("draft", "confirmed"), "cancelled", "Cancel", remark="required"),
+            State.Move("draft", "confirmed", "Confirm", primary=True),
+            State.Move("confirmed", "draft", "Reopen", remark="required"),
+            State.Move(("draft", "confirmed"), "cancelled", "Cancel", remark="required"),
         ), show="bar")
 
     class Line(Child):

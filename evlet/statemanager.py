@@ -4,11 +4,11 @@
         State.Step("draft", "Draft"),
         State.Step("issued", "Issued", color="green", lock=True),
         State.Step("void", "Void", color="rose", lock=True, final=True),
-        rules=(State.Rule("draft", "issued", "Issue"), State.Rule("issued", "void", "Void", remark="required")),
+        rules=(State.Move("draft", "issued", "Issue"), State.Move("issued", "void", "Void", remark="required")),
     )
 
-`State.Rule`, `State.Level` and `State.Remark` are this module's Rule, Level and Remark (evlet.Rule is the
-permission rule).
+`State.Move`, `State.Level` and `State.Remark` are this module's Rule (a move), Level and Remark; evlet.Rule is
+the permission rule. State.Move was named State.Rule before 0.4.x, which still works and warns.
 
 Nothing moves without a rule. A rule is checked on the saved record, in the move's transaction: who may
 use it (`by`), when it is offered (`when`) and the remark it takes. Five hooks run code on a document:

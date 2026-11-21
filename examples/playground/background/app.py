@@ -34,10 +34,10 @@ class PriceList(Model):
         State.Step('ready'),
         State.Step('failed'),
         rules=(
-            State.Rule('draft', 'building', 'Start', key='building', by=()),
-            State.Rule('building', 'ready', 'Finish', key='ready', by=()),
-            State.Rule('building', 'failed', 'Fail', key='failed', by=()),
-            State.Rule(('ready', 'failed'), 'draft', 'Reopen', key='draft'),
+            State.Move('draft', 'building', 'Start', key='building', by=()),
+            State.Move('building', 'ready', 'Finish', key='ready', by=()),
+            State.Move('building', 'failed', 'Fail', key='failed', by=()),
+            State.Move(('ready', 'failed'), 'draft', 'Reopen', key='draft'),
         ), default='draft', show='bar')
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update')),
                    'viewer': Rule(('read',))}

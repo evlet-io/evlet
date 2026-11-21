@@ -10,6 +10,19 @@ from urllib.parse import urlsplit
 
 from .identity import RecordId
 
+
+# Old public names already warned about in this process (renamed_warning).
+_WARNED = set()
+
+
+def renamed_warning(old, new, stacklevel=3):
+    """Warn once per process that public name `old` is now `new` (docs/api-stability.md, Renamed in 0.4.x)."""
+    if old not in _WARNED:
+        _WARNED.add(old)
+        import warnings
+        warnings.warn(f'{old} was renamed {new}; {old} keeps working until at least 0.5 (docs/api-stability.md)',
+                      DeprecationWarning, stacklevel=stacklevel)
+
 MISSING = object()
 
 
@@ -945,8 +958,9 @@ class MultiSelect(Tags):
         return {**super().metadata(), "choices": list(self.choices)}
 
 
-class Reference(Field):
+class AnyLink(Field):
     """A link to a record of any registered model, stored as <name>_model and <name>_id; no SQL foreign key.
+    Named Reference before 0.4.x; that name still works and warns (docs/api-stability.md).
 
     The value is {"model": "<storage name>", "id": "<text id>"}. Writes check that the record exists.
     index=True creates one index over both columns, (<name>_model, <name>_id).
@@ -956,7 +970,7 @@ class Reference(Field):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if self.unique:
-            raise ValueError("Reference fields cannot be unique")
+            raise ValueError("AnyLink fields cannot be unique")
 
     def validate(self, value):
         if isinstance(value, (list, tuple)) and len(value) == 2:
@@ -990,6 +1004,10 @@ class Reference(Field):
 
     def serialize(self, value):
         return None if value is None else {"model": value[0], "id": RecordId(value[1])}
+
+
+# The framework's own modules still import the old name from here; apps get evlet.AnyLink.
+Reference = AnyLink
 
 
 class RichText(LongText):

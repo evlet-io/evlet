@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING
 from . import guards, activity, ledger, meaning, measures, permissions, sequences, statemanager  # noqa: F401
 from .app import Application
 from .database import ConflictError, Database, NotFoundError
-from .fields import (Boolean, Currency, CurrentUser, Date, DateTime, Decimal, Duration, Email, Integer,
-                     Image, Js, Link, LongText, MultiSelect, Percent, Phone, Reference, RichText, Select, Tags, Text, Time, URL)
+from .fields import (AnyLink, Boolean, Currency, CurrentUser, Date, DateTime, Decimal, Duration, Email, Integer,
+                     Image, Js, Link, LongText, MultiSelect, Percent, Phone, RichText, Select, Tags, Text, Time, URL)
 from .migrations import (AddField, AddIndex, AddTable, AlterField, CreateModel, DropField, Migration, MigrationPlan, Recompute,
                          RenameField, RetireField, RunData, SchemaError)
 from .models import Model, Registry, ValidationError, Child
@@ -16,11 +16,11 @@ from .sequences import Naming, Sequence, Series
 from .statemanager import State, release, state, validate
 
 __all__ = [
-    "AddField", "AddIndex", "AddTable", "AlterField", "Application", "Boolean", "ConflictError", "CreateModel", "DropField",
+    "AddField", "AnyLink", "AddIndex", "AddTable", "AlterField", "Application", "Boolean", "ConflictError", "CreateModel", "DropField",
     "Currency", "CurrentUser", "Database", "Date", "DateTime", "Decimal", "Email", "Image", "Integer", "Js", "Link",
     "LongText", "Migration", "MigrationPlan", "Model", "MultiSelect", "NotFoundError", "Registry", "RenameField",
     "SchemaError", "Select", "Text", "URL", "ValidationError",
-    "Duration", "Naming", "Percent", "Phone", "Recompute", "Reference", "RetireField", "RichText", "RunData", "Sequence", "Series", "State", "Tags", "Time",
+    "Duration", "Naming", "Percent", "Phone", "Recompute", "RetireField", "RichText", "RunData", "Sequence", "Series", "State", "Tags", "Time",
 ]
 
 from .auth import LocalAuth, OIDC, User
@@ -53,7 +53,7 @@ __all__ += ["AI", "ConnectorError", "HTTPClient", "MCPServer"]
 
 from .ui.metadata import Html, Main, Section, TableSection
 
-__all__ += ["App", "Html", "Main", "Section", "TableSection"]
+__all__ += ["DevApp", "Html", "Main", "Section", "TableSection"]
 
 from .auth import Security
 
@@ -116,7 +116,7 @@ _LAZY_EXPORTS = {
     'HTTPClient': 'connector',
     'MCPServer': 'mcp',
     'AI': 'eva',
-    'App': 'ui.application',
+    'DevApp': 'ui.application',
     'AppDefinition': 'instances',
     'Instance': 'instances',
     'Schedule': 'instances',
@@ -147,7 +147,14 @@ if TYPE_CHECKING:
     from .serverless import LambdaHTTP
     from .settings import AppSettings, UserPreferences
     from .tenancy import Tenant, TenantApplication, TenantRegistry
-    from .ui.application import App
+    from .ui.application import DevApp
+
+
+# Renamed in 0.4.x (docs/api-stability.md): the old name returns the same object, with a DeprecationWarning once.
+_RENAMED = {'App': 'DevApp', 'Reference': 'AnyLink'}
+
+if TYPE_CHECKING:
+    App, Reference = DevApp, AnyLink
 
 
 def __dir__():
@@ -155,6 +162,10 @@ def __dir__():
 
 
 def __getattr__(name):
+    if name in _RENAMED:
+        from .fields import renamed_warning
+        renamed_warning(name, _RENAMED[name])
+        return __getattr__(_RENAMED[name]) if _RENAMED[name] in _LAZY_EXPORTS else globals()[_RENAMED[name]]
     if name in _LAZY_EXPORTS:
         from importlib import import_module
         value = getattr(import_module('.' + _LAZY_EXPORTS[name], __name__), name)

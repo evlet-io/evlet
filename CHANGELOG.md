@@ -17,6 +17,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `evlet proxy` to pick them up.
 - **Decimal and Currency text input is strict:** `1_000`, exponents, non-ASCII digits and surrounding spaces are
   refused, as `calc` already did.
+- **Three names renamed; the old names still work and warn.** `evlet.App` is now `evlet.DevApp`, `State.Rule` is
+  now `State.Move` and `evlet.Reference` is now `evlet.AnyLink`. Each old name returns the same class with a
+  `DeprecationWarning` once per process, so `isinstance` checks and existing migrations keep working; nothing is
+  stored differently. Switch to the new names before 0.5 (run your tests with `-W error::DeprecationWarning`).
+  `makemigration` and the Controls export now write `AnyLink(...)`. `State(rules=...)` keeps its keyword
+  ([docs/api-stability.md](docs/api-stability.md#renamed-in-04x-old-names-deprecated)).
+- **The two formula languages' rounding is documented side by side.** String formulas round half even, `F(...)`
+  expressions follow the field's `rounding` (half up for Currency); nothing changed
+  ([docs/finite-calculations.md](docs/finite-calculations.md#two-formula-languages)).
 
 ## 0.4.17 (20-11-2026)
 
