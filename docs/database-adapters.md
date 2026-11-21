@@ -213,7 +213,7 @@ The move onto the query builder was done in steps, one commit each, in the 0.4.5
 | 4 | Jobs and messages: `jobs.py`, `events.py`, `mailboxes.py`, `mentions.py`, `connectors.py`, `tools.py`, `devlink.py`, `services.py`, `framework.py`. | Done |
 | 5 | Eva: `eva.py`, `assistants.py`. | Done |
 | 6 | The rest: `measures.py`, `business.py`, `effects.py`, `corrections.py`, `currencies.py`, `forms.py`, `printing.py`, `slips.py`, `storage.py`, `object_storage.py`. The temporary text bridge (`SqlQuery.where_sql`, `ordering_sql`, `reference_sql`, `Policy.scope_sql`, `compile_condition`) is removed. | Done |
-| 7 | The instance tools (`instances.py`, `tenancy.py`, `cli/backup.py`, `cli/install.py`, `cli/activity.py`, `cli/main.py`, `cli/serve.py`, `cli/site.py`). They keep working on SQLite files, which is what an instance is, but open them with the file tools in `evlet/writes.py` (`read_file`, `file_transaction`, `copy_set`, `copy_file`, `snapshot_set`, `check_file`, `settle`) and run query builder statements on the connection they get. The tenant catalog's tables are `TableDefinition`s. | Done |
+| 7 | The instance tools (`instances.py`, `tenancy.py`, `cli/backup.py`, `cli/install.py`, `cli/activity.py`, `cli/main.py`, `cli/commands/`, `cli/serve.py`, `cli/site.py`). They keep working on SQLite files, which is what an instance is, but open them with the file tools in `evlet/writes.py` (`read_file`, `file_transaction`, `copy_set`, `copy_file`, `snapshot_set`, `check_file`, `settle`) and run query builder statements on the connection they get. The tenant catalog's tables are `TableDefinition`s. | Done |
 
 `tests/test_query_builder_boundary.py` fails on SQL text anywhere outside the dialect, so new
 framework code uses the query builder from the start.
