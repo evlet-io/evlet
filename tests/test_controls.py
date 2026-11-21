@@ -14,7 +14,7 @@ from evlet.routing import resolve_routes
 from examples.playground.app import build_app, create_app, playground_routes
 from examples.playground.migrate import configured_database
 from examples.playground.models import Customer, Project, registry
-from test_business import PASSWORD, client, hashed, http, secured
+from support import PASSWORD, client, http
 from test_cli_lifecycle import environment_stub, project, runtime
 
 DESK, PORTAL_HOST = b'127.0.0.1:8000', b'portal.localhost:8000'

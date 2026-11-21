@@ -13,7 +13,7 @@ import pytest
 from evlet import qb
 from evlet.auth import User
 from examples.playground.models import Customer, Project
-from test_business import client, hashed, secured  # noqa: F401
+from support import client
 from test_unsaved import REVISION, opened, path, project
 
 

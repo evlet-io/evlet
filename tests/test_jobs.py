@@ -6,7 +6,7 @@ import pytest
 
 from evlet import EventStore, JobQueue, Task, User, ValidationError
 from examples.playground.models import Customer, Project, ProjectTask
-from test_business import secured, hashed, client
+from support import client
 
 
 def queue(secured, handler, **kwargs):

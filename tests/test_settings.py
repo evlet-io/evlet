@@ -15,7 +15,7 @@ from evlet.settings import totp
 from examples.playground.app import build_app, playground_routes
 from examples.playground.migrate import configured_database
 from examples.playground.models import Project
-from test_business import PASSWORD, client, hashed, http, secured  # noqa: F401
+from support import PASSWORD, client, http
 
 PNG = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01' + b'\x00' * 48
 

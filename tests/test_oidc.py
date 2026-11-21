@@ -19,7 +19,7 @@ from joserfc import jwt
 from evlet import Application, Database, LocalAuth, Registry, Security, qb
 from evlet.auth import OIDC
 from evlet.oidc import ProviderError
-from test_business import PASSWORD, hashed, http  # noqa: F401
+from support import PASSWORD, http
 
 
 @pytest.fixture

@@ -4,7 +4,7 @@ import pytest
 
 from evlet import Currency, Database, Model, Registry, Rule, Select, State, Text
 from evlet.calc import F, when
-from test_business import client
+from support import client
 from test_meaning import serve
 from test_rules_types import ALL, add_user
 from test_states import etag

@@ -11,7 +11,7 @@ import pytest
 from evlet import Application, Boolean, Child, Database, Decimal, Integer, Model, Registry, Rule, Table, Text
 from evlet.calc import coalesce, parent
 from evlet.auth import LocalAuth, User
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 FULL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 ADMIN = User(1, 'admin', 'admin')

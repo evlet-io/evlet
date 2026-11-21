@@ -1,5 +1,7 @@
 # Print output: design
 
+> Archived: a completed or superseded plan, kept for history. It may describe code that has since changed; the current documentation is in `docs/`.
+
 Status: decided by the owner on 03-11-2026 (section 9); being built. The spike below was
 run on 03-11-2026 against WeasyPrint 70.0 (Python 3.12, pango 1.56.3, Apple M3).
 

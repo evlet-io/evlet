@@ -13,7 +13,7 @@ from evlet.cli.instance import create_instance
 from evlet.cli.install import install
 from evlet.instances import load_runtime
 from evlet.packages import read_package, resolve_packages
-from test_business import http, client, PASSWORD
+from support import http, client, PASSWORD
 
 
 @pytest.fixture

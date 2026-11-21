@@ -5,7 +5,7 @@ import pytest
 from evlet import Database, Decimal, Model, Registry, Rule, State, Text, ValidationError
 from evlet.auth import User
 from evlet.calc import F
-from test_business import client
+from support import client
 from test_rules_types import ALL, add_user, start
 
 

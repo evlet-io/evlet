@@ -10,7 +10,7 @@ import pytest
 from evlet import AI, LocalAuth, Security
 from examples.playground.app import build_app, playground_routes
 from examples.playground.migrate import configured_database
-from tests.test_business import client, hashed, http, PASSWORD  # noqa: F401
+from tests.support import client, http, PASSWORD  # noqa: F401
 
 
 class Script:

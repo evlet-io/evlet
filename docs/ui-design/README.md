@@ -8,8 +8,8 @@ session that opens it should be able to do three things:
 3. **Design and build any new screen** (any model, list, record or transaction)
    so it looks and behaves like the rest.
 
-Read this file top to bottom once. Then keep `reference/mockup.html` open in a
-browser while you work. When this document and the mockup disagree, the mockup
+Read this file top to bottom once. Then build `reference/mockup.html` with
+`sh reference/build.sh` (section 15) and keep it open in a browser while you work. When this document and the mockup disagree, the mockup
 wins, and this document should be corrected.
 
 Companion documents in the repo:
@@ -26,9 +26,9 @@ Companion documents in the repo:
 
 | Path | What it is |
 |---|---|
-| `mockup.html` | The full mockup as one self-contained file. Open it directly in a browser. Inter and JetBrains Mono load from Google Fonts; everything else is inline. |
+| `mockup.html` | Not committed: `build.sh` writes the full mockup as one self-contained file. Open it directly in a browser. Inter and JetBrains Mono load from Google Fonts; everything else is inline. |
 | `styles.css` | Every style in the mockup, including both themes. The token block at the top is authoritative. |
-| `src/1-head.html` | Title, font links and the `<style>` block (same as `styles.css`). |
+| `src/1-head.html` | Title and font links. `build.sh` inlines `styles.css` after them in a `<style>` block. |
 | `src/2-body.html` | Static shell markup: app grid, scrim, drawer, modal host, popover, bulk bar, floating control, toasts. |
 | `src/icons.js` | The icon subset: Lucide static 0.460.0 SVG inner paths keyed by name. |
 | `src/3-data.js` | Sample data: users, stages, organizations, contacts, deals, leads, tasks, activity, files, notifications. All fictional. |
@@ -39,10 +39,10 @@ Companion documents in the repo:
 | `src/9-invoice.js` | Invoice as the transaction sample: states, moves, lock, void, revise, sequence, postings, payments, field-level activity. |
 | `src/10-library.js` | The component library page and its catalog data. |
 | `src/8-boot.js` | Boot: restores theme, sidebar and view preferences, then renders. |
-| `build.sh` | Rebuilds `mockup.html` from `src/` in the correct order. |
+| `build.sh` | Writes `mockup.html` from `src/` and `styles.css` in the correct order. |
 | `CHANGELOG.md` | Every approved change, newest first. |
 
-Concatenation order matters: `1-head.html`, `2-body.html`, then one `<script>`
+Concatenation order matters: `1-head.html`, `styles.css` in a `<style>` block, `2-body.html`, then one `<script>`
 containing `icons.js`, `3-data.js`, `4-core.js`, `5-views.js`, `6-actions.js`,
 `7-doc.js`, `9-invoice.js`, `10-library.js`, `8-boot.js`. Later files extend
 earlier ones by wrapping functions (for example `docHeader = (dt, d) => ...`).
@@ -1429,12 +1429,12 @@ screen it appears in.
 
 ```sh
 cd docs/ui-design/reference
-sh build.sh            # writes mockup.html from src/
+sh build.sh            # writes mockup.html from src/ and styles.css
 open mockup.html       # or any browser
 ```
 
 The mockup needs no server. Sample data resets on reload; preferences persist in
-browser storage. To change it, edit the relevant `src/` file, rebuild, check
+browser storage. To change it, edit `styles.css` or the relevant `src/` file, rebuild, check
 light and dark at desktop and 390px, and add a dated entry to `CHANGELOG.md`.
 
 ---

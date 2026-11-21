@@ -6,7 +6,7 @@ import pytest
 
 import evlet
 from evlet.cli.install import install
-from test_business import client, hashed, secured  # noqa: F401
+from support import client
 from test_cli_lifecycle import change_model, environment_stub, project, runtime  # noqa: F401
 from test_controls import DESK, add_user, hosts, on_host, password, save  # noqa: F401
 from test_customization import build, models

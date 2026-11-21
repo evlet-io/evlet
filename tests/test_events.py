@@ -5,7 +5,7 @@ import pytest
 
 from evlet import EventStore, Policy, Rule, User
 from examples.playground.models import Customer, Project
-from test_business import secured, hashed, client, http
+from support import client, http
 
 
 def test_transactional_events_and_filtered_replay(secured):

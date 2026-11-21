@@ -97,7 +97,7 @@ points upward; every module must be in the map.
 | 2 | `access` | Who may do what | auth, permissions |
 | 3 | `data` | SQL, files, migrations | database, sqlite, migrations, ledger, writes, storage, object_storage, secrets, sequences, images |
 | 4 | `engine` | Document behaviour | documents, statemanager, guards, activity, measures, unsaved, mentions, meaning, prompts |
-| 5 | `web` | HTTP application and routes | app, runtime, routing, business, forms, workspaces, services, events, jobs, framework, devlink, discovery |
+| 5 | `web` | HTTP application and routes | app, runtime, oidc, routing, business, forms, workspaces, services, events, jobs, framework, devlink, discovery, search |
 | 6 | `admin` | Controls and settings | controls, controls_export, controls_system, customization, settings, printing |
 | 7 | `ai` | Eva, MCP, tools | eva, tools, mcp, connector, connectors, assistants, mailboxes |
 | 8 | `site` | Sites, apps, deployment, app tests | instances, packages, builds, deployment, tenancy, serverless, testing |
@@ -107,10 +107,16 @@ The state manager's declarations (`State`, `State.Step`, `State.Rule`, `State.Le
 runs them and re-exports them.
 
 `evlet/ui/`, `evlet/cli/` and `evlet/resources/` sit above all eight layers. A module-level
-import never points upward. Some function-level imports still do; `ALLOWED_UPWARD` in the test
+import of another layered module never points upward. Some function-level imports still do; `ALLOWED_UPWARD` in the test
 lists each one as `(importing module, imported module)`, and the list only shrinks: the test fails
 when an entry no longer occurs. Remove an upward import by moving the code to the layer that owns
 its data, passing a value in, or letting the higher module register itself with the lower one.
+
+An import of `evlet.ui.*` or `evlet.cli.*` from a layered module also points upward. The test names
+these imports by package and module (`ui.metadata`, `cli.project`) and `ALLOWED_TOP` lists the ones
+that exist today, at module or function level; it only shrinks the same way. Most reach the
+model-screen schema compiler in `evlet/ui/metadata.py` and `evlet/ui/scripts.py`, or the generic
+helpers in `evlet/cli/project.py`.
 
 Building a model class or a `Registry` runs steps that belong to higher layers (ledger options,
 state manager hooks, rule guards, sequences, measures, activities, API access). `evlet/models.py`

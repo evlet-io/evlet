@@ -9,7 +9,6 @@ from evlet import AppDefinition, Frontend, Host
 from evlet.app import MAIL_PATHS, MCP_PATHS, OIDC_PATHS, PUBLIC_PATHS, TLS_CHECK
 from evlet.cli import proxy, serve, site
 from evlet.routing import resolve_routes
-from tests.test_business import secured, hashed  # noqa: F401
 
 # A path Evlet does not serve, and near misses of the public ones: the proxy refuses all of them.
 UNKNOWN = ('/_/', '/_/admin', '/_/mcp/extra', '/_/oauth', '/_/oauth/', '/_/mail/', '/_/mail/callback/x')
@@ -195,7 +194,7 @@ class Public:
 
 
 def test_reachability_is_checked_on_demand_for_admins_on_a_public_origin(secured, monkeypatch):
-    from tests.test_business import client
+    from tests.support import client
     admin, editor = client(secured, 'admin'), client(secured, 'editor')
     assistants = secured.business.assistants
     # On loopback there is nothing to check.

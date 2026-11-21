@@ -10,7 +10,7 @@ import pytest
 
 from evlet import Application, Database, Integer, Model, Registry, Text, ValidationError, validate
 from evlet.auth import AccessError, password_hash
-from test_business import PASSWORD, client, hashed, http, secured
+from support import PASSWORD, client, http
 from test_jobs import queue, raw, submit
 
 

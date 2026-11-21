@@ -10,7 +10,7 @@ import pytest
 from evlet import Policy, Rule, qb
 from evlet import auth as auth_module
 from examples.playground.models import Customer, Invoice, Project, registry
-from test_business import PASSWORD, client, hashed, http, secured
+from support import PASSWORD, client, http
 from test_hosts_realms import portal  # noqa: F401
 
 

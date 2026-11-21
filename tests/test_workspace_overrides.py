@@ -9,7 +9,7 @@ import pytest
 from evlet import Database, Registry
 from evlet.controls import ensure_schema
 from evlet.sqlite import SQLiteConnection
-from test_business import PASSWORD, client
+from support import PASSWORD, client
 from test_workspaces import MODELS, build, shape
 
 ROUTE = '/api/_controls/workspaces'

@@ -9,7 +9,7 @@ import pytest
 from evlet import Child, Database, Model, Registry, Select, State, Text, framework
 from evlet.controls import ensure_schema
 from evlet.sqlite import SQLiteConnection
-from test_business import client, hashed  # noqa: F401 (fixture)
+from support import client
 
 STEPS = (State.Step('open'), State.Step('done'))
 

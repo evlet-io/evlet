@@ -2,7 +2,7 @@
 import json
 
 from examples.playground.team import seed_team
-from test_business import PASSWORD, client, hashed, secured  # noqa: F401 (fixtures)
+from support import PASSWORD, client
 
 
 def names(c):

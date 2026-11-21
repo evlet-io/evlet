@@ -9,7 +9,7 @@ from evlet import Child, Database, Integer, Link, Model, Registry, Rule, State, 
 from evlet.identity import RecordId
 from evlet.auth import User
 from evlet.calc import F
-from test_business import client
+from support import client
 from test_lines import Counting, counted
 from test_rules_types import add_user, start
 

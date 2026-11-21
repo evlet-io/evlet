@@ -18,7 +18,7 @@ from evlet.database import Session
 from evlet.ledger import describe, lock_hash, table as ledger_table
 from evlet.periods import set_lock
 from evlet.sequences import Sequence
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 from test_rules_types import ALL
 
 FULL = {**ALL, 'editor': Rule(('read', 'create', 'update', 'delete'))}

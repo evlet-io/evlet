@@ -10,7 +10,7 @@ import pytest
 from evlet import (Application, Child, Column, Database, Date, Decimal, Link, LocalAuth, Model, NavGroup, Registry,
                    Prompt, Report, Rule, Select, Shortcut, State, Table, Text, Workspace)
 from evlet.services import Endpoint
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 EVERYTHING = Rule(('read', 'create', 'update', 'delete'))
 

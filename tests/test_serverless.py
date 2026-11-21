@@ -5,7 +5,7 @@ import json
 import pytest
 
 from evlet import LambdaHTTP
-from test_business import secured, hashed, PASSWORD
+from support import PASSWORD
 
 
 def event(path='/api/auth/session', method='GET', body=None):

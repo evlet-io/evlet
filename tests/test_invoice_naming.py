@@ -13,7 +13,7 @@ from examples.playground.models import Customer, Invoice, Project
 
 # The currencies of the Playground at 0006, before 0019 added KWD and XCR.
 CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
-from test_business import client, hashed, secured  # noqa: F401
+from support import client
 
 
 def customer(api):

@@ -11,7 +11,7 @@ from evlet.auth import AccessError, KeyAccess, LocalAuth, User
 from evlet.connector import ConnectorError
 from evlet.services import Endpoint
 from evlet.tools import ApprovalNeeded
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 FULL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 # Contexts a handler gave away (kept by app code past its return); each must be closed afterwards.

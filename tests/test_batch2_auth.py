@@ -12,7 +12,7 @@ import evlet.auth as auth_module
 from evlet import qb
 from evlet.auth import AccessError, password_hash
 from evlet.settings import totp
-from test_business import PASSWORD, client, hashed, http, secured  # noqa: F401
+from support import PASSWORD, client, http
 from test_assistants import CALLBACK, allow, authorize_query, connect, pkce, register
 from test_settings_security import enrol, settled  # noqa: F401
 

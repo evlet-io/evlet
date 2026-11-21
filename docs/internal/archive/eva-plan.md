@@ -1,10 +1,12 @@
 # Eva and the Tool Engine: phase plan
 
+> Archived: a completed or superseded plan, kept for history. It may describe code that has since changed; the current documentation is in `docs/`.
+
 Status: delivered as stacked PRs. PR 1, the Tool Engine and MCP on it (phases 1 and 2); PR 2,
 Eva's runtime with usage, allowances and scheduled tasks (phases 3, 5 and 6, one module);
 PR 3, Eva's screens (phase 4). The owner approved the mockup and all twelve recommendations on
-02-11-2026. Public documentation: [docs/tools.md](../tools.md) and, with PR 2,
-[docs/eva.md](../eva.md).
+02-11-2026. Public documentation: [docs/tools.md](../../tools.md) and, with PR 2,
+[docs/eva.md](../../eva.md).
 
 ## Owner decisions (02-11-2026)
 

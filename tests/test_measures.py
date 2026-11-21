@@ -13,7 +13,7 @@ from evlet import (Boolean, Child, Count, CountDistinct, Currency, Database, Dat
                    Tags, Text, Table, ValidationError, Year)
 from evlet.auth import AccessError, User
 from evlet.calc import D, F, days, month_start, today, when
-from test_business import client, http
+from support import client, http
 from test_rules_types import add_user, start
 
 ALL = Rule(('read', 'create', 'update', 'delete'))

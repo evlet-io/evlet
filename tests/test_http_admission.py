@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from tests.test_business import secured, hashed, client  # noqa: F401
+from tests.support import client
 
 from evlet import Application, Database, Model, Registry, Text
 

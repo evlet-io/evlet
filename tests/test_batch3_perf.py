@@ -11,7 +11,7 @@ from evlet.database import DEADLINE, Deadline, capped_count, page_total
 from evlet import qb
 from examples.playground.models import Customer
 from examples.playground.reports import MOST_CUSTOMERS, aed_customers
-from tests.test_business import client, hashed, secured  # noqa: F401 (fixtures)
+from tests.support import client
 
 
 def test_report_runs_stop_at_their_deadline(secured, monkeypatch):

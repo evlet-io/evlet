@@ -8,7 +8,7 @@ import zlib
 import pytest
 
 from evlet.currencies import check, check_image, image_size, money_html
-from tests.test_business import client, hashed, secured  # noqa: F401 (fixtures)
+from tests.support import client
 
 
 def chunk(kind, data):

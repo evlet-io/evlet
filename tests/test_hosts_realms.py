@@ -17,7 +17,7 @@ from evlet.ui.serving import STATIC
 from examples.playground.app import build_app, playground_routes
 from examples.playground.migrate import configured_database
 from examples.playground.models import Customer, Invoice, Project, registry
-from test_business import PASSWORD, hashed, http
+from support import PASSWORD, http
 from test_cli_lifecycle import environment_stub, project, runtime
 
 DESK, PORTAL = b'127.0.0.1:8000', b'portal.localhost:8000'

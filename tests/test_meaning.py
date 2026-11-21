@@ -7,7 +7,7 @@ import pytest
 
 from evlet import (Application, Attachments, Child, ChildTable, Currency, Database, Date, Integer, Link, LocalAuth, LongText,
                    Model, Registry, Related, Rule, Table, Text)
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 from test_rules_types import ALL, add_user
 
 

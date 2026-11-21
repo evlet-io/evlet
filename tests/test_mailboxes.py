@@ -24,7 +24,7 @@ from evlet import secrets as vault
 from evlet.auth import AccessError, User
 from evlet import mailboxes as module
 from test_assistants import send
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 ALL = Rule(('read', 'create', 'update', 'delete'))
 APP_PASSWORD = 'imap-app-password-55e1'

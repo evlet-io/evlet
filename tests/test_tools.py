@@ -7,7 +7,7 @@ from evlet import Application, Database, LocalAuth, Model, Registry, Rule, State
 from evlet.services import Endpoint
 from evlet.tools import BY_NAME, arguments, redacted
 from evlet.connector import ConnectorError
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 from test_rules_types import add_user
 from test_forms_services import Ticket, Tickets, count_tickets
 
