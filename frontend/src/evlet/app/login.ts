@@ -139,6 +139,13 @@ export function TwoStepScreen(props: { session: Session | null; challenge: Chall
 }
 
 /** Shown while the session is read. */
-export function Connecting(): HTMLElement {
-  return html`<div class="ev-connecting" role="status">${Logo()}<p>Connecting to Evlet…</p></div>` as HTMLElement;
+/** What shows while the session loads. `shell`: the last visit ended signed in, so the outline of the shell
+ * (sidebar, top bar, a page of placeholder lines) paints at once instead of a blank splash. */
+export function Connecting(shell = false): HTMLElement {
+  if (!shell) return html`<div class="ev-connecting" role="status">${Logo()}<p>Connecting to Evlet…</p></div>` as HTMLElement;
+  const lines = (count: number) => Array.from({ length: count }, () => html`<span class="ev-sk"></span>`);
+  return html`<div class="ev-connecting ev-boot" role="status" aria-label="Connecting to Evlet" data-boot="shell">
+    <aside class="ev-boot-side" aria-hidden="true">${Logo()}${lines(6)}</aside>
+    <div class="ev-boot-main" aria-hidden="true"><div class="ev-boot-top"><span class="ev-sk"></span></div>
+      <div class="ev-boot-page"><span class="ev-sk ev-boot-title"></span>${lines(8)}</div></div></div>` as HTMLElement;
 }

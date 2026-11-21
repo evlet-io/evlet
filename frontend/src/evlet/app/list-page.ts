@@ -26,7 +26,7 @@ import { SplitView } from '../ui/split';
 import { Board, BoardCard, BulkBar, PageHeader, Toolbar, type BoardColumn, type BoardTotal } from '../ui/list';
 import { StatusBadge, Tabs } from '../ui/doc';
 import { DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
-import type { FieldSchema } from '../model/schema';
+import { can, type FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
@@ -40,6 +40,9 @@ export const PAGE_SIZE = 50;
 const BOARD_SIZE = 100;
 /** Below this width the list beside a panel shows each record on two lines. */
 const COMPACT_WIDTH = 460;
+/** Phones show a list as stacked cards (title, number, amount, status and two key fields), not the desktop table. */
+export const PHONE_LIST = '(max-width: 640px)';
+const phoneMedia = () => { try { return window.matchMedia?.(PHONE_LIST) ?? null; } catch { return null; } };
 
 /** Bulk changes send at most this many requests at once. */
 const BULK_AT_ONCE = 4;
@@ -86,8 +89,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const stateKeys = state ? state.steps.map(step => step.key) : [];
   // A board only when the model opts in (Meta.board) for its State field; otherwise the list is a table.
   const boarded = state && model.board === state.field ? state : null;
-  const canCreate = model.api !== 'read' && model.permissions?.create !== false;
-  const canDelete = model.api !== 'read' && model.permissions?.delete === true;
+  const canCreate = can(model, 'create');
+  const canDelete = can(model, 'delete');
   const fields = listFields(model);
   const start = router.route.peek()?.query ?? {};
   ctx.crumbs.set([{ label: model.plural }]);
@@ -318,7 +321,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   filterButton.append(CountBadge({ count: () => filters.active.get().length, tone: 'filled', label: 'Active filters' }));
   effect(() => { filterButton.classList.toggle('has-filters', filters.active.get().length > 0); });
 
-  const header = PageHeader({ icon, tint, title: model.plural, count: () => total.get(), actions: [
+  // With list tabs each tab carries its own count (the active one at least), so the title has none: a number there
+  // read as the total while it counted the open tab.
+  const header = PageHeader({ icon, tint, title: model.plural, count: tabSpec ? undefined : () => total.get(), actions: [
     boarded ? SegmentedControl({ options: [{ value: 'list', label: 'List', icon: 'list' }, { value: 'board', label: 'Board', icon: 'kanban' }], value: view, label: 'View',
       onChange: next => batch(() => { view.set(next); selection.set(new Set()); }) }) : null,
     filters.fields.length ? filterButton : null,
@@ -462,7 +467,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     const move = ruleFor(row, to);
     if (!move) return `${titleOf(model, row)} cannot move from ${stepLabel(model, from)} to ${stepLabel(model, to)}`;
     if (move.by && !move.by.includes(role)) return `Your role cannot use ${move.label}`;
-    if (model.api === 'read' || model.permissions?.update === false) return 'You cannot change this record';
+    if (!can(model, 'update')) return 'You cannot change this record';
     // A move that asks for values or a remark is made from the record, where its dialog asks for them.
     const asked = [...(move.asks ?? []).map(field => fieldOf(model, field)?.label.toLowerCase() ?? field), ...(move.remark?.mode === 'required' ? [(move.remark.label ?? 'a remark').toLowerCase()] : [])];
     if (asked.length) return `Open ${titleOf(model, row)} to use ${move.label}: it asks for ${asked.join(' and ')}`;
@@ -477,7 +482,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
       totalsTick.set(totalsTick.peek() + 1);
       return true;
     } catch (error) {
-      toast(error instanceof ApiError ? error.message : 'The move failed.', { icon: 'info' });
+      toast(error instanceof ApiError ? error.message : 'The move failed.', { tone: 'error' });
       return false;
     }
   };
@@ -604,14 +609,23 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   // ---------- side panel ----------
 
   const listWidth = cell(0, { name: `${name}.list width` });
-  const compactRows = () => {
+  const media = phoneMedia();
+  const phone = cell(Boolean(media?.matches), { name: `${name}.phone` });
+  const onPhone = () => phone.set(Boolean(media?.matches));
+  media?.addEventListener?.('change', onPhone);
+  onCleanup(() => media?.removeEventListener?.('change', onPhone));
+  // A card's third line: the first two key fields the first two lines leave out.
+  const shownOnCard = new Set([model.title_field, showNumber?.name, amountField?.name, state?.field].filter(Boolean));
+  const cardFields = keyFields(model).filter(meta => !shownOnCard.has(meta.name) && fields.some(item => item.name === meta.name)).slice(0, 2);
+  const compactRows = (cards = false) => {
     const stateMeta = state ? fieldOf(model, state.field) : undefined;
     const isCurrent = (row: RecordData) => String(row.id) === opened.get();
-    const element = html`<div class="ev-compact" role="listbox" aria-label=${model.plural}>${each(rows, row => row.id, row => html`<div role="option" class="ev-crow"
+    const element = html`<div class="ev-compact" class:ev-cards-list=${cards} data-layout=${cards ? 'cards' : 'compact'} role="listbox" aria-label=${model.plural}>${each(rows, row => row.id, row => html`<div role="option" class="ev-crow"
       data-key=${String(row().id)} class:ev-row-cancelled=${() => isCancelled(row())} aria-selected=${() => String(isCurrent(row()))} tabindex=${() => isCurrent(row()) || (!current.get() && rows.get()[0] === row()) ? '0' : '-1'}
       on:click=${() => open(row())} on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); open(row()); } }}>
       <span class="l1">${firstCell(row, html`<b>${() => titleOf(model, row())}</b>`)}${amountField ? html`<span class="num">${cellView(ctx, model, amountField, row)}</span>` : null}</span>
-      <span class="l2">${showNumber ? html`<span class="mono">${() => String(row()[showNumber.name] ?? '')}</span>` : html`<span></span>`}${stateMeta ? cellView(ctx, model, stateMeta, row) : null}</span></div>`,
+      <span class="l2">${showNumber ? html`<span class="mono">${() => String(row()[showNumber.name] ?? '')}</span>` : html`<span></span>`}${stateMeta ? cellView(ctx, model, stateMeta, row) : null}</span>${cards && cardFields.length
+        ? html`<span class="l3">${cardFields.map(meta => html`<span class="ev-card-kv"><span class="muted">${meta.label}</span> ${cellView(ctx, model, meta, row)}</span>`)}</span>` : null}</div>`,
       { fallback: () => () => loading.get() && !failure.get() ? loadingRows() : html`<p class="muted ev-note">No ${model.plural.toLowerCase()} match.</p>` })}</div>` as HTMLElement;
     element.addEventListener('keydown', event => {
       if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
@@ -632,9 +646,10 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const mode = derive(() => failure.get() ? 'error'
     : loading.get() && total.get() === null && view.get() === 'board' ? 'loading'
     : !loading.get() && total.get() === 0 && !query.get() && !filters.active.get().length && tab.get() === 'all' ? 'empty'
+    : view.get() === 'list' && phone.get() ? 'cards'
     : view.get() === 'list' && panelOpen.get() ? (listWidth.get() && listWidth.get() < COMPACT_WIDTH ? 'compact' : 'narrow') : view.get());
   const content = html`<div class="ev-list-body" role=${tabs ? 'tabpanel' : null} id=${() => tabs ? `ev-${name}-views-${tab.get()}-panel` : null} aria-labelledby=${() => tabs ? `ev-${name}-views-${tab.get()}` : null}>
-    ${match(mode, { error: () => body(), empty: () => body(), loading: () => loadingRows(), list: () => [table(), pager], narrow: () => [table(true), pager], compact: () => [compactRows(), pager],
+    ${match(mode, { error: () => body(), empty: () => body(), loading: () => loadingRows(), list: () => [table(), pager], narrow: () => [table(true), pager], compact: () => [compactRows(), pager], cards: () => [compactRows(true), pager],
       board: () => [state ? html`<p class="muted ev-note ev-board-note" hidden=${() => boardOnly.get() === 'all'}>${() => `Showing ${stepLabel(model, boardOnly.get()).toLowerCase()} ${model.plural.toLowerCase()} only. Choose All ${model.plural.toLowerCase()} to see every column.`}</p>` : null,
         match(boardOnly, Object.fromEntries(['all', ...stateKeys].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${total.get()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
 

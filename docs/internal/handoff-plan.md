@@ -97,7 +97,7 @@ Users are now managed in Controls (`/controls/users`, second handoff PR 3);
 
 ## Second handoff: frontends and routing, Controls
 
-[handoff-routing-controls-settings.md](handoff-routing-controls-settings.md) lists nine PRs.
+[handoff-routing-controls-settings.md](archive/handoff-routing-controls-settings.md) lists nine PRs.
 PRs 1 to 3 were built on `ui-final/05-remove-solid` and then replayed, commit by commit, on
 `stack/07-cross-phase-fixes`, so each branch below stacks on the one before it. All nine are
 open as draft PRs #52 to #60, and a tenth PR closes the findings of a review across all of them.

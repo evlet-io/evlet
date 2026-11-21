@@ -3,12 +3,14 @@
 import asyncio
 import json
 import logging
+import os
+import sys
 import time
 import uuid
 from urllib.parse import parse_qs, urlsplit
 
 from .adapter import OperationalError
-from .database import ConflictError, NotFoundError
+from .database import DEADLINE, ConflictError, Deadline, NotFoundError
 from .identity import jsonable, path_id
 from .models import ValidationError
 from .permissions import CALLER, CORRECTIONS, read_only
@@ -50,6 +52,52 @@ def request_body_limit(path, image_bytes=None):
     return MAX_BODY_BYTES
 
 
+# A client that went away has its report's database work interrupted this many seconds later.
+DISCONNECT_GRACE = 5.0
+# Open event streams read their pages at least this often, so a signed-out session ends its stream.
+STREAM_RECHECK = 5.0
+
+
+def deadline_seconds(path, method):
+    """The time limit of a request's database work, or None. Report runs, exports and prints
+    (/api/_reports/...) only read; EVLET_REPORT_SECONDS bounds them, default 300 (0 turns it off).
+    EVLET_REQUEST_SECONDS bounds every other request and is off unless set (docs/performance.md)."""
+    report = method == 'POST' and path.startswith('/api/_reports/')
+    name = 'EVLET_REPORT_SECONDS' if report else 'EVLET_REQUEST_SECONDS'
+    raw = os.environ.get(name, '300' if report else '0').strip()
+    try:
+        seconds = float(raw)
+        if not 0 <= seconds <= 86400:
+            raise ValueError()
+    except ValueError:
+        raise ValueError(f'{name} must be a number of seconds from 0 to 86400') from None
+    return seconds or None
+
+
+def several_workers():
+    """Whether this server was started with more than one worker process (uvicorn --workers or WEB_CONCURRENCY).
+    Sign-in limits live in the database, but API key rate limits, the write turn and the tenant cache are kept
+    per process, so each extra worker multiplies them (docs/performance.md)."""
+    try:
+        concurrency = int(os.environ.get('WEB_CONCURRENCY', '1') or 1)
+    except ValueError:
+        concurrency = 1
+    argv = list(sys.argv)
+    for index, item in enumerate(argv):
+        value = item.partition('=')[2] if item.startswith('--workers=') else argv[index + 1] if item in ('--workers', '-w') and index + 1 < len(argv) else None
+        if value is not None and value.isdigit():
+            concurrency = max(concurrency, int(value))
+    return concurrency > 1
+
+
+class _Encoded:
+    """A JSON response body already encoded in the worker thread, off the event loop."""
+    __slots__ = ('content',)
+
+    def __init__(self, content):
+        self.content = content
+
+
 def image_limit(business):
     from .images import limits
     return limits(business)[0]
@@ -80,6 +128,11 @@ class Application:
             raise ValueError("Configure explicit Host header values")
         self._stopping = asyncio.Event()
         self._work = Work()
+        # Deadlines of running requests, interrupted when the server stops; the shared event poller's state.
+        self._deadlines = set()
+        self._event_pump = None
+        self._event_changed = None
+        self._event_streams = 0
         self.name = name
         self.database = database
         self.registry = database.registry
@@ -129,8 +182,10 @@ class Application:
     def _redact_oidc_query(scope):
         # Uvicorn logs its original scope after the response. Keep callback credentials
         # out of that query string, including when a tenant router copies the scope.
-        if scope.get('type') == 'http' and scope.get('path') == '/_/oidc/callback':
-            scope.setdefault('evlet.oidc_query', scope.get('query_string', b''))
+        # The mailbox sign-in return carries an OAuth code and state just like the OIDC callback.
+        key = {'/_/oidc/callback': 'evlet.oidc_query', '/_/mail/callback': 'evlet.mail_query'}.get(scope.get('path'))
+        if scope.get('type') == 'http' and key:
+            scope.setdefault(key, scope.get('query_string', b''))
             scope['query_string'] = b''
 
     async def __call__(self, scope, receive, send):
@@ -174,7 +229,7 @@ class Application:
             return
         if scope["type"] != "http":
             raise ValueError("Unsupported ASGI scope")
-        admission = None
+        admission = deadline = None
         try:
             headers = []
             path = scope['path']
@@ -226,7 +281,7 @@ class Application:
                         if not event.get('more_body', False):
                             break
                     admission = await self._work.acquire(lane, ticket)
-                    status, payload, headers = await self._work.run(lane, self._internal, scope, bytes(data), lease=admission)
+                    status, payload, headers = await self._work.run(lane, self._encoded, self._internal, scope, bytes(data), lease=admission)
                 # PUT carries a body only on the Controls routes (connectors) and unsaved changes; elsewhere it stays a 405.
                 elif scope["method"] in ("POST", "PATCH") or scope["method"] == "PUT" and scope["path"].startswith(("/api/_controls/", "/api/_unsaved/")):
                     content_type = dict(scope.get("headers", [])).get(b"content-type", b"")
@@ -252,7 +307,12 @@ class Application:
                         raise HTTPError(422, "Expected a JSON object")
                 if not internal:
                     admission = await self._work.acquire(lane, ticket)
-                    status, payload, headers = await self._work.run(lane, self._dispatch, scope, body, lease=admission)
+                    seconds = deadline_seconds(path, scope['method'])
+                    deadline = None if seconds is None else Deadline(seconds)
+                    if deadline is None:
+                        status, payload, headers = await self._work.run(lane, self._encoded, self._dispatch, scope, body, lease=admission)
+                    else:
+                        status, payload, headers = await self._bounded(deadline, receive, lane, scope, body, admission)
             except Busy:
                 status, payload, headers = 503, {'error': 'Server busy; try again shortly'}, [(b'retry-after', b'1')]
             except AccessError as exc:
@@ -269,8 +329,12 @@ class Application:
                 logger.exception("Attachment storage failed", extra={'request_id': scope.get('evlet.request_id')})
                 status, payload = 503, {"error": "Attachment temporarily unavailable"}
             except OperationalError:
-                logger.exception("Database operation failed", extra={'request_id': scope.get('evlet.request_id')})
-                status, payload = 503, {"error": "Database temporarily unavailable"}
+                if deadline is not None and deadline.passed():
+                    logger.warning("Request stopped at its time limit", extra={'request_id': scope.get('evlet.request_id')})
+                    status, payload = 504, {"error": "The request took longer than its time limit"}
+                else:
+                    logger.exception("Database operation failed", extra={'request_id': scope.get('evlet.request_id')})
+                    status, payload = 503, {"error": "Database temporarily unavailable"}
             except Exception:
                 logger.exception("Unhandled request failure", extra={'request_id': scope.get('evlet.request_id')})
                 status, payload = 500, {"error": "Internal server error"}
@@ -279,7 +343,7 @@ class Application:
                 status, payload, headers = site_not_found(self, host)
             download = isinstance(payload, Download)
             try:
-                encoded = payload.content if download else b"" if status == 204 else json.dumps(jsonable(payload), ensure_ascii=True, allow_nan=False).encode("utf-8")
+                encoded = payload.content if download or isinstance(payload, _Encoded) else b"" if status == 204 else json.dumps(jsonable(payload), ensure_ascii=True, allow_nan=False).encode("utf-8")
             except (TypeError, ValueError, RecursionError):
                 # Keep the application's JSON error and headers if a payload cannot be encoded.
                 logger.exception("Response encoding failed", extra={'request_id': scope.get('evlet.request_id')})
@@ -295,6 +359,35 @@ class Application:
         finally:
             if admission is not None:
                 admission.release()
+
+    def _encoded(self, function, *args):
+        """Run a route in its worker thread and encode its JSON there too, so a large response never holds the
+        event loop. A payload that cannot be encoded is returned as it is, for _serve's error path."""
+        status, payload, headers = function(*args)
+        if status != 204 and not isinstance(payload, Download):
+            try:
+                payload = _Encoded(json.dumps(jsonable(payload), ensure_ascii=True, allow_nan=False).encode('utf-8'))
+            except (TypeError, ValueError, RecursionError):
+                pass
+        return status, payload, headers
+
+    async def _bounded(self, deadline, receive, lane, scope, body, admission):
+        """Run a request under deadline (evlet.database.Deadline). A client that disconnects moves the
+        deadline to DISCONNECT_GRACE seconds later, so abandoned work stops and frees its worker."""
+        async def watch():
+            while (await receive())['type'] != 'http.disconnect':
+                pass
+            deadline.cancel(DISCONNECT_GRACE)
+        watcher = asyncio.create_task(watch())
+        token = DEADLINE.set(deadline)
+        self._deadlines.add(deadline)
+        try:
+            return await self._work.run(lane, self._encoded, self._dispatch, scope, body, lease=admission)
+        finally:
+            DEADLINE.reset(token)
+            self._deadlines.discard(deadline)
+            watcher.cancel()
+            await asyncio.gather(watcher, return_exceptions=True)
 
     @staticmethod
     async def _body_event(receive):
@@ -402,8 +495,9 @@ class Application:
         except ValueError:
             raise AccessError(403, 'Unrecognized host or origin') from None
 
-    async def _event_stream(self, scope, receive, send):
-        page = await self._work.run('read', self.business.event_page, scope)
+    async def _sse(self, receive, send, name, frames):
+        """Send frames(wait) as text/event-stream. frames is an async generator of SSE frames; between pages it
+        awaits wait(timeout, *tasks), which is True once the client has gone or the application is stopping."""
         await send({'type': 'http.response.start', 'status': 200, 'headers': [
             (b'content-type', b'text/event-stream'), (b'cache-control', b'no-store'),
             (b'x-accel-buffering', b'no'), (b'x-content-type-options', b'nosniff')]})
@@ -413,26 +507,27 @@ class Application:
         disconnect = asyncio.create_task(disconnected())
         self._loop = asyncio.get_running_loop()
         stopping = asyncio.create_task(self._stopping.wait())
+
+        async def wait(timeout, *tasks):
+            done, _ = await asyncio.wait({disconnect, stopping, *tasks}, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+            return disconnect in done or stopping in done
+
+        stream = frames(wait)
         try:
-            for iteration in range(25):
-                encoded = ('id: ' + page['cursor'] + '\nevent: evlet\ndata: ' + json.dumps(jsonable(page)) + '\n\n').encode()
-                await send({'type': 'http.response.body', 'body': encoded, 'more_body': True})
-                done, _ = await asyncio.wait({disconnect, stopping}, timeout=0.05 if page['more'] else 1, return_when=asyncio.FIRST_COMPLETED)
-                if done:
-                    return
-                headers = [(key, value) for key, value in scope.get('headers', []) if key != b'last-event-id']
-                headers.append((b'last-event-id', page['cursor'].encode()))
-                try:
-                    page = await self._work.run('read', self.business.event_page, {**scope, 'headers': headers})
-                except (AccessError, Busy):
-                    await send({'type': 'http.response.body', 'body': b'event: unavailable\ndata: {}\n\n', 'more_body': True})
-                    return
-                except Exception:
-                    logger.exception('Event stream failed')
-                    return
+            try:
+                async for body in stream:
+                    try:
+                        await send({'type': 'http.response.body', 'body': body, 'more_body': True})
+                    except OSError:
+                        return
+            except (AccessError, Busy):
+                await send({'type': 'http.response.body', 'body': b'event: unavailable\ndata: {}\n\n', 'more_body': True})
+            except Exception:
+                logger.exception('%s failed', name)
         except OSError:
             return
         finally:
+            await stream.aclose()
             disconnect.cancel()
             stopping.cancel()
             await asyncio.gather(disconnect, stopping, return_exceptions=True)
@@ -440,6 +535,71 @@ class Application:
                 await send({'type': 'http.response.body', 'body': b'', 'more_body': False})
             except OSError:
                 pass
+
+    async def _event_stream(self, scope, receive, send):
+        page = await self._work.run('read', self.business.event_page, scope)
+
+        async def frames(wait):
+            current, ends = page, asyncio.get_running_loop().time() + 25
+            while True:
+                yield ('id: ' + current['cursor'] + '\nevent: evlet\ndata: ' + json.dumps(jsonable(current)) + '\n\n').encode()
+                remaining = ends - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    return
+                # Sleep until the shared poller sees a new event (or briefly, while a backlog remains), and
+                # read a page at least every STREAM_RECHECK seconds so an ended session ends the stream.
+                changed = asyncio.create_task(self._event_changed.wait())
+                try:
+                    if await wait(0.05 if current['more'] else min(STREAM_RECHECK, remaining), changed):
+                        return
+                finally:
+                    changed.cancel()
+                headers = [(key, value) for key, value in scope.get('headers', []) if key != b'last-event-id']
+                headers.append((b'last-event-id', current['cursor'].encode()))
+                current = await self._work.run('read', self.business.event_page, {**scope, 'headers': headers})
+
+        self._event_streams += 1
+        pump = self._event_pump
+        if pump is None or pump.done() or pump.get_loop() is not asyncio.get_running_loop():
+            self._event_changed = asyncio.Event()
+            self._event_pump = asyncio.create_task(self._pump_events())
+        try:
+            await self._sse(receive, send, 'Event stream', frames)
+        finally:
+            self._event_streams -= 1
+
+    def _latest_event(self):
+        with self.business.gate.shared():
+            return self.business.events.latest()
+
+    async def _pump_events(self):
+        """One poller per application (so per database) for all its open event streams: it reads the newest
+        event number once a second and wakes every stream when it moves. Streams then read their own
+        permission-filtered pages; an idle stream costs no database work between rechecks."""
+        seen = None
+        try:
+            while True:
+                try:
+                    await asyncio.wait_for(self._stopping.wait(), timeout=1)
+                    return
+                except asyncio.TimeoutError:
+                    pass
+                if self._event_streams <= 0:
+                    return
+                try:
+                    latest = await self._work.run('read', self._latest_event)
+                except Busy:
+                    continue
+                except Exception:
+                    logger.exception('Event poller failed')
+                    return
+                if seen is not None and latest != seen:
+                    changed, self._event_changed = self._event_changed, asyncio.Event()
+                    changed.set()
+                seen = latest
+        finally:
+            if self._event_pump is asyncio.current_task():
+                self._event_pump = None
 
     def _eva_page(self, scope, after):
         self.business.controls.refresh()
@@ -448,52 +608,27 @@ class Application:
     async def _eva_stream(self, scope, receive, send):
         """One Eva run's events as SSE: stored events after Last-Event-ID, then new ones as they are written, for about
         25 seconds or until the run ends. A reconnect continues from the last id, so nothing runs twice."""
-        if scope['method'] != 'GET':
-            raise HTTPError(405, 'Method not allowed', [(b'allow', b'GET')])
+        self._method(scope['method'], ('GET',))
         last = dict(scope.get('headers', [])).get(b'last-event-id', b'0')
         after = int(last) if last.isdigit() and len(last) <= 19 else 0
         page = await self._work.run('read', self._eva_page, scope, after)
-        await send({'type': 'http.response.start', 'status': 200, 'headers': [
-            (b'content-type', b'text/event-stream'), (b'cache-control', b'no-store'),
-            (b'x-accel-buffering', b'no'), (b'x-content-type-options', b'nosniff')]})
-        async def disconnected():
-            while (await receive())['type'] != 'http.disconnect':
-                pass
-        disconnect = asyncio.create_task(disconnected())
-        self._loop = asyncio.get_running_loop()
-        stopping = asyncio.create_task(self._stopping.wait())
-        deadline = asyncio.get_running_loop().time() + 25
-        try:
+
+        async def frames(wait):
+            current, seen, deadline = page, after, asyncio.get_running_loop().time() + 25
             while True:
-                for item in page['items']:
-                    after = item['id']
-                    await send({'type': 'http.response.body', 'body': f"id: {item['id']}\nevent: {item['type']}\ndata: {json.dumps(item)}\n\n".encode(), 'more_body': True})
-                if page['done']:
-                    await send({'type': 'http.response.body', 'body': b'event: end\ndata: {}\n\n', 'more_body': True})
+                for item in current['items']:
+                    seen = item['id']
+                    yield f"id: {item['id']}\nevent: {item['type']}\ndata: {json.dumps(item)}\n\n".encode()
+                if current['done']:
+                    yield b'event: end\ndata: {}\n\n'
                     return
                 if asyncio.get_running_loop().time() > deadline:
                     return
-                done, _ = await asyncio.wait({disconnect, stopping}, timeout=0.05 if len(page['items']) >= 200 else 0.25, return_when=asyncio.FIRST_COMPLETED)
-                if done:
+                if await wait(0.05 if len(current['items']) >= 200 else 0.25):
                     return
-                try:
-                    page = await self._work.run('read', self._eva_page, scope, after)
-                except (AccessError, Busy):
-                    await send({'type': 'http.response.body', 'body': b'event: unavailable\ndata: {}\n\n', 'more_body': True})
-                    return
-                except Exception:
-                    logger.exception('Eva stream failed')
-                    return
-        except OSError:
-            return
-        finally:
-            disconnect.cancel()
-            stopping.cancel()
-            await asyncio.gather(disconnect, stopping, return_exceptions=True)
-            try:
-                await send({'type': 'http.response.body', 'body': b'', 'more_body': False})
-            except OSError:
-                pass
+                current = await self._work.run('read', self._eva_page, scope, seen)
+
+        await self._sse(receive, send, 'Eva stream', frames)
 
     @staticmethod
     def _invalid_constant(value):
@@ -535,7 +670,7 @@ class Application:
             return self.business.dispatch(scope, body)
         if path == "/api/schema":
             self._method(method, ["GET"])
-            return 200, self.registry.ui_schema(), []
+            return 200, {**self.registry.ui_schema(), 'timezone': getattr(self.database, 'timezone', None) or 'UTC'}, []
         parts = path.split("/")
         if len(parts) not in (3, 4) or parts[:2] != ["", "api"]:
             raise HTTPError(404, "Route not found")
@@ -595,6 +730,9 @@ class Application:
     def stop(self):
         """Stop admission and end live streams before server shutdown. Safe from any thread."""
         self._work.stop()
+        # Running report work is interrupted, so a restart does not wait for it (or find the database locked).
+        for deadline in list(self._deadlines):
+            deadline.cancel()
         loop = getattr(self, '_loop', None)
         try:
             running = asyncio.get_running_loop()
@@ -614,6 +752,11 @@ class Application:
                 self._work.start()
                 try:
                     runtime()  # Validate process limits before accepting traffic.
+                    deadline_seconds('/api/_reports/', 'POST'), deadline_seconds('/', 'GET')
+                    if several_workers():
+                        logger.warning('Evlet runs as one web process per database: with several workers, API key '
+                                       'rate limits, the write turn and the tenant cache are counted per worker. '
+                                       'Start one worker (docs/performance.md).')
                     from .instances import activate_generation
                     generation = activate_generation(self)
                     generation.__enter__()

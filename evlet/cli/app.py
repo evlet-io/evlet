@@ -23,7 +23,7 @@ def create_app(root, name, *, legacy=False):
             relative = str(template.relative_to(templates)).removesuffix('.tpl').replace('__app__', name)
             destination = stage / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(template.read_text().replace('{{name}}', name).replace('{{Class}}', name[0].upper() + name[1:]).replace('{{title}}', name.replace('_', ' ').title()), encoding='utf-8')
+            destination.write_text(template.read_text().replace('{{name}}', name).replace('{{table}}', name + 'item').replace('{{Class}}', name[0].upper() + name[1:]).replace('{{title}}', name.replace('_', ' ').title()), encoding='utf-8')
         read_package(stage)
         os.rename(stage, target)
     return target

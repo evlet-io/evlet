@@ -1,4 +1,6 @@
-// The Docs landing page after sign-in: the developer guide, with its topics, examples and the models of this workspace. The Python page renderer and the
+// The Docs landing page after sign-in. People who build or run the application (developers() below) get the
+// developer guide, with its topics, examples and the models of this workspace, plus the help topics; everyone else
+// gets the help topics only: their workspace, working with records and keyboard shortcuts. The Python page renderer and the
 // Projects demo are not rendered by this interface (docs/internal/handoff-plan.md, decision 3), so their
 // topics point to the Python APIs instead of live demos.
 
@@ -13,6 +15,7 @@ import { openForm } from './prompts';
 import { LockBanner, moveIcon, moveInputs, MovesButton, StageBar, stateBadgeLook, type MoveEntry } from './record-page';
 import type { FieldSchema } from '../model/schema';
 import { chooseTheme } from './settings';
+import { SHORTCUTS } from './shell';
 import { cell, effect, type Cell } from '../reactive';
 import type { Theme } from '../ui/theme';
 import type { Tint } from '../ui/core';
@@ -208,7 +211,7 @@ function sampleMoves(model: ScreenModel, value: string, blocked: Record<string, 
     ...(rule.primary ? { primary: true } : {}), ...(blocked[rule.key] ? { reason: blocked[rule.key] } : {}), ...(rule.asks ? { asks: rule.asks } : {}),
     ...(rule.remark ? { remark: { ...rule.remark, required: rule.remark.mode === 'required' } } : {}), ...extra[rule.key] }) as DetailMove);
 }
-const notSaved = () => toast('An example: nothing is saved', { icon: 'info' });
+const notSaved = () => toast('An example: nothing is saved', { tone: 'info' });
 /** The header's moves for `_moves`, as the record page builds them. `onMove` runs an allowed one. */
 const sampleEntries = (model: ScreenModel, moves: DetailMove[], onMove: (move: DetailMove) => void = notSaved): MoveEntry[] => moves.map(move => ({ label: move.label,
   icon: moveIcon(model, move.to), allowed: move.allowed, primary: move.primary, blocked: () => move.allowed ? null : move.reason ?? `${move.label} is not available now`, run: () => onMove(move) }));
@@ -337,12 +340,12 @@ const TOPICS: Topic[] = [
       <hr><h3>Keep it simple</h3><p>Python defines the model. Evlet checks every request on the server. The browser renders what the model allows.</p></aside></div>`;
   } },
   { id: 'getting-started', title: 'Getting started', render: () => html`<article class="ev-doc-article">
-    ${section('1. Create an application', p('Use Python 3.12 or later. Build the bundled wheel from this repository, then install it and a local server. Run these commands in the directory containing the wheel.'),
-      terminal('python -m venv .venv\nsource .venv/bin/activate\npython -m pip install ./evlet-0.1.0-py3-none-any.whl uvicorn\nmkdir notes\ncd notes'),
-      p('Save this in app.py. It defines a model and a protected local application:'), code(startCode))}
-    ${section('2. Open the app', terminal('uvicorn app:app --host 127.0.0.1 --port 8000 --reload'),
-      p('Open http://127.0.0.1:8000. Create the first administrator account, then sign in. Docs opens first. Choose Notes in the sidebar to create and edit a record.'),
-      p('App uses a local SQLite database in .data and loopback-only authentication. Supply an explicit database and authentication configuration when deploying. For a project with separate apps and sites, run evlet setup myproject --app notes --instance acme --dev.'))}
+    ${section('1. Install Evlet and create a site', p('Use Python 3.12 or later in a virtual environment. One command creates a project, a Notes app and a site called acme, installs the app and starts evlet dev on 127.0.0.1. Read the trust prompt first.'),
+      terminal('python -m venv .venv\nsource .venv/bin/activate\npython -m pip install --upgrade evlet\nevlet setup myproject --app notes --instance acme --dev'),
+      p('The server prints a one-time sign-in link for a new administrator. The site keeps its data when you stop it; run the same command again to pick up where it stopped.'))}
+    ${section('2. Shape the model', p('The app lives in myproject/apps/notes. A model is a Python class; evlet dev reloads Python changes while you work. See docs/app-layout.md for where models, reports and migrations go.'), code(startCode))}
+    ${section('The same steps one at a time', terminal('evlet setup myproject\ncd myproject\nevlet app notes\nevlet instance acme\nevlet install notes --instance acme\nevlet serve acme'),
+      p('evlet serve tells you to set the administrator password with evlet users set-password acme admin; then open http://127.0.0.1:8000 and sign in. Sign-in opens the first list; Docs stays in the sidebar. Each site has its own SQLite database, accounts and files.'))}
     ${section('3. Shape the screens from the model', p('Every model gets a list, a board when it has a State, and a record view. Meta options choose the columns, sections, key fields and related records. See How screens are built.'))}
     ${section('4. Keep control of the details', p('Use Application with your existing database, registry, policy, actions and storage when you need explicit configuration. The screens use the same query and mutation endpoints.'))}
   </article>` },
@@ -384,13 +387,57 @@ const TOPICS: Topic[] = [
   </article>` },
 ];
 
+// ---------- help for the people using the application ----------
+
+const helpLink = (ctx: AppContext, icon: string, title: string, text: string, topic: string) => html`<button type="button" class="ev-doc-link"
+  on:click=${() => ctx.router.go('topic', { topic })}>${Icon(icon)}<span><strong>${title}</strong><small>${text}</small></span>${Icon('arrow-right', { size: 'sm' })}</button>`;
+
+const USING: Topic = { id: 'using', title: 'Working with records', render: () => html`<article class="ev-doc-article">
+  ${section('Find a record', p('Each list in the sidebar has a search box, filters and saved views. Search (Ctrl K, or Cmd K on a Mac) finds records, lists and commands from anywhere. The clock button beside it opens the records you opened last.'))}
+  ${section('Create and change records', p('Choose New on a list, or press C there. Values save one at a time when you leave a field, with Undo. Lines in a table save together when you choose Save. A field you cannot change is greyed out and says why.'))}
+  ${section('Steps and actions', p('A record with steps (such as Draft, Sent, Paid) moves on only through the buttons at its top. A step that is not open to you yet stays visible and says what it needs. Some records lock once they reach a step.'))}
+  ${section('Unsaved changes', p('Leaving a record before Save keeps your changes in this browser: when you come back you can restore or discard them. A new record you had not saved waits here too.'))}
+  ${section('A record changed before I saved', p('Someone else saved the record first. Your draft stays; copy anything you need, then choose Reload to see the current record.'))}
+  ${section('Something is missing', p('You see the records, fields and actions your role allows. Ask your administrator if you need more access.'))}
+</article>` };
+
+const KEYS: Topic = { id: 'shortcuts', title: 'Keyboard shortcuts', render: () => html`<article class="ev-doc-article">
+  ${section('Everywhere', table(SHORTCUTS.map(([keys, what]) => [what, keys]), ['What', 'Keys']))}
+  ${section('On a screen', p('Press ? on any screen for its own shortcuts as well, such as saving or deleting the record you have open.'))}
+</article>` };
+
+/** Help's first page: this workspace's lists with what each is for (Meta.description), and the other help topics. */
+const HELP: Topic = { id: 'overview', title: 'Help', render: ctx => {
+  const models = rootModels(ctx.schema);
+  return html`<div class="ev-doc-columns"><article>
+    ${section('Your workspace', models.length ? html`<ul class="ev-help-models">${models.map(model => html`<li><a class="link" href=${ctx.router.href('list', { model: model.name })}>
+      ${IconTile(identity(model).icon, { tint: identity(model).tint, size: 22 })}<strong>${model.plural}</strong></a>${model.description ? html`<small class="muted">${model.description}</small>` : null}</li>`)}</ul>`
+      : p('No lists are open to your role yet. Ask your administrator.'))}
+    ${section('Learn the basics', html`<div class="ev-doc-links">
+      ${helpLink(ctx, 'file-text', USING.title, 'Find, create and change records, steps and unsaved changes.', USING.id)}
+      ${helpLink(ctx, 'command', KEYS.title, 'Work faster with the keyboard.', KEYS.id)}</div>`)}
+  </article>
+  <aside class="ev-doc-aside"><h3>Need a hand?</h3><p>Your administrator decides what you can see and change, and can add more access.</p>
+    ${themeSwitch(ctx)}</aside></div>`;
+} };
+
+/** Who sees the developer guide: people who can open Controls (administrators), everyone on a development server
+ * (evlet dev, the Playground) and development builds. Everyone else sees Help. Display only: Docs holds no data. */
+export const developers = (ctx: AppContext) => Boolean(ctx.dev || ctx.me.peek()?.controls || ctx.me.peek()?.development);
+
+/** The Docs topics this person sees, the first one at /docs. */
+export const docsTopics = (ctx: AppContext): Topic[] => developers(ctx) ? [...TOPICS, USING, KEYS] : [HELP, USING, KEYS];
+
 export function DocsPage(ctx: AppContext, topicId = 'overview'): HTMLElement {
-  const topic = TOPICS.find(item => item.id === topicId) ?? TOPICS[0];
+  const topics = docsTopics(ctx), guide = developers(ctx);
+  const topic = topics.find(item => item.id === topicId) ?? topics[0];
   ctx.crumbs.set(topic.id === 'overview' ? [{ label: 'Docs' }] : [{ label: 'Docs', href: ctx.router.href('docs', {}) }, { label: topic.title }]);
-  return html`<div class="page ev-docs">
+  const sub = !guide ? 'How to use this workspace.' : topic.id === 'overview' ? 'The practical guide to building your application.'
+    : topic === USING || topic === KEYS ? 'Help for the people using your application' : 'Developer documentation';
+  return html`<div class="page ev-docs" data-docs=${guide ? 'developer' : 'help'}>
     ${ctx.crumbBar?.()}${PageHeader({ icon: 'file-text', tint: 'slate', title: topic.title })}
-    <p class="ev-docs-sub">${topic.id === 'overview' ? 'The practical guide to building your application.' : 'Developer documentation'}</p>
-    <nav class="tabs" aria-label="Docs topics">${TOPICS.map(item => html`<a class:on=${item.id === topic.id} aria-current=${item.id === topic.id ? 'page' : null}
+    <p class="ev-docs-sub">${sub}</p>
+    <nav class="tabs" aria-label="Docs topics">${topics.map(item => html`<a class:on=${item.id === topic.id} aria-current=${item.id === topic.id ? 'page' : null}
       href=${item.id === 'overview' ? ctx.router.href('docs', {}) : ctx.router.href('topic', { topic: item.id })}>${item.title}</a>`)}</nav>
     ${topic.render(ctx)}</div>` as HTMLElement;
 }

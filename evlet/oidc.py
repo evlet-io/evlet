@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from . import qb
 from .adapter import Column, TableDefinition
-from .auth import AccessError, client_network
+from .auth import AccessError, allow, client_network
 
 TICKETS = TableDefinition('evlet_oidc_tickets', (
     Column('token', 'TEXT', primary=True), Column('browser', 'TEXT', required=True),
@@ -114,8 +114,7 @@ class OIDCFlow:
     def dispatch(self, scope, raw):
         path, method = scope['path'], scope['method']
         callback = path == '/_/oidc/callback'
-        if method != ('POST' if path == '/_/oidc/finish' else 'GET'):
-            raise AccessError(405, 'Method not allowed')
+        allow(method, 'POST' if path == '/_/oidc/finish' else 'GET')
         headers = scope.get('headers', [])
         # IdP callbacks are cross-site navigations, protected by one-use state and browser proof.
         if callback:

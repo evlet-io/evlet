@@ -3,12 +3,12 @@
 //
 //   MyEmailPage({ api: ctx.api });
 
-import { html } from '../dom';
+import { html, type Child } from '../dom';
 import { ApiClient, ValidationError, type ClientOptions } from '../api';
 import { cell } from '../reactive';
 import { Button, StatusPill, Switch } from '../ui/base';
 import { mountToasts, toast } from '../ui/layers';
-import { Callout, Head, stamp } from '../ui/settings-helpers';
+import { Callout, Head, SettingRow, stamp } from '../ui/settings-helpers';
 import { ask, field, message, Select } from '../ui/settings-helpers';
 import '../controls/controls.css';
 
@@ -69,11 +69,11 @@ export function MyEmailPage(options: { api?: ApiClient; go?: (url: string) => vo
   const data = cell<MyEmail | null>(null), form = cell(false), busy = cell(false), error = cell('');
   const draft = { address: cell(''), imap: cell(''), smtp: cell(''), password: cell('') };
   const run = async (step: () => Promise<MyEmail>, done?: string) => {
-    try { data.set(await step()); if (done) toast(done); } catch (failure) { toast(message(failure), { icon: 'info' }); }
+    try { data.set(await step()); if (done) toast(done); } catch (failure) { toast(message(failure), { tone: 'error' }); }
   };
   const returned = new URLSearchParams(window.location.search).get('mail');
   if (returned && RETURNED[returned]) {
-    toast(RETURNED[returned], returned === 'connected' ? {} : { icon: 'info' });
+    toast(RETURNED[returned], returned === 'connected' ? {} : { tone: 'info' });
     window.history.replaceState(null, '', window.location.pathname);
   }
   void run(() => api.load());
@@ -83,7 +83,7 @@ export function MyEmailPage(options: { api?: ApiClient; go?: (url: string) => vo
 
   const choose = async (provider: 'microsoft' | 'google' | 'imap') => {
     if (provider === 'imap') { form.set(true); error.set(''); return; }
-    try { go((await api.signIn(provider)).url); } catch (failure) { toast(message(failure), { icon: 'info' }); }
+    try { go((await api.signIn(provider)).url); } catch (failure) { toast(message(failure), { tone: 'error' }); }
   };
   const connect = async () => {
     const address = draft.address.peek().trim(), imap = server(draft.imap.peek()), smtp = server(draft.smtp.peek());
@@ -112,8 +112,7 @@ export function MyEmailPage(options: { api?: ApiClient; go?: (url: string) => vo
       : "Your workspace doesn't let people connect their own mailbox. Ask an admin to turn it on in Controls, under Email.");
   const pill = () => mailbox().status === 'connected' ? StatusPill({ label: 'Working', tint: 'green' })
     : mailbox().status === 'error' ? StatusPill({ label: 'Not syncing', tint: 'rose' }) : StatusPill({ label: 'Connect again', tint: 'amber' });
-  const row = (title: string, text: string | (() => string), control: unknown) => html`<div class="ctl-setrow"><div class="grow"><strong>${title}</strong>
-    ${text ? html`<p>${text}</p>` : null}</div><div class="ctl-setctl">${control}</div></div>`;
+  const row = (title: string, text: string | (() => string), control: Child) => SettingRow({ title, text, control });
 
   const connected = () => html`<section class="ctl-card"><div class="ctl-card-head"><div><h2>Connected mailbox</h2></div></div>
       ${row(mailbox().address, () => `${mailbox().title} · connected ${stamp(mailbox().connected_at)} · ${mailbox().synced_at ? `last synced ${stamp(mailbox().synced_at)}` : 'not synced yet'}`,

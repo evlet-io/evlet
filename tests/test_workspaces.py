@@ -10,7 +10,7 @@ import pytest
 from evlet import (Application, Child, Column, Database, Date, Decimal, Link, LocalAuth, Model, NavGroup, Registry,
                    Prompt, Report, Rule, Select, Shortcut, State, Table, Text, Workspace)
 from evlet.services import Endpoint
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 EVERYTHING = Rule(('read', 'create', 'update', 'delete'))
 
@@ -361,7 +361,7 @@ def test_flat_apps_declare_workspaces_in_workspaces_py(project):
     create_app(project, 'tasks')
     create_instance(project, 'acme')
     install(project, 'acme', app_names=('notes', 'tasks'), trust=True)
-    app = load_runtime(project, 'acme')
+    app = load_runtime(project, 'acme', development=True)
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     found = client(app)('GET', '/api/schema')[1]['workspaces']
@@ -385,7 +385,7 @@ def installed(project, apps):
     from evlet.instances import load_runtime
     create_instance(project, 'acme')
     install(project, 'acme', app_names=tuple(apps), trust=True)
-    app = load_runtime(project, 'acme')
+    app = load_runtime(project, 'acme', development=True)
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     return [(item['key'], item['app'], item['source']) for item in client(app)('GET', '/api/schema')[1]['workspaces']]

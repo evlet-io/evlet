@@ -4,7 +4,7 @@ from dataclasses import dataclass
 import json
 import re
 
-from .auth import AccessError, has_role
+from .auth import AccessError, allow, has_role
 from .models import Model, ValidationError
 from .documents import Record, settle, walk
 from .permissions import trusted
@@ -332,7 +332,7 @@ class Forms:
     def dispatch(self, scope, body, user):
         path, method = scope['path'], scope['method']
         if path == '/api/_reports':
-            if method != 'GET': raise AccessError(405, 'Method not allowed')
+            allow(method, 'GET')
             return 200, {'reports': self.catalog(user)}, []
         if path.startswith('/api/_reports/'):
             name = path.removeprefix('/api/_reports/')

@@ -25,6 +25,10 @@ describe('formatting', () => {
     expect(formatDate('2026-11-01T10:00:00Z')).toBe('01-11-2026');
     expect(formatDate(null)).toBe('');
     expect(parseDate('1-11-2026')).toBe('2026-11-01');
+    // Years 1-99 stay as typed: Date.UTC would read them as 1900-1999.
+    expect(formatDate('0050-01-01')).toBe('01-01-0050');
+    expect(parseDate('01-01-0050')).toBe('0050-01-01');
+    expect(formatDate('0026-02-29')).not.toBe('29-02-0026');
     expect(parseDate('01/11/2026')).toBe('2026-11-01');
     expect(parseDate('2026-11-01')).toBe('2026-11-01');
     expect(parseDate('31-02-2026')).toBeNull();

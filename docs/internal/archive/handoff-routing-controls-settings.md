@@ -1,5 +1,7 @@
 # Handoff: frontends and routing, Controls, Settings
 
+> Archived: a completed or superseded plan, kept for history. It may describe code that has since changed; the current documentation is in `docs/`.
+
 Date: 01-11-2026. Owner: Aslam.
 
 This builds on the previous handoff (`docs/handoff.md`: Solid UI foundation and the CLI app/instance lifecycle). It covers three things that were designed since then:

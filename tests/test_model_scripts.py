@@ -14,7 +14,7 @@ import pytest
 
 from evlet import Database, Js, Model, Registry, Text
 from evlet.ui.serving import CSP
-from test_business import http
+from support import http
 from test_rules_types import start
 
 NUMBER = count()
@@ -235,7 +235,7 @@ def test_the_server_never_depends_on_the_script(tmp_path):
     module, _ = models(tmp_path, QUOTE, {'quote.js': 'this is not JavaScript {'})
     app = start(Database(tmp_path / 'db.sqlite3', Registry(module.Quote)))
     try:
-        from test_business import client
+        from support import client
         c = client(app)
         status, record, _ = c('POST', '/api/quote', {'customer': 'Acme', 'children': {'lines': [{'qty': '2'}]}})
         assert status == 201, record
@@ -305,7 +305,7 @@ def test_extensions_run_after_the_model_in_install_order_and_add_their_script(tm
     assert entry['extensions'][0]['on_open'] == 'opened'
     app = start(Database(tmp_path / 'db.sqlite3', registry))
     try:
-        from test_business import client
+        from support import client
         c = client(app)
         module.ORDER.clear()
         status, body, _ = c('POST', '/api/quote', {'customer': 'Acme'})

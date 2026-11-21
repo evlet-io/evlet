@@ -13,7 +13,7 @@ import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Cell, type
 import type { Route } from '../router';
 import { RecordStore, type Field, type Row, type Rules } from '../model/record';
 import { loadScript, ScriptHost, type ScriptPage } from '../model/script';
-import type { FieldSchema } from '../model/schema';
+import { can, type FieldSchema } from '../model/schema';
 import { tooltip } from '../ui/tooltip';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildTable, type ChildTableControls } from '../ui/childtable';
@@ -209,9 +209,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const { api, router, prefs } = ctx;
   const { isNew, extras, panel } = options;
   const name = model.name, look = identity(model);
-  const canUpdate = model.api !== 'read' && model.permissions?.update !== false;
+  const canUpdate = can(model, 'update');
   // The role may create records of this model: what the list's New button reads.
-  const canCreate = model.api !== 'read' && model.permissions?.create !== false;
+  const canCreate = can(model, 'create');
   const canWrite = isNew ? canCreate : canUpdate;
   const state = model.state && fieldOf(model, model.state.field) ? model.state : null;
   const locked = derive(() => Boolean(extras.get()._locked));
@@ -287,9 +287,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // Discard and Cancel mean the kept copy goes too.
   const forget = () => {
     if (isNew) {
-      if (!ctx.unsaved.remove(name, store.createAttempt?.key ?? null)) toast('The kept copy changed or could not be discarded and was left intact.', { icon: 'info' });
+      if (!ctx.unsaved.remove(name, store.createAttempt?.key ?? null)) toast('The kept copy changed or could not be discarded and was left intact.', { tone: 'error' });
     }
-    else if (keepsUnsaved(ctx, model) && store.id) void discardKeptChanges(ctx, model, store).catch(() => toast('The kept copy changed elsewhere and was not discarded.', { icon: 'info' }));
+    else if (keepsUnsaved(ctx, model) && store.id) void discardKeptChanges(ctx, model, store).catch(() => toast('The kept copy changed elsewhere and was not discarded.', { tone: 'error' }));
   };
   // Expand: the record page takes this store, unsaved edits included, so it does not ask.
   const expand = () => {
@@ -300,9 +300,15 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     void going.then(done => { if (!done) { leaving = false; handoff = null; handedOff.delete(store); } });
   };
 
+  // One announcement for the whole form (the toast is role=alert) naming the fields to fix; their own errors are not alerts.
+  const notSavedText = () => {
+    const flagged = model.fields.filter(meta => has(meta.name) && store.field(meta.name).error.peek()).map(meta => meta.label);
+    return !flagged.length ? 'Not saved. Check the highlighted values.'
+      : flagged.length === 1 ? `Not saved. ${flagged[0]} needs attention.` : `Not saved. ${flagged.length} fields need attention: ${flagged.join(', ')}.`;
+  };
   const saved = (ok: boolean, created: boolean) => {
     if (!ok) {
-      toast(store.conflict.peek() ? 'Not saved: this record changed since you opened it.' : 'Not saved. Check the highlighted values.', { icon: 'info' });
+      toast(store.conflict.peek() ? 'Not saved: this record changed since you opened it.' : notSavedText(), { tone: 'error' });
       showErrors();
       return;
     }
@@ -323,14 +329,29 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   };
   saveViews.set(store, saved);
   onCleanup(() => { if (saveViews.get(store) === saved) saveViews.delete(store); });
+  /** Marks each empty required field this person can fill ("Customer is required"); false when one is. */
+  const requiredFilled = () => {
+    let filled = true;
+    for (const field of store.root.fields.values()) {
+      const rules = field.rules.peek();
+      if (!rules.required || !rules.applies || !rules.visible || rules.locked || field.calculated || field.derived || field.meta.read_only || field.meta.hidden) continue;
+      if (!isEmpty(field.value.peek())) continue;
+      field.error.set(`${field.label} is required`);
+      filled = false;
+    }
+    return filled;
+  };
   const save = async () => {
     if (store.saving.peek()) return false;
     // What is typed in the focused field could not be read: say so, and leave the focus there to fix it.
-    if (!commitTyped()) { toast('Not saved. Check the highlighted values.', { icon: 'info' }); return false; }
+    if (!commitTyped()) { toast(notSavedText(), { tone: 'error' }); return false; }
     if (!isNew && !store.dirty.peek()) return true;
+    // A new record's empty required fields are named here, before any request: the schema knows them. The
+    // server still checks everything (and the rules that need data) when the record is sent.
+    if (isNew && !requiredFilled()) { toast(notSavedText(), { tone: 'error' }); showErrors(); return false; }
     const created = isNew;
     let ok = false;
-    try { ok = await store.save(); } catch (error) { toast((error as Error).message, { icon: 'info' }); return false; }
+    try { ok = await store.save(); } catch (error) { toast((error as Error).message, { tone: 'error' }); return false; }
     const live = saveViews.get(store);
     if (live) live(ok, created);
     else if (ok) {
@@ -339,7 +360,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       // acknowledges the server result without changing the page the person chose to visit meanwhile.
       if (created && store.lastCreatedKey) ctx.unsaved.remove(name, store.lastCreatedKey);
       toast(created ? `${model.label} created (${store.lastSavedId}). ${store.createReplayed ? `${store.createReplayed} ` : ''}Open ${model.plural.toLowerCase()} to view it.` : `${model.label} saved`, { duration: store.createReplayed ? 12000 : 8000 });
-    } else toast(`${model.label} was not saved. ${store.formError.peek() ?? 'Reopen the draft to retry.'}`, { icon: 'info', duration: 8000 });
+    } else toast(`${model.label} was not saved. ${store.formError.peek() ?? 'Reopen the draft to retry.'}`, { tone: 'error' });
     return ok;
   };
 
@@ -375,7 +396,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       return;
     }
     const ok = await store.move(move.key);
-    if (!ok) { toast(store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`, { icon: 'info' }); return; }
+    if (!ok) { toast(store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`, { tone: 'error' }); return; }
     moved(to, label);
   };
   const actions = (): ActionMeta[] => {
@@ -395,7 +416,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const inputs = actionInputs(action);
     if (!inputs.length) {
       void store.runAction(action.name).then(async ok => {
-        if (!ok) { toast(store.formError.peek() ?? `${action.label} did not run`, { icon: 'info' }); return; }
+        if (!ok) { toast(store.formError.peek() ?? `${action.label} did not run`, { tone: 'error' }); return; }
         if (!(await followed(action.label))) toast(`${action.label} done`, { icon: 'check' });
       });
       return;
@@ -425,7 +446,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         prefs.recentRecords.set(prefs.recentRecords.peek().filter(item => !(item.model === name && item.id === store.id)));
         toast(`${model.label} deleted`, { icon: 'trash-2' });
         if (panel) panel.removed(); else void router.go('list', { model: name });
-      } catch (error) { close(); toast(error instanceof ApiError ? error.message : 'Not deleted.', { icon: 'info' }); }
+      } catch (error) { close(); toast(error instanceof ApiError ? error.message : 'Not deleted.', { tone: 'error' }); }
     } } }) });
 
   // Duplicate: a new, unsaved record of this model with this one's values (app/duplicate.ts), where the
@@ -437,7 +458,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     void Promise.resolve(going).then(done => { if (done === false) dropDuplicate(name); });
   };
   // A record that ever posted is kept (its entries name it), so the server refuses its delete.
-  const canDelete = () => !isNew && model.api !== 'read' && Boolean(model.permissions?.delete) && !locked.peek() && extras.peek()._deletable !== false;
+  const canDelete = () => !isNew && can(model, 'delete') && !locked.peek() && extras.peek()._deletable !== false;
   const moreItems = (): MenuItem[] => {
     const items: MenuItem[] = [{ label: 'Copy link', icon: 'link', onSelect: () => void copyText(location.href, 'the link') }];
     if (!isNew) items.push({ label: 'Copy record ID', icon: 'copy', onSelect: () => void copyText(String(store.id), 'the record ID') },
@@ -461,12 +482,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const askEvaNow = () => openEvaPanel(ctx, ctx.eva, { name, label: model.label }, store.id!, titleText.peek());
   /** Outline buttons in the title row: two on the page, one in a side panel; the rest join More. */
   const OUTLINE_BUTTONS = panel ? 1 : 2;
-  // A new record's title row carries Cancel and Create where a saved record keeps its moves; the save bar below repeats them.
+  // A new record's title row carries Cancel and Create where a saved record keeps its moves. In a side panel only the
+  // sticky create bar carries them, so the narrow panel shows one pair.
   const newActions = (): Child => [Button({ label: 'Cancel', onClick: () => void discardNew() }),
     canWrite ? withSaveKeys(Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check',
       disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save(), tip: withShortcut(`Create ${model.label.toLowerCase()}`, SCREEN_KEYS.save) })) : null];
   const headerActions = (): Child => {
-    if (isNew) return newActions();
+    if (isNew) return panel ? null : newActions();
     const moves = moveEntries();
     // Ask Eva, when Eva is on for this person: a chat about this record, in a side panel.
     const eva: HeaderEntry | null = ctx.eva.get() ? { label: 'Ask Eva', icon: 'sparkles', allowed: true, blocked: () => null, run: askEvaNow } : null;
@@ -536,8 +558,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // shows are left out of the subtitle.
   const primaryFields = new Set((() => { const all = sections(model); const main = all.find(section => section.main) ?? all[0]; return main ? main.fields.map(meta => meta.name) : []; })());
   const subtitleFacts = factFields.filter(meta => !primaryFields.has(meta.name)).slice(0, 2);
+  // A title that is the number itself (no other title source: the title falls back to the name) shows it already.
+  const panelNumber = () => { const text = panel && numberText ? numberText() : ''; return text && text !== titleText.get() ? text : ''; };
   const subtitle = (panel && numberText) || subtitleFacts.length
-    ? () => [panel && numberText ? numberText() : '', ...subtitleFacts.map(meta => valueText(view(meta.name), ctx.links))].filter(Boolean).join(' · ') : undefined;
+    ? () => [panelNumber(), ...subtitleFacts.map(meta => valueText(view(meta.name), ctx.links))].filter(Boolean).join(' · ') : undefined;
   // A record image (Meta.image naming a field of type "image") left of the title, in place of the icon tile.
   // The field's value is an attachment id (docs/model-engine.md#image-fields): a saved image is served by the record's
   // attachments route, one uploaded but not saved yet by the held image preview.
@@ -1091,7 +1115,7 @@ export interface MoveEntry { label: string; icon: string; allowed: boolean; prim
 
 /** A move (or action) in a menu: it runs, or says why it cannot. */
 export const moveMenuEntry = (entry: MoveEntry): MenuItem => ({ label: entry.label, icon: entry.icon,
-  onSelect: () => { const why = untrack(entry.blocked); if (why) toast(why, { icon: 'info' }); else entry.run(); } });
+  onSelect: () => { const why = untrack(entry.blocked); if (why) toast(why, { tone: 'info' }); else entry.run(); } });
 
 /** The header's move button: the primary move (else the first allowed, else the first) on a split button, the others
  * behind its chevron. Null without moves. */
@@ -1181,13 +1205,13 @@ export function RecordFooter(ctx: AppContext, model: ScreenModel, id: string): H
 /** The print preview: the PDF the server renders for this person, with Download and File a copy. */
 export function openPrint(ctx: AppContext, model: ScreenModel, id: string, title: string, designs: Array<{ name: string; title: string }>) {
   const design = cell(designs[0].name);
-  const canFile = Boolean(model.attachments) && model.api !== 'read' && model.permissions?.update !== false;
+  const canFile = Boolean(model.attachments) && can(model, 'update');
   const fileCopy = async () => {
     try {
       const file = await ctx.api.fileCopy(model.name, id, design.peek());
       window.dispatchEvent(new CustomEvent('evlet-files-changed', { detail: { model: model.name, id } }));
       toast(`${file.name} filed with this ${model.label.toLowerCase()}`, { icon: 'paperclip' });
-    } catch (error) { toast(error instanceof ApiError ? `Not filed: ${error.fields.attachment ?? error.message}` : 'Not filed.', { icon: 'info' }); }
+    } catch (error) { toast(error instanceof ApiError ? `Not filed: ${error.fields.attachment ?? error.message}` : 'Not filed.', { tone: 'error' }); }
   };
   openDrawer({ title: `Print ${title}`, icon: 'printer', className: 'ev-print',
     body: () => html`<div class="ev-print-body">
@@ -1211,7 +1235,7 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
   const changed = (event: Event) => { const detail = (event as CustomEvent).detail; if (detail?.model === model.name && detail?.id === store.id) void load(); };
   window.addEventListener('evlet-files-changed', changed);
   onCleanup(() => window.removeEventListener('evlet-files-changed', changed));
-  const canWrite = model.api !== 'read' && model.permissions?.update !== false;
+  const canWrite = can(model, 'update');
   // The files of a locked record cannot change: the server refuses with 409.
   const locked = () => Boolean(extrasOf(ctx.api.detail(model.name, store.id!).get())._locked);
   const limits = model.attachment_limits ?? { max_files: 10, max_size: 1_048_576 };
@@ -1220,12 +1244,12 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
     const input = event.target as HTMLInputElement, file = input.files?.[0];
     input.value = '';
     if (!file) return;
-    if (file.size > limits.max_size) { toast(`Use a file up to ${size(limits.max_size)}`, { icon: 'info' }); return; }
+    if (file.size > limits.max_size) { toast(`Use a file up to ${size(limits.max_size)}`, { tone: 'info' }); return; }
     const reader = new FileReader();
     reader.onload = () => {
       const content = String(reader.result).split(',')[1] ?? '';
       ctx.api.upload(model.name, store.id!, file.name, content).then(() => { toast(`${file.name} attached`, { icon: 'paperclip' }); void load(); },
-        error => toast(error instanceof ApiError ? `Not attached: ${error.fields.attachment ?? error.message}` : 'Not attached.', { icon: 'info' }));
+        error => toast(error instanceof ApiError ? `Not attached: ${error.fields.attachment ?? error.message}` : 'Not attached.', { tone: 'error' }));
     };
     reader.readAsDataURL(file);
   };
@@ -1249,7 +1273,7 @@ function Files(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
         toast(`${file.name} removed`, { icon: 'trash-2' });
         await load();
         refocus(index);
-      } catch (error) { close(); toast(error instanceof ApiError ? `Not removed: ${error.fields.attachment ?? error.message}` : 'Not removed.', { icon: 'info' }); }
+      } catch (error) { close(); toast(error instanceof ApiError ? `Not removed: ${error.fields.attachment ?? error.message}` : 'Not removed.', { tone: 'error' }); }
     } } }) });
   const removeButton = (file: { id: number; name: string }, index: number) => {
     const button = IconButton({ icon: 'trash-2', tip: `Remove ${file.name}`, size: 'small', onClick: () => remove(file, index) });
@@ -1443,7 +1467,7 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore, toolb
   return [
     InfoNote(model.activity?.tamper_evident ? 'Append-only history, chained so tampering shows. Entries are never edited or removed.' : 'Append-only history. Entries are never edited or removed.', 'lock'),
     canNote ? NoteComposer({ api: ctx.api, model: model.name, id: store.id!, toolbar, name: id => page.peek()?.users[id],
-      onAdded: () => { toast('Note added', { icon: 'sticky-note' }); load(); }, onError: message => toast(message, { icon: 'info' }) }) : null,
+      onAdded: () => { toast('Note added', { icon: 'sticky-note' }); load(); }, onError: message => toast(message, { tone: 'error' }) }) : null,
     live(() => problem.get() ? html`<p class="muted">${problem.get()}</p>` : page.get() === null ? html`<p class="muted">Loading…</p>`
       : !page.get()!.items.length ? EmptyState({ icon: 'activity', tint: 'slate', title: 'No activity yet', text: 'Changes, moves and notes for this record land here.' })
       : html`<div class="timeline">${(() => {

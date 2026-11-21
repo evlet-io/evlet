@@ -122,16 +122,12 @@ SERVICES = (Endpoint('playground.project_overview', project_overview, 'GET', (Pr
             Endpoint('playground.quick_invoice', quick_invoice, 'POST', (Invoice, 'create')))
 
 
-# A placeholder image symbol for the demo: a plain coin drawn for Evlet, not any currency's real symbol.
-# Upload the official UAE dirham symbol from the Central Bank of the UAE in Controls, Currencies.
-DEMO_SYMBOL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABIElEQVR42s2Xyw2DMAyGO0CVEcgsGYER2IIzrJBT7izAFKirZAIkpNYHV0LIBqehsg//JSTxF79IHk3TPDRVuqAFRdACyqANlXEs4pxbARxoRCNvoTKucbUAXaFhCqT7FSBWGD4qlgJMFxu+QAk0oBKOna2ZpADcyVc05k+85nHOKvUEFXNq4XxhmAKZmb06DsAxCZcq6jwxiekogJE5eW2zoTwxUgCZiLm/AcATOZGPAC1BOVxsHEA9KlzMHYj92z0Alfnc6Z+MW2f8xnmBrIjvhIWo85KYSnLm2CeWPUAWZn4QdL0grIi8B9iE8e8FAL0wDzZTAOohUE9C9TJUb0TqrdjEz0j9d6x+ITFxJTNxKTVxLTfxMDHxNDPxOP2rPhI9DX76cVPMAAAAAElFTkSuQmCC'
-
-
 def show_currencies(app):
-    """The demo shows AED with an image symbol before the amount, in the text colour, and adds XCR, a client's own
-    credit unit with 5 decimal places (Controls, Currencies). KWD keeps its ISO 3 places."""
-    return set_currency_display(app, {'AED': {'image': DEMO_SYMBOL, 'position': 'prefix', 'space': True, 'tint': True},
-                                      'XCR': {'symbol': 'CR', 'position': 'suffix', 'decimals': 5}}, actor='playground')
+    """The demo adds XCR, a client's own credit unit with 5 decimal places (Controls, Currencies). AED keeps the
+    default display, its code as text before the amount ("AED 1,234.50"); an image symbol, such as the official
+    UAE dirham symbol from the Central Bank of the UAE, can be uploaded in Controls, Currencies. KWD keeps its
+    ISO 3 places."""
+    return set_currency_display(app, {'XCR': {'symbol': 'CR', 'position': 'suffix', 'decimals': 5}}, actor='playground')
 
 
 def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=None):

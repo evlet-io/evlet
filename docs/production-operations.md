@@ -37,6 +37,97 @@ load. Rate-limit sign-in at the trusted proxy and monitor rejected requests. Evl
 uses the direct client address for its own sign-in throttle; behind a proxy that
 address may be shared. Do not blindly trust arbitrary forwarded IP headers.
 
+### Service account
+
+`evlet setup --host` and `evlet host add` write `User=` into the unit. By default that is the
+login account running the command, as in every earlier release, and it keeps the account an
+earlier `--apply` installed. When that account is root or in the `sudo`, `wheel` or `admin`
+group, the command prints a note: a code-execution bug in an app then runs as an account that
+can become root and that owns the code Evlet runs.
+
+To run the service as a dedicated account instead, set `EVLET_SERVICE_USER` for the command.
+It refuses root and members of those groups. The account must exist, read the project
+(`.venv/`, `apps/`, `instances/<name>/config.py` and `routes.py`) and own only what the server
+writes. For an instance `acme` kept in `/srv/evlet`:
+
+```bash
+sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin evlet-acme
+sudo systemctl stop evlet-acme
+sudo chown -R evlet-acme: /srv/evlet/instances/acme/data /srv/evlet/instances/acme/files \
+    /srv/evlet/instances/acme/secret.key /srv/evlet/instances/acme/.evlet.lock
+EVLET_SERVICE_USER=evlet-acme evlet setup /srv/evlet --instance acme --app ... --host erp.acme.com --apply
+```
+
+The code, `.venv/` and `config.py` stay owned by the deploy account and read-only to the
+service. A project in a home directory is usually not readable by another account; keep it in
+`/srv` or similar. Commands that open the instance's data then run as the service account,
+such as `sudo -u evlet-acme .venv/bin/evlet backup acme`. `evlet secrets rotate` writes a new
+`secret.key` next to `config.py`, so stop the service and run it as the deploy account, then
+chown the key again; or keep the key in `EVLET_SECRET_KEY` (below). Evlet does not yet create
+the account or change ownership for you.
+
+`--apply` installs the unit and Caddy files from the text it has just rendered, piped to
+`sudo install`; it never copies the files in `deploy/`, which the service account might be able
+to change. The copies in `deploy/` are for review, and the printed steps install them by hand.
+
+### Secrets in the environment
+
+The generated unit reads `/etc/evlet/<instance>.env` when it exists (`EnvironmentFile=-...`).
+Put `EVLET_SECRET_KEY`, OIDC client secrets and similar values there, never in an
+`Environment=` line: unit files are world-readable and `systemctl show` prints them.
+
+```bash
+sudo install -d -m 700 /etc/evlet
+sudo install -m 600 /dev/null /etc/evlet/acme.env   # root-owned; systemd reads it before starting the service
+sudoedit /etc/evlet/acme.env                         # EVLET_SECRET_KEY=...
+sudo systemctl restart evlet-acme
+```
+
+### Application dependencies
+
+`evlet app --get` and `evlet install` resolve an app's declared dependency ranges when they
+install, from the indexes pip is configured with, and `apps.lock` pins app source digests but not
+the third-party packages. Two servers can therefore end up with different versions. For a
+reproducible, reviewable install, install the dependencies yourself from a hashed requirements
+file before installing the app (`.venv/bin/python -m pip install --require-hashes -r requirements.lock`,
+made with a tool such as `pip-compile --generate-hashes`); pip then finds them satisfied. Evlet does
+not yet read such a file itself.
+
+### Audit log integrity
+
+`evlet_audit` is append-only through SQLite triggers that refuse UPDATE and DELETE. That stops
+framework and app code from changing history by mistake. It is not tamper evidence: anyone who
+can write the database file (the service account, trusted app code, or `sqlite3` on the file)
+can drop the triggers, edit rows and recreate them, and backups copy the edited table. Where
+the audit must survive a compromised server, ship it off the host as it is written (journald or
+syslog forwarding, or regular exports to storage the server cannot rewrite) and compare.
+
+### Sign-in limits and password hashing
+
+Each password hash (sign-in, password change, new account) takes about 0.3 s of CPU and
+128 MiB of memory. A process hashes at most `EVLET_PASSWORD_SLOTS` passwords at once (1 to 8;
+default two, or one on a single-CPU host). A request that finds every slot busy waits its turn
+for up to 3 seconds; past that, or when the line is full, it gets 503 "Password service is
+busy". A waiting sign-in holds a thread of the HTTP write lane, so the line is only as long as
+leaves one write thread free for saves (`EVLET_HTTP_WRITE` minus the slots minus one; none on a
+one- or two-CPU host by default). Raise `EVLET_HTTP_WRITE` to let more sign-ins wait their turn. On a 1 GB host with more than one Evlet
+process, set `EVLET_PASSWORD_SLOTS=1`: each process then needs at most 128 MiB for hashing.
+
+Every attempt is counted before any hashing, per 15 minutes:
+
+- **Account from one network:** `Security(lockout=5)` failures, then 429 for 15 minutes.
+- **Network:** 100 attempts, then 429 for everyone on it. A sign-in that finishes (with its
+  two-step code, when it needs one) gives its attempt back, so an office behind one address is
+  limited by failures only. An attempt refused with 503 because hashing is busy still costs
+  the network one, so holding the slots is not free; it does not count against the account.
+- **Account from every network:** after 50 failures the account is slowed, not locked. Networks
+  it has not signed in from in the last 30 days get one attempt every 10 seconds between them
+  (429 otherwise), which keeps spread-out guessing slow. People signing in from a network
+  they used before are not held up. An attacker who keeps the account above 50 failures and
+  takes each 10-second attempt can still keep it from signing in from a new network (a new
+  device, a mobile network whose address changes) while the attack lasts; a network the person
+  signed in from before still works.
+
 ## Restarting a service
 
 On a server set up with `evlet setup --host --apply`, restart an instance with
@@ -152,7 +243,9 @@ A request **reads its body first** and only then takes a slot in its lane, so a 
 holds no slot. When a lane is full the request waits in that lane's queue, first come first
 served, for up to `EVLET_HTTP_QUEUE_SECONDS`; if no slot frees in time the API returns 503
 with `Retry-After: 1`. A burst larger than a lane therefore queues briefly instead of being
-refused. A body whose next chunk does not arrive within `EVLET_HTTP_BODY_IDLE_SECONDS`
+refused. The queue itself is bounded: once `EVLET_HTTP_QUEUE` times the lane's limit are
+waiting, a further request gets that 503 at once, so a surge is shed early instead of holding
+every connection for the full queue time. A body whose next chunk does not arrive within `EVLET_HTTP_BODY_IDLE_SECONDS`
 returns 408; there is no total body deadline, so a large upload over a slow but steady link
 completes, and the route's size limit bounds what one request can send. Size/type/permission
 checks still apply. Public sites keep their own not-found response rather than exposing
@@ -163,19 +256,24 @@ Set these environment variables before starting the process; restart to change t
 | Variable | Default | Work admitted |
 |---|---:|---|
 | `EVLET_HTTP_READ` |32| Total admitted reads: running, queued for a worker and sending responses |
-| `EVLET_HTTP_READ_WORKERS` |8| Concurrent ordinary GET/HEAD/OPTIONS and individual stream polls |
-| `EVLET_HTTP_WRITE` |4| Mutating HTTP requests, including sign-in and uploads, once their body has arrived |
+| `EVLET_HTTP_READ_WORKERS` |8 (2 per CPU)| Concurrent ordinary GET/HEAD/OPTIONS and individual stream polls |
+| `EVLET_HTTP_WRITE` |4 (CPUs + 1)| Mutating HTTP requests, including sign-in and uploads, once their body has arrived |
 | `EVLET_HTTP_PROBE` |2| Health checks, isolated from blocked writes |
-| `EVLET_HTTP_HEAVY` |2| Print routes, including PDF rendering |
+| `EVLET_HTTP_HEAVY` |2 (1 per CPU)| Print routes, including PDF rendering |
 | `EVLET_HTTP_STREAM` |64| Open event/Eva streams; sleeping streams hold no worker |
 | `EVLET_HTTP_ROUTE` |8| Tenant-catalog lookups (one short catalog read per tenant request) |
-| `EVLET_HTTP_INIT` |8| Cold tenant initialization; cached tenants, and requests waiting for a tenant another request is building, bypass this lane |
+| `EVLET_HTTP_INIT` |8 (2 per CPU)| Cold tenant initialization; cached tenants, and requests waiting for a tenant another request is building, bypass this lane |
+| `EVLET_HTTP_QUEUE` |4| Waiting requests per lane, as a multiple of its limit (0 to 64; 0 refuses instead of queueing) |
 | `EVLET_HTTP_QUEUE_SECONDS` |5| Longest wait for a lane slot before 503, greater than 0 and at most 60 |
 | `EVLET_HTTP_BODY_IDLE_SECONDS` |30| Longest wait for the next body chunk before 408, greater than 0 and at most 3600 |
 
-Lane limits accept integers 1–256; read workers cannot exceed read admission. The default
-read lane admits at most 32 requests with 8 workers (at most 24 queued); reducing read
-admission also lowers the implicit worker limit. Other worker lanes admit only their
+Lane limits accept integers 1–256; read workers cannot exceed read admission. Defaults in
+brackets scale with the CPUs the process may use, up to the number shown: on one CPU extra
+threads only contend for Python's interpreter lock, and a writer holding the database then
+waits behind readers. Measured on one pinned CPU with 100 users and 20% writes, 8 read and 4
+write threads saved in 1,529 ms (p50) while 2 and 2 saved in 13 ms with 11% more throughput
+and less memory. The default read lane admits at most 32 requests with 8 workers on four or
+more CPUs (at most 24 queued for a worker); reducing read admission also lowers the implicit worker limit. Other worker lanes admit only their
 worker count; requests beyond a lane's limit wait in its queue. Threads start only when needed; limits are process-wide,
 not multiplied by the tenant count. There are no extra services or runtime dependencies.
 These are admission ceilings, not workload capacity promises. On a small host begin with

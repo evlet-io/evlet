@@ -24,6 +24,7 @@ import { ColumnsMenu, DataTable, emptyPrefs, type Column, type Sort, type TableP
 import type { ReportPage as Page } from './client';
 import type { AppContext } from './context';
 import { KIND_ICONS } from './nav-icons';
+import { formatOf } from './meta';
 
 /** The report icon of the navigation map (app/nav-icons.ts). */
 export const REPORT_ICON = KIND_ICONS.report;
@@ -87,8 +88,18 @@ const initial = (meta: FieldSchema) => meta.default_kind === 'static' ? meta.def
 const toAddress = (value: unknown) => typeof value === 'object' ? JSON.stringify(value) : String(value);
 const blank = (value: unknown) => value === null || value === undefined || value === '' || (Array.isArray(value) && !value.length);
 
-/** A cell's text: numbers grouped with their unit, dates in the person's format, links by their title. */
-export function cellText(ctx: AppContext, column: ReportColumn, value: unknown): string {
+/** The Select field a text column shows: its source ('model.field'), or the report model's field of the same name.
+ * Its cells then read as the list does ("Draft", not "draft"). */
+function choiceField(ctx: AppContext, column: ReportColumn, model: string | null): FieldSchema | null {
+  if (column.type !== 'text') return null;
+  const [owner, name] = column.source ? column.source.split('.') : [model, column.name];
+  const field = owner ? ctx.schema.field(owner, name) : undefined;
+  return field?.type === 'select' ? field : null;
+}
+
+/** A cell's text: numbers grouped with their unit, dates in the person's format, links by their title, a Select
+ * value by its label. `model` is the report's model, where a column without a source finds its field. */
+export function cellText(ctx: AppContext, column: ReportColumn, value: unknown, model: string | null = null): string {
   if (blank(value)) return '';
   switch (column.type) {
     case 'currency': return column.unit && CODE.test(column.unit) ? formatMoney(value as string, { currency: column.unit }) : `${formatNumber(value as string, 2)}${column.unit ? ` ${column.unit}` : ''}`;
@@ -97,13 +108,13 @@ export function cellText(ctx: AppContext, column: ReportColumn, value: unknown):
     case 'date': return formatDate(String(value));
     case 'boolean': return value ? 'Yes' : 'No';
     case 'link': return column.link ? ctx.links.title(column.link, String(value)).get() ?? String(value) : String(value);
-    default: return String(value);
+    default: { const field = choiceField(ctx, column, model); return field ? formatOf(field, value) : String(value); }
   }
 }
 
 /** A cell on screen: money with the site's currency symbol (an image when the site set one), anything else as cellText. */
-export function cellView(ctx: AppContext, column: ReportColumn, value: unknown): Child {
-  return column.type === 'currency' && !blank(value) && column.unit && CODE.test(column.unit) ? moneyChild(value, column.unit) : cellText(ctx, column, value);
+export function cellView(ctx: AppContext, column: ReportColumn, value: unknown, model: string | null = null): Child {
+  return column.type === 'currency' && !blank(value) && column.unit && CODE.test(column.unit) ? moneyChild(value, column.unit) : cellText(ctx, column, value, model);
 }
 
 // ---------- one report ----------
@@ -255,7 +266,7 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
       const file = await api.reportFile(name, 'export.csv', { filters: executed.peek() ?? {}, sort: sortText() });
       save(file, `${report.label}.csv`);
       toast(`Exported ${report.label}`, { icon: 'download' });
-    } catch (error) { toast(error instanceof ApiError ? error.message : 'The export failed.', { icon: 'info' }); }
+    } catch (error) { toast(error instanceof ApiError ? error.message : 'The export failed.', { tone: 'error' }); }
   };
   const header = PageHeader({ icon: REPORT_ICON, tint: 'rose', title: report.label, count: () => result.get()?.total ?? null, actions: [
     Button({ label: 'Copy link', icon: 'link', hideLabelOnPhone: true, disabled: () => !executed.get(), onClick: share }),
@@ -344,12 +355,12 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
       const value = () => row()[column.name];
       // A group heading names the group and its row count; a subtotal shows the group's totals.
       if (row()._kind === 'head') return column.name === grouping
-        ? html`<span class="ev-report-group-name">${() => cellText(ctx, column, value()) || 'Not set'}<small class="muted">${() => { const count = row()._group?.count; return count === undefined ? '' : ` · ${count} ${count === 1 ? 'row' : 'rows'}`; }}</small></span>` : null;
+        ? html`<span class="ev-report-group-name">${() => cellText(ctx, column, value(), report.model) || 'Not set'}<small class="muted">${() => { const count = row()._group?.count; return count === undefined ? '' : ` · ${count} ${count === 1 ? 'row' : 'rows'}`; }}</small></span>` : null;
       if (row()._kind === 'sub') return column.name === grouping ? html`<span class="muted">Subtotal</span>`
         : column.total ? html`<span class="num">${() => { const total = row()._group?.totals[column.name]; return total === undefined || total === null ? '' : cellView(ctx, column, total); }}</span>` : null;
       if (column.type === 'link' && column.link) return when(() => !blank(value()), () =>
         html`<a class="ev-row-link" href=${() => router.href('record', { model: column.link!, id: String(value()) })}>${() => cellText(ctx, column, value())}</a>`);
-      return html`<span class=${NUMBERS.includes(column.type) ? 'num' : null}>${() => cellView(ctx, column, value())}</span>`;
+      return html`<span class=${NUMBERS.includes(column.type) ? 'num' : null}>${() => cellView(ctx, column, value(), report.model)}</span>`;
     },
   }));
   const totals = Object.fromEntries(report.columns.filter(column => column.total).map(column =>
@@ -403,7 +414,7 @@ function ReportChart(ctx: AppContext, report: ReportSchema, rows: () => Row[]): 
   const spec = report.chart!;
   const xColumn = report.columns.find(column => column.name === spec.x)!;
   const series = spec.y.map(key => report.columns.find(column => column.name === key)!).filter(Boolean);
-  const draw = () => plotChart<Row>({ type: spec.type, rows: rows(), label: row => cellText(ctx, xColumn, row[xColumn.name]), title: `${spec.label || report.label} chart`,
+  const draw = () => plotChart<Row>({ type: spec.type, rows: rows(), label: row => cellText(ctx, xColumn, row[xColumn.name], report.model), title: `${spec.label || report.label} chart`,
     series: series.map(column => ({ label: columnLabel(column), value: row => Number(row[column.name]) || 0, text: row => cellText(ctx, column, row[column.name]) })) });
   const host = html`<div class="ev-report-chart-plot"></div>` as HTMLElement;
   effect(() => { host.replaceChildren(draw()); });

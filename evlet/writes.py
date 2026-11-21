@@ -528,9 +528,38 @@ _lines = {}
 _lines_lock = threading.Lock()
 # Guards each Database's idle connections (Database._reuse).
 IDLE_LOCK = threading.Lock()
-# Across all tenants, retain at most eight attached connections (each can hold twelve file descriptors).
-# Limits are deliberately independent of worker/thread count. Expiry is pruned on the next pool operation.
-IDLE_LIMIT = 8
+
+
+def idle_limit():
+    """How many idle connections the process keeps for reuse across all its databases (tenants included).
+    EVLET_IDLE_CONNECTIONS sets it, from 1 to 1024. Otherwise (and when IDLE_LIMIT is None) each attached
+    connection can hold twelve file descriptors, so the default keeps them to about a quarter of the
+    process's current descriptor limit: 8 under a limit of 256 (macOS), 21 under 1024, and at most 32."""
+    if IDLE_LIMIT is not None:
+        return IDLE_LIMIT
+    try:
+        import resource
+        soft = resource.getrlimit(resource.RLIMIT_NOFILE)[0]
+    except (ImportError, OSError, ValueError):
+        return 8
+    if soft == resource.RLIM_INFINITY or soft <= 0:
+        return 32
+    return max(8, min(32, soft // 48))
+
+
+def _configured_idle():
+    raw = os.environ.get('EVLET_IDLE_CONNECTIONS', '').strip()
+    if not raw:
+        return None
+    if raw.isdigit() and 1 <= int(raw) <= 1024:
+        return int(raw)
+    logging.getLogger(__name__).warning('EVLET_IDLE_CONNECTIONS must be an integer from 1 to 1024; using the default')
+    return None
+
+
+# Across all tenants, retain at most idle_limit() attached connections; each Database keeps at most eight
+# (Database._IDLE). None follows the descriptor limit. Expiry is pruned on the next pool operation.
+IDLE_LIMIT = _configured_idle()
 IDLE_SECONDS = 60.0
 IDLE = OrderedDict()
 # Every SQLite Database in this process, so lifecycle commands can close their idle connections (release_idle).
@@ -554,9 +583,10 @@ def release_idle():
 
 def prune_idle(now):
     """Called under IDLE_LOCK; never touches a checked-out connection."""
+    limit = idle_limit()
     while IDLE:
         connection, (owner, used) = next(iter(IDLE.items()))
-        if len(IDLE) <= IDLE_LIMIT and used + IDLE_SECONDS > now:
+        if len(IDLE) <= limit and used + IDLE_SECONDS > now:
             break
         IDLE.pop(connection)
         database = owner()

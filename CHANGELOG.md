@@ -16,6 +16,24 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **`home` is reserved.** A model stored as `home`, or a workspace, section, group or item labelled or keyed
   "home", is refused when the app is built. Rename it.
 - **Parents no longer show how many shortcuts they hold while closed.**
+- **Public API is additive only.** `Session.count(..., cap=None)` counts at most `cap` rows; `evlet.testing`
+  (`TestApp`, `Client`, `TestResponse`) is new for app tests; `/api/schema` carries `timezone`.
+- **`evlet serve` no longer accepts first-admin setup over HTTP.** Create the Administrator with
+  `evlet users set-password INSTANCE admin`; `evlet dev` and the Playground still print a sign-in link.
+- **Report runs stop after `EVLET_REPORT_SECONDS` (300)** with a 504; set `0` to turn the limit off.
+- **Generated proxy configs send HSTS and the generated unit is sandboxed.** Re-run `evlet setup --host` or
+  `evlet proxy` to pick them up.
+- **Decimal and Currency text input is strict:** `1_000`, exponents, non-ASCII digits and surrounding spaces are
+  refused, as `calc` already did.
+- **Three names renamed; the old names still work and warn.** `evlet.App` is now `evlet.DevApp`, `State.Rule` is
+  now `State.Move` and `evlet.Reference` is now `evlet.AnyLink`. Each old name returns the same class with a
+  `DeprecationWarning` once per process, so `isinstance` checks and existing migrations keep working; nothing is
+  stored differently. Switch to the new names before 0.5 (run your tests with `-W error::DeprecationWarning`).
+  `makemigration` and the Controls export now write `AnyLink(...)`. `State(rules=...)` keeps its keyword
+  ([docs/api-stability.md](docs/api-stability.md#renamed-in-04x-old-names-deprecated)).
+- **The two formula languages' rounding is documented side by side.** String formulas round half even, `F(...)`
+  expressions follow the field's `rounding` (half up for Currency); nothing changed
+  ([docs/finite-calculations.md](docs/finite-calculations.md#two-formula-languages)).
 
 ### Added
 
@@ -34,6 +52,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 - **The sidebar is a light grey**, its active child a white card with a border, marked on the children's guide line
   in the parent's colour. Hover is a light grey.
+
+### Fixed
+
+- **A `DropIndex` by an index's first names after its field was renamed and the name reused.** 0.4.17 renamed the
+  field in `Meta.indexes` entries, so after `RenameField("party", "kind", "role_kind")` and a new `AddField` named
+  `kind`, a later `DropIndex("party", ("kind", "record_id"), unique=True)` resolved `kind` to the new field, left
+  the renamed entry and its database index in place, and an instance created before the rename stopped with
+  "party: Meta.indexes differ". The `DropIndex` now matches the index by the names it had when it was made when no
+  index has the names given, and drops the database index on the columns they have now. Instances already past the
+  `DropIndex` are not affected ([docs/model-engine.md](docs/model-engine.md)).
 
 ## 0.4.17 (20-11-2026)
 

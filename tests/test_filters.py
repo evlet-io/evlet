@@ -11,7 +11,7 @@ import pytest
 from evlet import Policy, Rule, ValidationError
 from evlet.query import MAX_CONDITIONS, SqlQuery, conditions
 from examples.playground.items import Item
-from tests.test_business import client, hashed, secured  # noqa: F401  (fixtures)
+from tests.support import client
 
 
 def price(key, price_list, rate, min_qty=0, **values):

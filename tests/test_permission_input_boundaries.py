@@ -7,7 +7,7 @@ import pytest
 
 from evlet import Boolean, Database, Link, Model, Registry, Rule, State, Text, User
 from evlet.auth import AccessError
-from test_business import client
+from support import client
 from test_rules_types import add_user, start
 
 

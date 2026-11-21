@@ -6,7 +6,7 @@ import pytest
 
 from evlet import Child, LongText, Model, Registry, Section, Table, Text
 from evlet.ui.metadata import ui_schema, view_for
-from test_business import client, hashed  # noqa: F401
+from support import client
 from test_controls import add_user, password, save  # noqa: F401
 from test_customization import build, models, schema_of
 from test_rules_types import ALL

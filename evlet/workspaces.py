@@ -368,13 +368,13 @@ class Workspaces:
             return model_item(name, item.label, item.view, None if item.filters is None else self.filters(model, item.filters, where),
                               icon=item.icon, badge=None if item.badge is None else self.filters(model, item.badge, where, 'badge'))
         if item.report is not None:
-            reports = getattr(getattr(self.business, 'forms', None), 'reports', {})
+            reports = self.business.forms.reports if self.business.forms else {}
             name = getattr(item.report, '__resource_id__', item.report.__name__) if isinstance(item.report, type) else item.report
             if name not in reports:
                 raise ValueError(f'{where}: unknown report {name!r}; register it with the application')
             return {'key': f'report:{name}', 'kind': 'report', 'label': item.label, 'report': name, 'icon': item.icon}
         if item.api is not None:
-            if not any(endpoint.name == item.api for endpoint in getattr(self.business, 'apis', ())):
+            if not any(endpoint.name == item.api for endpoint in self.business.apis):
                 raise ValueError(f'{where}: unknown endpoint {item.api!r}; register it with the application')
             return {'key': f'api:{item.api}', 'kind': 'api', 'label': item.label.strip(), 'api': item.api, 'icon': item.icon}
         new_tab = item.new_tab if item.new_tab is not None else not item.url.startswith('/')

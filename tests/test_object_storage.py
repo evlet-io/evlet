@@ -8,7 +8,7 @@ import pytest
 
 from evlet import Database, LocalFileStorage, S3Storage, StorageError
 from examples.playground.models import registry
-from test_business import secured, hashed, client
+from support import client
 
 
 @pytest.fixture

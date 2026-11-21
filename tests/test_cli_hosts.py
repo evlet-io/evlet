@@ -9,7 +9,7 @@ import pytest
 from evlet.cli import hosts, proxy, site
 from evlet.cli.instance import set_domain
 from evlet.cli.main import main
-from test_business import http
+from support import http
 from test_cli_lifecycle import environment_stub, project, runtime  # noqa: F401  (fixtures)
 
 

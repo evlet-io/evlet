@@ -45,7 +45,7 @@ export function MyAIPage(options: { api?: ApiClient; local?: () => Child; eva?: 
   };
   const data = cell<MyAI | null>(null), eva = cell<EvaStatus | null>(null), approvals = cell<Approval[]>([]);
   const run = async (step: () => Promise<MyAI>, done?: string) => {
-    try { data.set(await step()); if (done) toast(done); } catch (failure) { toast(message(failure), { icon: 'info' }); }
+    try { data.set(await step()); if (done) toast(done); } catch (failure) { toast(message(failure), { tone: 'error' }); }
   };
   void run(() => api.load());
   // Eva (404 when it is off for this person) and the changes waiting for this person's approval.
@@ -59,14 +59,14 @@ export function MyAIPage(options: { api?: ApiClient; local?: () => Child; eva?: 
       await client.request('POST', `/api/_tools/approvals/${item.id}`, { body: { approve } });
       toast(approve ? `Approved. ${item.client ?? 'The assistant'} can run it now.` : 'Declined');
       await loadApprovals();
-    } catch (failure) { toast(message(failure), { icon: 'info' }); await loadApprovals(); }
+    } catch (failure) { toast(message(failure), { tone: 'error' }); await loadApprovals(); }
   };
   mountToasts();
   const d = () => data.get()!;
   const chosen = (app: string) => !d().chosen || d().chosen!.includes(app);
   const pick = (app: string) => {
     const next = d().apps.filter(item => item === app ? !chosen(app) : chosen(item));
-    if (!next.length) return toast('Leave at least one app on, or disconnect the assistant instead', { icon: 'info' });
+    if (!next.length) return toast('Leave at least one app on, or disconnect the assistant instead', { tone: 'info' });
     void run(() => api.apps(next), 'Saved');
   };
   const disconnect = (client: MyAssistant) => ask(`Disconnect ${client.client_name}?`, 'It loses access straight away. You can connect it again any time.', 'Disconnect',

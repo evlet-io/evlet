@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from evlet import (Attachments, Boolean, Child, Count, Currency, CurrentUser, Date, Decimal, Duration, Email,
-                   Integer, Activity, Link, LongText, Mail, Model, Percent, Phone, Reference, Related, Rule,
+                   Integer, Activity, Link, LongText, Mail, Model, Percent, Phone, AnyLink, Related, Rule,
                    Select, Sequence, State, Sum, Table, Tags, Text, Time, URL, action, release, state)
 from evlet.calc import D, F, choose, coalesce, days, has_value, is_empty, month_start, parent, round, today, when
 
@@ -98,7 +98,7 @@ class Booking(Model):
     amount = Currency(required=True)
     booked_on = Date()
     memo = Text(default='')
-    source = Reference(index=True)
+    source = AnyLink(index=True)
     reversal = Boolean(default=False)
 
     class Meta:
@@ -142,14 +142,14 @@ class Deal(Model):
         State.Step('lost', 'Lost', color='slate', lock=True),
         State.Step('void', 'Void', color='rose', lock=True, final=True),
         rules=(
-            State.Rule('lead', 'qualified', 'Qualify', key='qualified', primary=True),
-            State.Rule('qualified', 'proposal', 'Send proposal', key='proposal', when=F('total') > 0),
-            State.Rule('proposal', 'negotiation', 'Negotiate', key='negotiation'),
-            State.Rule(('proposal', 'negotiation'), 'won', 'Mark won', key='won', when=(F('total') > 0) & has_value(F('contact'))),
-            State.Rule(('lead', 'qualified', 'proposal', 'negotiation'), 'lost', 'Mark lost', key='lost'),
-            State.Rule('lost', 'lead', 'Reopen', key='lead', by=('admin',)),
-            State.Rule('won', 'negotiation', 'Reopen', key='reopen', by=('admin',), remark='required'),
-            State.Rule('won', 'void', 'Void', key='void', by=('admin',), remark='required'),
+            State.Move('lead', 'qualified', 'Qualify', key='qualified', primary=True),
+            State.Move('qualified', 'proposal', 'Send proposal', key='proposal', when=F('total') > 0),
+            State.Move('proposal', 'negotiation', 'Negotiate', key='negotiation'),
+            State.Move(('proposal', 'negotiation'), 'won', 'Mark won', key='won', when=(F('total') > 0) & has_value(F('contact'))),
+            State.Move(('lead', 'qualified', 'proposal', 'negotiation'), 'lost', 'Mark lost', key='lost'),
+            State.Move('lost', 'lead', 'Reopen', key='lead', by=('admin',)),
+            State.Move('won', 'negotiation', 'Reopen', key='reopen', by=('admin',), remark='required'),
+            State.Move('won', 'void', 'Void', key='void', by=('admin',), remark='required'),
         ), show='bar', label='Stage')  # docstate shows as "Status" unless it has a label
     # A won deal that has to change is reopened with a remark: its postings are reversed and it is won again later.
     probability = Percent(compute=choose(F('docstate'), {'won': 100, 'negotiation': 75, 'proposal': 50, 'qualified': 25, 'lead': 10},
@@ -290,9 +290,9 @@ class Lead(Model):
         State.Step('qualified'),
         State.Step('lost', lock=True),
         rules=(
-            State.Rule('new', 'qualified', 'Qualify', key='qualified', when=F('score') >= 40),
-            State.Rule(('new', 'qualified'), 'lost', 'Mark lost', key='lost'),
-            State.Rule('lost', 'new', 'Reopen', key='new'),
+            State.Move('new', 'qualified', 'Qualify', key='qualified', when=F('score') >= 40),
+            State.Move(('new', 'qualified'), 'lost', 'Mark lost', key='lost'),
+            State.Move('lost', 'new', 'Reopen', key='new'),
         ))
     # Mark lost asks for the reason: the move carries it and checks it in the same transaction.
     lost_reason = Text(applies_when=F('docstate') == 'lost', required_when=F('docstate') == 'lost',

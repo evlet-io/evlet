@@ -5094,7 +5094,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-21T09:21:37.788Z",
+     "at": "2026-11-21T10:49:32.368Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -5106,7 +5106,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.788Z",
+     "at": "2026-11-21T10:49:32.367Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -5118,7 +5118,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.787Z",
+     "at": "2026-11-21T10:49:32.367Z",
      "data": {
       "follow_up": 16,
       "text": "Balance due by the end of the month"
@@ -5128,7 +5128,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.786Z",
+     "at": "2026-11-21T10:49:32.366Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -5140,7 +5140,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.785Z",
+     "at": "2026-11-21T10:49:32.365Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -5149,7 +5149,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.777Z",
+     "at": "2026-11-21T10:49:32.357Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5164,7 +5164,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.769Z",
+     "at": "2026-11-21T10:49:32.348Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -5174,7 +5174,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.769Z",
+     "at": "2026-11-21T10:49:32.348Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5197,7 +5197,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.763Z",
+     "at": "2026-11-21T10:49:32.342Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5209,7 +5209,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.756Z",
+     "at": "2026-11-21T10:49:32.335Z",
      "data": {
       "fields": {
        "total": {
@@ -5271,7 +5271,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.749Z",
+     "at": "2026-11-21T10:49:32.328Z",
      "data": {
       "fields": {
        "customer": {
@@ -5321,7 +5321,7 @@
  "invoice_activity_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-21T09:21:37.786Z",
+   "at": "2026-11-21T10:49:32.366Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5337,7 +5337,7 @@
  "invoice_activity_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-21T09:21:37.787Z",
+   "at": "2026-11-21T10:49:32.367Z",
    "data": {
     "follow_up": 16,
     "text": "Balance due by the end of the month"
@@ -5351,7 +5351,7 @@
  "invoice_activity_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-21T09:21:37.785Z",
+   "at": "2026-11-21T10:49:32.365Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -5535,7 +5535,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.763Z",
+     "at": "2026-11-21T10:49:32.342Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5547,7 +5547,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.756Z",
+     "at": "2026-11-21T10:49:32.335Z",
      "data": {
       "fields": {
        "total": {
@@ -5609,7 +5609,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.749Z",
+     "at": "2026-11-21T10:49:32.328Z",
      "data": {
       "fields": {
        "customer": {
@@ -8523,6 +8523,7 @@
      "title_field": "item"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -8623,7 +8624,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-21T09:21:37.788Z",
+     "at": "2026-11-21T10:49:32.368Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -8635,7 +8636,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.788Z",
+     "at": "2026-11-21T10:49:32.367Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -8647,7 +8648,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.787Z",
+     "at": "2026-11-21T10:49:32.367Z",
      "data": {
       "follow_up": 16,
       "text": "Balance due by the end of the month"
@@ -8657,7 +8658,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.786Z",
+     "at": "2026-11-21T10:49:32.366Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -8669,7 +8670,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.785Z",
+     "at": "2026-11-21T10:49:32.365Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -8678,7 +8679,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.777Z",
+     "at": "2026-11-21T10:49:32.357Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8693,7 +8694,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.769Z",
+     "at": "2026-11-21T10:49:32.348Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -8703,7 +8704,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.769Z",
+     "at": "2026-11-21T10:49:32.348Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -8726,7 +8727,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.763Z",
+     "at": "2026-11-21T10:49:32.342Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -8738,7 +8739,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.756Z",
+     "at": "2026-11-21T10:49:32.335Z",
      "data": {
       "fields": {
        "total": {
@@ -8800,7 +8801,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-21T09:21:37.749Z",
+     "at": "2026-11-21T10:49:32.328Z",
      "data": {
       "fields": {
        "customer": {
@@ -10640,6 +10641,7 @@
      "title_field": "item"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -13304,6 +13306,7 @@
      "title_field": "id"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [

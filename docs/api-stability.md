@@ -19,7 +19,7 @@ production ready, but the rules below hold from 0.3 on.
 
 - **Root exports.** Every name in `evlet.__all__`: fields, `Model`, `Child`, `Registry`,
   migrations, permissions (`Policy`, `Rule`, `own_customer`, `SCOPES`), the state manager
-  (`State` with `State.Step`, `State.Rule` and `State.Remark`, the hooks `validate`, `state`,
+  (`State` with `State.Step`, `State.Move` and `State.Remark`, the hooks `validate`, `state`,
   `state.exit` and `release`, and `action`), form sections and record layouts (`Section`,
   `Main`, `TableSection`, `Html`, and `Related` and `Chart` as layout blocks), prompts (`Prompt`, `Outcome`), measures, settings, connectors,
   storage, jobs, routing and the application classes. Import them from `evlet`, not from the
@@ -35,7 +35,7 @@ production ready, but the rules below hold from 0.3 on.
 - **Field keywords.** The keywords every field takes (`required`, `default`, `label`,
   `help_text`, `visible_if` and the rest), which are defined once on the field base class.
 - **States and moves.** `State(*steps, rules=(), default=, show=)`, `State.Step(key, label,
-  color=, lock=, release=, final=)` and `State.Rule(from_, to, label, key=, by=, when=, remark=,
+  color=, lock=, release=, final=)` and `State.Move(from_, to, label, key=, by=, when=, remark=,
   ask=, primary=, reject=)` with rule keys, `POST /api/{model}/{id}/moves/{key}` with its body,
   checks and answers, `context.move(model, id, key, *, remark=None, **values)`, `_moves`,
   `_locked`, the schema's `state` entry, the Activity's `rule` and `remark`, `versioned=False`,
@@ -221,6 +221,12 @@ production ready, but the rules below hold from 0.3 on.
   decimals, *, actor='cli')`, `round_stored_money(application, code, decimals, *, actor='cli')`, `currency_decimals` in `/api/schema`, the 409 refusal when lowering a code's
   decimals, Currency storage at 6 places with values serialized with at least 2, and the
   `currency` entry of a finite plan's Currency targets ([model-engine.md](model-engine.md#decimal-places-per-currency)).
+- **App tests.** `evlet.testing`: `TestApp(path, *, apps=None, instance=None, directory=None)` with
+  `client(user=None, *, role=None)`, `as_admin()`, `user(username=None, *, role='admin', password=None)`,
+  `context(user=None, *, role='admin')`, `model(name)`, `close()` and its use as a context manager;
+  `Client` with `get`, `post`, `put`, `patch`, `delete`, `request` and `sign_in(username, password)`;
+  and `TestResponse` (`status`, `data`, `headers`, `body`) ([testing.md](testing.md)). Import them from
+  `evlet.testing`; they are not root exports.
 
 For each of these, the contract covers the name and the arguments it takes: their names,
 order, whether they are keyword-only, and their defaults. Model `Meta` options and the
@@ -245,6 +251,31 @@ warnings.warn("Foo(bar=...) is deprecated; use Foo(baz=...)", DeprecationWarning
 
 Apps should pin Evlet to one minor series, such as `evlet>=0.4.0,<0.5`, and run their tests
 with `-W error::DeprecationWarning` before they move to the next series.
+
+## Renamed in 0.4.x (old names deprecated)
+
+A few root names read like other names from a different part of Evlet. Each now has a name that
+says what it is. The new name is the class itself; the old name returns the same object (so
+`isinstance` and existing migrations keep working) and raises a `DeprecationWarning` once per
+process. The old names stay through 0.4.x and are removed in 0.5 at the earliest.
+
+| Old name | New name | Why |
+| --- | --- | --- |
+| `evlet.App` | `evlet.DevApp` | Sat next to `Application` (the ASGI app) and `AppDefinition` (the nested-layout registration), and "app" also means an app package in the CLI. It is the local development shortcut: a `.data/` SQLite file and loopback sign-in. |
+| `State.Rule` | `State.Move` | Read like `evlet.Rule`, the permission rule. It is one move between two steps, and the guides, routes (`/moves/{key}`) and `context.move` already call it a move. `State(rules=...)` keeps its keyword. |
+| `evlet.Reference` | `evlet.AnyLink` | Looked like `evlet.Ref`, a path for defaults and filters that is not a field. It is a link to a record of any model, beside `Link` (one model). Its stored columns, schema kind `"reference"` and API values do not change. |
+
+Names that look alike but were kept, because each one's guide already tells them apart and a rename
+would touch most apps:
+
+- `Rule` (permissions), used in every model's `permissions`.
+- `Application` and `AppDefinition`; `AppDefinition` belongs to the nested layout only.
+- `Table`, `ChildTable` and `TableSection`; `ChildTable` belongs to the nested layout only.
+- `Ref`; once `Reference` is `AnyLink` it has no look-alike.
+- `Query`; the module `evlet.query` is internal.
+
+`makemigration` and the Controls export write the new names. Run your tests with
+`-W error::DeprecationWarning` to find the old ones.
 
 ## Changing the surface
 

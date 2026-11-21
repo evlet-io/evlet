@@ -59,7 +59,7 @@ export function UsersPage(ctx: ControlsContext): HTMLElement {
       total.set(page.total);
       offset.set(page.offset); limit.set(page.limit);
       counts.set(page.counts ?? { all: page.total, active: page.items.filter(user => user.active).length, inactive: page.items.filter(user => !user.active).length });
-    } catch (failure) { if (alive && mine === request) toast(message(failure), { icon: 'info' }); }
+    } catch (failure) { if (alive && mine === request) toast(message(failure), { tone: 'error' }); }
     finally { if (alive && mine === request) loaded.set(true); }
   };
   const search = () => {
@@ -223,20 +223,20 @@ export function RolesPage(ctx: ControlsContext): HTMLElement {
   const setControls = async (row: RoleRow, next: boolean) => {
     const apply = async () => {
       try { await ctx.api.changeRole(row.id, { opens_controls: next }); await refresh(); toast(next ? `${row.id} can open Controls` : `${row.id} can no longer open Controls`); }
-      catch (failure) { toast(message(failure), { icon: 'info' }); }
+      catch (failure) { toast(message(failure), { tone: 'error' }); }
     };
     if (!next) return void apply();
     ask('Let this role open Controls?', html`People with <strong>${row.id}</strong> will be able to change users, roles, permissions and security on this instance.`, 'Allow', apply);
   };
   const setWorkspaces = async (row: RoleRow, next: boolean) => {
     try { await ctx.api.changeRole(row.id, { customize_workspaces: next }); await refresh(); toast(next ? `${row.id} can customize workspaces` : `${row.id} can no longer customize workspaces`); }
-    catch (failure) { toast(message(failure), { icon: 'info' }); }
+    catch (failure) { toast(message(failure), { tone: 'error' }); }
   };
   const remove = (row: RoleRow) => {
     if (row.users) return ask('Role still in use', html`${row.users === 1 ? '1 user has' : `${row.users} users have`} the <strong>${row.id}</strong> role. Move them to another role first.`, 'OK', null);
     ask(`Delete ${row.id}?`, "Its permission overrides are removed too. This can't be undone.", 'Delete role', async () => {
       try { await ctx.api.deleteRole(row.id); await refresh(); toast('Role deleted'); }
-      catch (failure) { toast(message(failure), { icon: 'info' }); }
+      catch (failure) { toast(message(failure), { tone: 'error' }); }
     }, true);
   };
   return html`<div>

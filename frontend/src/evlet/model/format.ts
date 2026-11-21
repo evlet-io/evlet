@@ -15,15 +15,17 @@ const DECIMAL = /^-?\d+(\.\d+)?$/;
 
 export type DateFormat = 'dd-MM-yyyy' | 'd MMM yyyy' | 'yyyy-MM-dd' | 'MM/dd/yyyy';
 export type NumberFormat = '1,234.56' | '1.234,56' | '1 234.56';
-export interface Region { date: DateFormat; number: NumberFormat; zone: string }
-export const DEFAULT_REGION: Region = { date: 'dd-MM-yyyy', number: '1,234.56', zone: 'Asia/Dubai' };
+export type WeekStart = 'mon' | 'sun' | 'sat';
+export interface Region { date: DateFormat; number: NumberFormat; zone: string; week: WeekStart }
+export const DEFAULT_REGION: Region = { date: 'dd-MM-yyyy', number: '1,234.56', zone: 'Asia/Dubai', week: 'mon' };
 let region: Region = { ...DEFAULT_REGION };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /** Use a person's region for every formatted value from now on. Missing or unknown parts keep the defaults. */
 export function setRegion(next: Partial<Region>) {
   const zone = next.zone && validZone(next.zone) ? next.zone : DEFAULT_REGION.zone;
-  region = { date: next.date ?? DEFAULT_REGION.date, number: next.number ?? DEFAULT_REGION.number, zone };
+  const week = next.week === 'sun' || next.week === 'sat' || next.week === 'mon' ? next.week : DEFAULT_REGION.week;
+  region = { date: next.date ?? DEFAULT_REGION.date, number: next.number ?? DEFAULT_REGION.number, zone, week };
 }
 export const currentRegion = (): Region => ({ ...region });
 
@@ -162,7 +164,9 @@ export function formatMoney(value: string | number | null | undefined, options: 
 const pad = (number: number) => String(number).padStart(2, '0');
 
 function validDate(year: number, month: number, day: number) {
-  const date = new Date(Date.UTC(year, month - 1, day));
+  // Date.UTC maps years 0-99 to 1900-1999; setUTCFullYear keeps them as given.
+  const date = new Date(0);
+  date.setUTCFullYear(year, month - 1, day);
   return year >= 1 && date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
 }
 
@@ -204,7 +208,7 @@ function partsInGst(value: string): Parts | null {
 }
 
 function dayText(parts: { year: number; month: number; day: number }) {
-  const { year, month, day } = parts;
+  const { month, day } = parts, year = String(parts.year).padStart(4, '0');
   switch (region.date) {
     case 'd MMM yyyy': return `${day} ${MONTHS[month - 1]} ${year}`;
     case 'yyyy-MM-dd': return `${year}-${pad(month)}-${pad(day)}`;
@@ -229,7 +233,7 @@ export function parseDate(value: string): string | null {
   const [day, month, year] = shown ? order.map(index => Number(shown[index]))
     : iso ? [iso[3], iso[2], iso[1]].map(Number)
     : named ? [Number(named[1]), MONTHS.findIndex(name => name.toLowerCase() === named[2].toLowerCase()) + 1, Number(named[3])] : [0, 0, 0];
-  return validDate(year, month, day) ? `${year}-${pad(month)}-${pad(day)}` : null;
+  return validDate(year, month, day) ? `${String(year).padStart(4, '0')}-${pad(month)}-${pad(day)}` : null;
 }
 
 /** A timestamp in the person's zone (GST by default): '01-11-2026 14:05'. Accepts an ISO string or a Date. */
@@ -243,8 +247,15 @@ export function formatDateTime(value: string | Date | null | undefined): string 
   return parts ? `${dayText(parts)} ${pad(parts.hour)}:${pad(parts.minute)}` : INVALID_DATE;
 }
 
-/** Today's date in GST as YYYY-MM-DD, the value today() uses in calculations. */
-export function todayGst(now: Date = new Date()): string {
-  const local = new Date(now.getTime() + GST_OFFSET_MINUTES * 60000);
+/** Today's date in a time zone as YYYY-MM-DD: todayIn('UTC'), todayIn('America/New_York'). */
+export function todayIn(zone: string, now: Date = new Date()): string {
+  const local = new Date(now.getTime() + zoneOffset(now.getTime(), zone) * 60000);
   return `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())}`;
 }
+
+/** Today's date in the person's time zone (Settings, Appearance & region; GST by default): the day
+ * date pickers, typed relative dates and the browser preview of today() use. */
+export function todayDate(now: Date = new Date()): string { return todayIn(region.zone, now); }
+
+/** Today's date in GST as YYYY-MM-DD, whatever the person's time zone. */
+export function todayGst(now: Date = new Date()): string { return todayIn('Asia/Dubai', now); }

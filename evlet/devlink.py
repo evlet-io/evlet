@@ -3,7 +3,6 @@
 import asyncio
 import hashlib
 import hmac
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -15,6 +14,7 @@ from urllib.parse import parse_qs
 
 from . import qb
 from .adapter import Column, TableDefinition
+from .auth import is_loopback
 
 PATH = '/_dev/signin'
 MINUTES = 10
@@ -94,14 +94,6 @@ def link(origin, token):
     return f'{origin}{PATH}?token={token}'
 
 
-def _loopback(address):
-    try:
-        ip = ipaddress.ip_address(address)
-    except (TypeError, ValueError):
-        return False
-    return (ip.ipv4_mapped or ip).is_loopback if ip.version == 6 else ip.is_loopback
-
-
 def sign_in(business, scope):
     """GET /_dev/signin?token=...: use the token once and start a normal session. Returns (status, body, headers)."""
     from .auth import AccessError
@@ -109,7 +101,7 @@ def sign_in(business, scope):
     auth = business.auth
     peer = (scope.get('client') or (None,))[0]
     bound = (scope.get('server') or (None,))[0]
-    if scope['method'] != 'GET' or not _loopback(peer) or not _loopback(auth.client_address(scope)) or not (bound is None or _loopback(bound)):
+    if scope['method'] != 'GET' or not is_loopback(peer) or not is_loopback(auth.client_address(scope)) or not (bound is None or is_loopback(bound)):
         return 404, b'Not found', []
     try:
         auth.guard(scope)
@@ -166,6 +158,8 @@ class DevSignIn:
             warnings.warn('DevSignIn(create_admin=...) is ignored and will be removed in 0.5: every instance has the built-in '
                           'Administrator, and the link signs it in by default.', DeprecationWarning, stacklevel=2)
         self.app, self.announce, self.user = app, announce, user
+        # evlet dev serves an error page when the instance fails to start; the link waits until it starts.
+        self.waiting = False
 
     def application(self):
         target = self.app
@@ -191,10 +185,15 @@ class DevSignIn:
                     application = self.application()
                     if application is not None:
                         await asyncio.to_thread(announce, application, self.user)
+                    else:
+                        self.waiting = True
                 await send(message)
             await self.app(scope, receive, started)
             return
         await self.app(scope, receive, send)
+        if self.waiting and scope['type'] == 'http' and (application := self.application()) is not None:
+            self.waiting = False
+            await asyncio.to_thread(announce, application, self.user)
 
 
 # ---------- finding a running `evlet playground` ----------

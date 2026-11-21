@@ -10,12 +10,11 @@ mentioned. Email (the mail connector's outgoing account) follows the same rule a
 notification preferences (Settings, Notifications, "Someone mentions me").
 """
 
-import re
 import time
 
 from . import qb
 from .adapter import Column, TableDefinition
-from .auth import AccessError, User
+from .auth import AccessError, User, page_query
 from .database import NotFoundError
 from .models import ValidationError, checked_body
 
@@ -149,7 +148,6 @@ def unread(connection, user_id):
 def route(business, scope, body, user):
     """GET /api/_inbox (?limit=&offset=), GET /api/_inbox/count, POST /api/_inbox/read {"ids": [...]} or {"all": true}.
     Each person reads and marks only their own rows."""
-    from urllib.parse import parse_qs
     path, method = scope['path'], scope['method']
     with business.database.transaction() as tx:
         if path == '/api/_inbox/count' and method == 'GET':
@@ -168,12 +166,10 @@ def route(business, scope, body, user):
             return 200, {'unread': unread(tx.connection, user.id)}, []
         if path != '/api/_inbox' or method != 'GET':
             raise AccessError(404, 'Route not found')
-        query = parse_qs(scope.get('query_string', b'').decode('latin-1'))
-        limit, offset = query.get('limit', [str(PAGE)])[0], query.get('offset', ['0'])[0]
-        if not re.fullmatch('[0-9]{1,3}', limit) or not re.fullmatch('[0-9]{1,9}', offset) or not 1 <= int(limit) <= 100:
-            raise ValidationError({'query': 'Use a limit of 1 to 100 and a nonnegative offset'})
-        rows = tx.connection.run(qb.select('evlet_inbox').where(user_id=user.id, hidden=0).order_by('-id').limit(int(limit))
-                                 .offset(int(offset))).all()
+        limit, offset, _ = page_query(scope.get('query_string', b''), default=PAGE, maximum=100, max_offset=10**9 - 1,
+                                      message='Use a limit of 1 to 100 and a nonnegative offset')
+        rows = tx.connection.run(qb.select('evlet_inbox').where(user_id=user.id, hidden=0).order_by('-id').limit(limit)
+                                 .offset(offset)).all()
         actors = sorted({row['actor'] for row in rows if row['actor'] is not None})
         names = {}
         if actors:

@@ -4,7 +4,7 @@
 import pytest
 
 from evlet import Date, DateTime, Duration, Model, Text, Time
-from test_business import client
+from support import client
 from test_rules_types import ALL, application
 
 

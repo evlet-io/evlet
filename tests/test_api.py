@@ -101,7 +101,7 @@ def test_lifespan_initializes_database_and_shuts_down(tmp_path, monkeypatch):
         return sent
     assert asyncio.run(run()) == [{"type": "lifespan.startup.complete"}, {"type": "lifespan.shutdown.complete"}]
     assert path.is_file()
-    from test_business import http
+    from support import http
     # Shutdown drains work and refuses new work before closing its database.
     assert http(app, "POST", "/api/customer", {"customer_name": "Ready"})[0] == 503
     ready = app.database.create(Customer, customer_name="Ready")

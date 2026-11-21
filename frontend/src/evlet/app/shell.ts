@@ -137,7 +137,10 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     const id = `ev-nav-${sectionId(workspace, entry).replace(/[^a-z0-9_-]/gi, '-')}`;
     const holdsPage = () => here.get()?.section.key === entry.key && here.get()?.workspace.key === workspace.key && current.get()?.key === workspace.key;
     // A link parent opens its one item: the tile, the label, and the open-externally icon when it opens a new tab.
-    if (entry.link) return html`<div class="nav-sec nav-par-link" style:--nav-tint=${`var(--t-${entry.tint ?? 'slate'})`}>${linkTo(entry.items[0], 'nav-item nav-par',
+    // A parent whose one child has its own name ("Customers" holding Customers) is drawn the same way: one row, not two.
+    const [only] = entry.items;
+    const sameName = entry.items.length === 1 && only.label.trim().toLowerCase() === entry.label.trim().toLowerCase();
+    if (entry.link || sameName) return html`<div class="nav-sec nav-par-link" style:--nav-tint=${`var(--t-${entry.tint ?? 'slate'})`}>${linkTo(entry.items[0], 'nav-item nav-par',
       [tile(entry), html`<span class="lbl">${entry.label}</span>`], activeItem(entry.items[0]))}</div>`;
     return html`<div class="nav-sec" class:open=${() => isOpen(workspace, entry)} class:on=${holdsPage} style:--nav-tint=${`var(--t-${entry.tint ?? 'slate'})`}>
       <button type="button" class="nav-sec-h" aria-expanded=${() => String(isOpen(workspace, entry))} aria-controls=${id} on:click=${() => toggleSection(workspace, entry)}>
@@ -260,7 +263,8 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const crumbs = () => {
     const workspace = pageWorkspace.get(), all = ctx.crumbs.get();
     const merged = workspace && all.length > 1 && all[0].label === workspace.label ? all[0] : null;
-    const list = merged ? all.slice(1) : all;
+    // A later crumb that only repeats the workspace (a report group named like it) is left out: "Sales / Reports / Invoice register".
+    const list = (merged ? all.slice(1) : all).filter((crumb, index, rest) => !workspace || index === rest.length - 1 || crumb.label !== workspace.label);
     const items: HTMLElement[] = [...(workspace && list.length ? [workspaceCrumb(workspace, merged?.href)] : []), ...list.map((crumb, index, all) => (index === all.length - 1
       ? html`<span class="cur" aria-current="page">${crumb.label}</span>` : html`<a href=${crumb.href ?? '#'}>${crumb.label}</a>`) as HTMLElement)];
     return items.flatMap((item, index) => {
@@ -294,6 +298,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
 
   const shell = html`<div class="app" class:collapsed=${collapsed} class:mobile-open=${mobileOpen} class:compact=${() => (ctx.me.get()?.prefs.density ?? prefs.density.get()) === 'compact'}
     class:large=${() => ctx.me.get()?.prefs.text === 'large'}>
+    <a class="skip-link" href="#ev-view" on:click=${(event: Event) => { event.preventDefault(); document.getElementById('ev-view')?.focus(); }}>Skip to content</a>
     ${topbar}${sidebar}${edge}<div class="main"><main class="view" id="ev-view" tabindex="-1">${view}</main></div>
     <div class="scrim ev-side-scrim" class:show=${mobileOpen} on:click=${() => mobileOpen.set(false)}></div></div>` as HTMLElement;
   const menuButton = topbar.querySelector<HTMLButtonElement>('.nav-menu-btn button');
@@ -332,7 +337,8 @@ function keys(ctx: AppContext, event: KeyboardEvent) {
   if (key === 'c') { const create = ctx.createHere.peek(); if (create) { event.preventDefault(); create(); } }
 }
 
-const SHORTCUTS: Array<[string, string]> = [
+/** The shortcuts that work everywhere: the ? sheet and the Docs topic Keyboard shortcuts. */
+export const SHORTCUTS: Array<[string, string]> = [
   ['⌘K or Ctrl K', 'Search and commands'], ['C', 'Create in the current list'], ['/', 'Focus the page search'], ['G then D', 'Go to Docs'], ['G then E', 'Open the Explorer'],
   ['[', 'Toggle the sidebar'], ['?', 'Shortcuts'], ['⌘ Enter', 'Save a form or dialog'], ['Esc', 'Close the top layer, then clear the selection'],
 ];

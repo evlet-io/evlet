@@ -3,7 +3,7 @@
 import pytest
 
 from evlet import Boolean, Child, Database, Link, Model, Ref, Registry, Rule, Table, Text
-from test_business import client
+from support import client
 from test_rules_types import add_user, start
 
 

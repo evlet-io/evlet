@@ -635,6 +635,7 @@
           "help_text": "Recorded separately; this does not calculate the total.",
           "placeholder": "",
           "suffix": "%",
+          "display_scale": 2,
           "hidden": false,
           "read_only": false,
           "default_kind": "static",
@@ -713,7 +714,7 @@
             "paid"
           ],
           "colors": {
-            "unpaid": "rose",
+            "unpaid": "slate",
             "partly_paid": "amber",
             "paid": "green"
           },
@@ -12574,6 +12575,7 @@
     "XOF": 0,
     "XPF": 0
   },
+  "timezone": "UTC",
   "workspaces": [
     {
       "key": "sales",
@@ -12581,11 +12583,23 @@
       "icon": "receipt",
       "app": "app",
       "source": "declared",
+      "home": {
+        "key": "home",
+        "kind": "home",
+        "label": "Home",
+        "icon": null
+      },
       "groups": [
         {
-          "key": "customers",
+          "key": "model_customer",
           "label": "Customers",
           "icon": "users",
+          "color": "violet",
+          "section": {
+            "key": "sell",
+            "label": "Sell"
+          },
+          "link": true,
           "items": [
             {
               "key": "model:customer",
@@ -12593,7 +12607,9 @@
               "label": "Customers",
               "model": "customer",
               "view": "list",
-              "filters": null
+              "filters": null,
+              "icon": "users",
+              "badge": false
             }
           ]
         },
@@ -12601,6 +12617,12 @@
           "key": "invoicing",
           "label": "Invoicing",
           "icon": "file-text",
+          "color": "blue",
+          "section": {
+            "key": "sell",
+            "label": "Sell"
+          },
+          "link": false,
           "items": [
             {
               "key": "model:invoice",
@@ -12608,7 +12630,9 @@
               "label": "Invoices",
               "model": "invoice",
               "view": "list",
-              "filters": null
+              "filters": null,
+              "icon": "receipt",
+              "badge": true
             },
             {
               "key": "model:invoice:unpaid_invoices",
@@ -12625,7 +12649,9 @@
                     "partly_paid"
                   ]
                 ]
-              ]
+              ],
+              "icon": null,
+              "badge": true
             },
             {
               "key": "model:payment",
@@ -12633,7 +12659,9 @@
               "label": "Payments",
               "model": "payment",
               "view": "list",
-              "filters": null
+              "filters": null,
+              "icon": "wallet",
+              "badge": false
             },
             {
               "key": "model:ledgerentry",
@@ -12641,13 +12669,16 @@
               "label": "Ledger entries",
               "model": "ledgerentry",
               "view": "list",
-              "filters": null
+              "filters": null,
+              "icon": null,
+              "badge": false
             },
             {
               "key": "api:playground.quick_invoice",
               "kind": "api",
               "label": "Quick invoice",
-              "api": "playground.quick_invoice"
+              "api": "playground.quick_invoice",
+              "icon": "zap"
             }
           ]
         },
@@ -12655,36 +12686,69 @@
           "key": "reports",
           "label": "Reports",
           "icon": "chart-column",
+          "color": "rose",
+          "section": {
+            "key": "analyse",
+            "label": "Analyse"
+          },
+          "link": false,
           "items": [
             {
               "key": "report:InvoiceRegister",
               "kind": "report",
               "label": "Invoice register",
-              "report": "InvoiceRegister"
+              "report": "InvoiceRegister",
+              "icon": null
             },
             {
               "key": "report:InvoicesByCustomer",
               "kind": "report",
               "label": "Invoices by customer",
-              "report": "InvoicesByCustomer"
+              "report": "InvoicesByCustomer",
+              "icon": null
             },
             {
               "key": "report:SalesByCustomer",
               "kind": "report",
               "label": "Sales by customer",
-              "report": "SalesByCustomer"
+              "report": "SalesByCustomer",
+              "icon": null
             },
             {
               "key": "report:LedgerBalances",
               "kind": "report",
               "label": "Ledger balances",
-              "report": "LedgerBalances"
+              "report": "LedgerBalances",
+              "icon": null
             },
             {
               "key": "url:all_reports",
               "kind": "url",
               "label": "All reports",
-              "url": "/reports"
+              "url": "/reports",
+              "icon": null,
+              "new_tab": false
+            }
+          ]
+        },
+        {
+          "key": "url_evlet_docs",
+          "label": "Evlet docs",
+          "icon": "file-text",
+          "color": "slate",
+          "section": {
+            "key": "help",
+            "label": "Help"
+          },
+          "link": true,
+          "items": [
+            {
+              "key": "url:evlet_docs",
+              "kind": "url",
+              "label": "Evlet docs",
+              "url": "https://docs.evlet.io",
+              "icon": "file-text",
+              "new_tab": true
             }
           ]
         }
@@ -12696,11 +12760,23 @@
       "icon": "kanban",
       "app": "app",
       "source": "declared",
+      "home": {
+        "key": "home",
+        "kind": "home",
+        "label": "Home",
+        "icon": null
+      },
       "groups": [
         {
           "key": "projects",
           "label": "Projects",
           "icon": "kanban",
+          "color": "teal",
+          "section": {
+            "key": "work",
+            "label": "Work"
+          },
+          "link": false,
           "items": [
             {
               "key": "model:project",
@@ -12708,7 +12784,9 @@
               "label": "Projects",
               "model": "project",
               "view": "list",
-              "filters": null
+              "filters": null,
+              "icon": null,
+              "badge": true
             },
             {
               "key": "model:project:active_projects",
@@ -12722,7 +12800,9 @@
                   "eq",
                   "active"
                 ]
-              ]
+              ],
+              "icon": null,
+              "badge": false
             },
             {
               "key": "model:project:planned_with_a_budget",
@@ -12741,7 +12821,9 @@
                   "gt",
                   "0"
                 ]
-              ]
+              ],
+              "icon": null,
+              "badge": false
             }
           ]
         }
@@ -12753,11 +12835,15 @@
       "icon": "building-2",
       "app": "app",
       "source": "declared",
+      "home": null,
       "groups": [
         {
           "key": "people",
           "label": "People",
           "icon": "users",
+          "color": "green",
+          "section": null,
+          "link": false,
           "items": [
             {
               "key": "model:employee",
@@ -12765,7 +12851,9 @@
               "label": "Employees",
               "model": "employee",
               "view": "list",
-              "filters": null
+              "filters": null,
+              "icon": null,
+              "badge": false
             },
             {
               "key": "model:expense",
@@ -12773,7 +12861,9 @@
               "label": "Expenses",
               "model": "expense",
               "view": "list",
-              "filters": null
+              "filters": null,
+              "icon": null,
+              "badge": false
             }
           ]
         },
@@ -12781,6 +12871,9 @@
           "key": "catalogue",
           "label": "Catalogue",
           "icon": "package",
+          "color": "amber",
+          "section": null,
+          "link": false,
           "items": [
             {
               "key": "model:item",
@@ -12788,7 +12881,9 @@
               "label": "Items",
               "model": "item",
               "view": "list",
-              "filters": null
+              "filters": null,
+              "icon": null,
+              "badge": false
             }
           ]
         }

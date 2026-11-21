@@ -8,7 +8,7 @@ from evlet import (AddField, Child, CreateModel, Database, Migration, Model, Reg
 from evlet.controls_export import field_line
 from evlet.migrations import field_code, suggest
 from evlet.ui.metadata import ui_schema
-from test_business import client, hashed  # noqa: F401
+from support import client
 from test_controls import add_user, password  # noqa: F401
 from test_customization import build, field_of, schema_of
 from test_rules_types import ALL

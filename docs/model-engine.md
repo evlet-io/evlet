@@ -258,7 +258,7 @@ class Part(Child):
   `Another record already has the same station, on date and kind`. HTTP answers 422 with those
   field errors, as for any validation error. Rows that leave any of the fields empty (null) never
   clash.
-- An entry names stored fields with one column each, and may name the row `id`. A `Reference`
+- An entry names stored fields with one column each, and may name the row `id`. An `AnyLink`
   (two columns) and `RichText` are refused, with a message naming the field.
 - A `Child` row names its owner field, `evlet_owner` unless `Table(..., owner_field=...)` says
   otherwise, to make a value unique per record. Its error says `Another row of this record
@@ -273,7 +273,7 @@ class Part(Child):
 ### More field types
 
 ```python
-from evlet import Currency, Duration, Integer, Model, MultiSelect, Percent, Phone, Reference, Tags, Text, Time
+from evlet import Currency, Duration, Integer, Model, MultiSelect, Percent, Phone, AnyLink, Tags, Text, Time
 
 class Visit(Model):
     phone = Phone()                       # "+971 50 123 4567" is stored as "+971501234567"
@@ -283,7 +283,7 @@ class Visit(Model):
     labels = Tags()                       # ["vip", "north"]
     days = MultiSelect(["mon", "tue", "wed"], default=["mon"])  # ["mon", "wed"], in the order of the choices
     nights = Integer(default=1, suffix="nights")  # suffix: a unit shown after the input
-    about = Reference()                   # {"model": "customer", "id": "01hc1sd9vc1ye"}, any registered model
+    about = AnyLink()                     # {"model": "customer", "id": "01hc1sd9vc1ye"}, any registered model
     fee = Currency(currency="AED")        # a fixed code; see "Where a Currency field's code comes from"
     code_field = Text(default="AED")
 ```
@@ -296,7 +296,7 @@ class Visit(Model):
 | `Duration` | INTEGER seconds | ISO 8601 days, hours, minutes and seconds (`P1DT2H`, `PT90M`) or whole seconds, 0 or more | number filters; values in either form |
 | `Tags` | TEXT JSON array | at most 20 distinct tags (ignoring case) of 1 to 40 characters, without quotes, backslashes, commas or control characters; a text value is split on commas | `contains` matches one whole tag exactly, including case (duplicates are detected ignoring case); equality matches the whole list |
 | `MultiSelect` | TEXT JSON array, like `Tags` | some of its choices, each once, saved in the order of the choices | `contains` matches one choice; equality matches the whole list |
-| `Reference` | two columns `<name>_model`, `<name>_id`, no SQL foreign key; `index=True` indexes both columns together (not `unique`) | a registered model and a record that exists, checked when the value changes | equality with `{"model", "id"}` and `isnull` |
+| `AnyLink` | two columns `<name>_model`, `<name>_id`, no SQL foreign key; `index=True` indexes both columns together (not `unique`) | a registered model and a record that exists, checked when the value changes | equality with `{"model", "id"}` and `isnull` |
 | `State` | TEXT like `Select` | one of its states; set only to the default on create, then changed only by its rules; at most one per root document, always named `docstate` (label "Status" unless declared); see [states-actions.md](states-actions.md) | text filters |
 | `Sequence` | TEXT, null until assigned, unique with its scope fields | a document number such as `INV-{year}-{n:05}` written only by the engine on create or when a move enters `assign_on`; root documents only; see [sequences.md](sequences.md) | text filters |
 
@@ -385,8 +385,8 @@ class Line(Child):
 Any editable field may declare `versioned=False` so that ordinary writes can still change it
 while its document is in a locked step (for example remarks).
 
-`Reference` is the field type; `Ref("parent.warehouse")` keeps meaning a declared path for
-defaults and filters. A reference cannot be unique, indexed,
+`AnyLink` is the field type (named `Reference` before 0.4.x; that name still works and warns);
+`Ref("parent.warehouse")` is a declared path for defaults and filters, not a field. A reference cannot be unique, indexed,
 ordered or followed in a filter path, and its columns must not collide with other fields.
 Reading a reference needs read access to its target record: otherwise the value is shown
 as null, including the model it names. HTTP filters on a reference need read access without
@@ -770,7 +770,7 @@ URLs all point to it.
   (the rowid). The framework makes every id in one helper and
   draws again if one is ever taken.
 - **Everywhere else** it is 13 lowercase Crockford base32 characters, such as
-  `01hc1sd9vc1ye`: JSON bodies, Link values, `{"model", "id"}` References, URLs
+  `01hc1sd9vc1ye`: JSON bodies, Link values, `{"model", "id"}` AnyLink values, URLs
   (`/api/invoice/01hc1sd9vc1ye`, `/app/invoice/01hc1sd9vc1ye`), the neutral schema, Eva and
   MCP tools. Ids are never JSON numbers, because a browser cannot hold 63 bits in a number.
   Input accepts any case and reads `I` and `L` as `1` and `O` as `0`.
@@ -964,7 +964,7 @@ Each field kind takes these operators (the schema sends them as each field's `op
 | Date, DateTime, Time | `eq` `ne` `gt` `gte` `lt` `lte` `between` `isnull` |
 | Boolean | `eq` `ne` `isnull` |
 | Tags, MultiSelect | `contains` `isnull` |
-| Reference | `eq` `isnull`, and `ne` with null |
+| AnyLink | `eq` `isnull`, and `ne` with null |
 | RichText | `contains` `icontains` `nicontains` `isnull`, on its plain text |
 | Image | `isnull` |
 
@@ -1224,7 +1224,7 @@ migrations, validation, transactions and Python queries. A Python report may rea
 `run()` is trusted code, and the report's own `roles` decide who sees the columns and totals it
 returns ([reports.md](reports.md#models-callers-cannot-reach)). A Link from a model callers
 reach to an `api = None` model must be `hidden=True`, and registration fails otherwise, naming
-the model and field. A caller cannot write a Reference that names such a model.
+the model and field. A caller cannot write an AnyLink that names such a model.
 
 `Meta.api` is checked at registration: `"full"`, `"read"` or `None`. Owned rows follow their
 document.
@@ -1286,6 +1286,11 @@ Startup creates a fresh database or verifies an existing schema. It does not
 silently alter existing tables. A model change raises `SchemaError` until its
 explicit migration has been applied.
 
+In an app, `evlet makemigration <app> --instance <name>` writes the next step to
+`apps/<app>/migrations/` and `evlet migrate <name>` applies it ([the app layout](app-layout.md#changing-an-installed-app)).
+Each file holds one `migration = Migration(...)` with the operations below. An application
+assembled in Python declares its history on `Database` itself:
+
 ```python
 from evlet import AddField, AddIndex, Boolean, Database, Migration, RenameField
 
@@ -1321,6 +1326,8 @@ no longer declared the index records that history without the index. A `DropInde
 applied migration made is still refused. A `RenameField` renames the field in the `Meta.indexes` entries
 that cover it, as the database renames the column inside the index, and a later `DropIndex` may name
 the fields by their old or their new names: it drops the database index on the columns they have now.
+When a later `AddField` reused an old name, a `DropIndex` by the names the index had when it was made
+still drops it, unless an index now covers the new field under those names.
 Keep historical field
 and model definitions in migration files unchanged. Do not point an old
 `CreateModel` operation at a model definition that will keep changing.

@@ -7,7 +7,7 @@ import pytest
 from evlet import JobQueue, Task
 from evlet.jobs import LEASE, encode_checkpoint, progress_text, table
 from examples.playground.models import Customer, PointBalance, PointMove
-from test_business import secured, hashed, client
+from support import client
 
 
 def queue(secured, handler, **kwargs):

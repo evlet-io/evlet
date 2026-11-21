@@ -19,7 +19,7 @@ from evlet import Application, ConnectionFailed, Connector, ConnectorField, Data
 from evlet import connectors as module
 from evlet.secrets import SecretKey, SecretKeyError, rotate
 from examples.playground.models import registry
-from test_business import PASSWORD, client, hashed
+from support import PASSWORD, client
 from test_cli_lifecycle import environment_stub, project
 
 SECRET = 'Sup3r-Secret-Value-7d1f'

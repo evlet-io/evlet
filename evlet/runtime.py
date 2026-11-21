@@ -1,13 +1,14 @@
 """Bounded, process-wide HTTP work with a short waiting queue per lane; no executor per tenant.
 
-A request waits up to the queue time for a slot in its lane, then gets 503. Bodies are read
+A request waits up to the queue time for a slot in its lane, then gets 503; when the lane's queue is
+already full (EVLET_HTTP_QUEUE times its limit) it gets 503 at once instead of waiting. Bodies are read
 before admission, so a slow client holds no slot. A cancelled ASGI waiter does not cancel its
 synchronous work: that work retains its slot until its actual completion. See
 docs/production-operations.md.
 """
 
 import asyncio
-from collections import deque
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
 import os
@@ -41,13 +42,15 @@ def _grant(future):
 
 
 class _Lane:
-    def __init__(self, name, limit, workers=None):
+    def __init__(self, name, limit, workers=None, queue=None):
         self.limit = limit
+        # At most this many requests wait; one more is refused at once rather than held for the queue time.
+        self.queue = queue if queue is not None else 4 * limit
         self.workers = 0 if name == 'stream' else workers or limit
         self._active = 0
-        # Waiters in arrival order: (event loop, future). A released slot passes straight to the
-        # first one, so a newcomer cannot overtake a queued request.
-        self._waiters = deque()
+        # Waiters in arrival order: future -> its event loop. A released slot passes straight to the
+        # first one, so a newcomer cannot overtake a queued request; a waiter that gives up leaves in O(1).
+        self._waiters = OrderedDict()
         self._lock = threading.Lock()
         # Threads are created only as work arrives, and shared across every application/tenant.
         self.executor = None if name == 'stream' else ThreadPoolExecutor(self.workers, thread_name_prefix=f'evlet-http-{name}')
@@ -59,16 +62,16 @@ class _Lane:
             if self._active < self.limit and not self._waiters:
                 self._active += 1
                 return _Lease(self)
-            entry = (loop, loop.create_future())
-            self._waiters.append(entry)
+            if len(self._waiters) >= self.queue:
+                raise Busy()
+            future = loop.create_future()
+            self._waiters[future] = loop
         try:
             async with asyncio.timeout(timeout):
-                await entry[1]
+                await future
         except BaseException as exc:
             with self._lock:
-                queued = entry in self._waiters
-                if queued:
-                    self._waiters.remove(entry)
+                queued = self._waiters.pop(future, None) is not None
             if not queued:
                 # The slot was handed over just as the wait ended: pass it on.
                 self.release()
@@ -80,7 +83,7 @@ class _Lane:
     def release(self):
         with self._lock:
             while self._waiters:
-                loop, future = self._waiters.popleft()
+                future, loop = self._waiters.popitem(last=False)
                 try:
                     loop.call_soon_threadsafe(_grant, future)
                     return
@@ -97,11 +100,26 @@ class _Lane:
             return len(self._waiters)
 
 
+def _cpus():
+    """CPUs this process may run on."""
+    count = getattr(os, 'process_cpu_count', os.cpu_count)()
+    return max(1, count or 1)
+
+
 class HTTPRuntime:
+    # Slots per lane on a host with 4 or more CPUs. Fewer CPUs get fewer write, heavy, init and read-worker
+    # threads (defaults()): on one core extra threads only contend for the GIL, and a writer holding the
+    # SQLite turn then waits behind readers.
     DEFAULTS = {'read': 32, 'write': 4, 'probe': 2, 'heavy': 2, 'stream': 64, 'route': 8, 'init': 8}
 
+    @classmethod
+    def defaults(cls, cpus=None):
+        cpus = _cpus() if cpus is None else cpus
+        return {**cls.DEFAULTS, 'write': min(4, cpus + 1), 'heavy': min(2, cpus), 'init': min(8, 2 * cpus)}
+
     def __init__(self, limits=None):
-        values = dict(self.DEFAULTS)
+        cpus = _cpus()
+        values = self.defaults(cpus)
         for name in values:
             value = (limits or {}).get(name, os.environ.get(f'EVLET_HTTP_{name.upper()}', values[name]))
             try:
@@ -111,10 +129,18 @@ class HTTPRuntime:
             if not 1 <= value <= 256:
                 raise ValueError(f'EVLET_HTTP_{name.upper()} must be an integer from 1 to 256')
             values[name] = value
-        read_workers = int(os.environ.get('EVLET_HTTP_READ_WORKERS', min(8, values['read'])))
+        read_workers = int(os.environ.get('EVLET_HTTP_READ_WORKERS', min(8, 2 * cpus, values['read'])))
         if not 1 <= read_workers <= values['read']:
             raise ValueError('EVLET_HTTP_READ_WORKERS must be from 1 to EVLET_HTTP_READ')
-        self.lanes = {name: _Lane(name, limit, read_workers if name == 'read' else None) for name, limit in values.items()}
+        # Waiting requests per lane, as a multiple of its limit.
+        queue = os.environ.get('EVLET_HTTP_QUEUE', '4').strip()
+        if not queue.isdigit() or not 0 <= int(queue) <= 64:
+            raise ValueError('EVLET_HTTP_QUEUE must be an integer from 0 to 64')
+        queue = int(queue)
+        from . import auth
+        auth._password_slots()  # refuse a bad EVLET_PASSWORD_SLOTS when serving
+        auth.fit_hash_queue(values['write'])
+        self.lanes = {name: _Lane(name, limit, read_workers if name == 'read' else None, queue * limit) for name, limit in values.items()}
         self.queue_seconds = float(os.environ.get('EVLET_HTTP_QUEUE_SECONDS', '5'))
         if not 0 < self.queue_seconds <= 60:
             raise ValueError('EVLET_HTTP_QUEUE_SECONDS must be greater than 0 and at most 60')

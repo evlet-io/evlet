@@ -12,7 +12,7 @@ import pytest
 from evlet import Application, Child, Database, Decimal, Integer, Model, Registry, Rule, Table, Text, ValidationError, action, validate
 from evlet.auth import LocalAuth, User
 from evlet.calc import F
-from test_business import PASSWORD, http
+from support import PASSWORD, http
 
 FULL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 ADMIN = User(1, 'admin', 'admin')

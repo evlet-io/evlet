@@ -203,6 +203,9 @@ describe('the Explorer', () => {
     expect(host.querySelector('.topbar .ts-explorer, .topbar [aria-label="Explorer"]')).toBeNull();
     click(host.querySelector('.top-search .ts-search'));
     await until(() => expect(document.querySelector('.palette .pal-ex')).not.toBeNull());
+    // Off a Mac the footer names Ctrl+K, as the search button does.
+    expect(text(document.querySelector('.palette .pal-foot'))).toContain('Ctrl+K Toggle');
+    expect(text(document.querySelector('.palette .pal-foot'))).not.toContain('⌘');
     click(document.querySelector('.palette .pal-ex'));
     await until(() => expect(text(host.querySelector('.ev-explorer .ph h1'))).toBe('Explorer'));
     expect(location.search).toBe('?explorer=reports');

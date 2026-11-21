@@ -8,7 +8,7 @@ import pytest
 from evlet import writes
 
 from evlet import Database, Integer, Model, Registry
-from tests.test_tenancy import tenants, hashed, call, login
+from tests.test_tenancy import tenants, call, login
 
 
 def test_fifty_concurrent_writers_do_not_lose_read_modify_write_updates(tmp_path):

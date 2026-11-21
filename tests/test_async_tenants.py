@@ -5,7 +5,6 @@ import sys
 from evlet import User
 from examples.playground.models import Project, ProjectTask
 from examples.playground.tenants import tenant_app
-from tests.test_business import hashed
 from tests.test_tenancy import tenants, login, call
 
 

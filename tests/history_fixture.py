@@ -62,7 +62,7 @@ def make_dumps(folder):
     from evlet import Database
     from evlet.auth import User
     from evlet.framework import upgrade
-    from test_business import client
+    from support import client
     from test_rules_types import add_user, start
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory) / 'database.sqlite3'

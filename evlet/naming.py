@@ -104,8 +104,9 @@ def check_declarations(registry, child_models):
     (Frozen classes in migration history may keep one, so this is checked here and not on the class.)"""
     for model in registry.models.values():
         if model not in child_models and declared_name(model):
-            raise ValueError(f'{model.__name__}.name: "name" is the standard record name (id, name, title). Rename your '
-                             f'field, for example to {model.__name__.lower()}_name or full_name, with '
+            raise ValueError(f'{model.__name__}.name: "name" is reserved for the standard record name (id, name and title are '
+                             f'reserved). Rename your field, for example to {model.__name__.lower()}_name or full_name; a model '
+                             f'no instance has migrated yet needs nothing else. Only if an instance already stores it, add '
                              f"RenameField('{registry.name_for(model)}', 'name', '<new name>') in an app migration.")
 
 

@@ -41,7 +41,7 @@ export function EvaPage(ctx: AppContext, status: Cell<EvaStatus | null>, convers
       list.set(more ? [...list.peek(), ...page.items.filter(item => !list.peek().some(old => old.id === item.id))] : page.items);
       archivedCount.set(page.archived);
       next.set(page.next);
-    } catch (failure) { if (alive && request === generation) toast(errorText(failure), { icon: 'info' }); }
+    } catch (failure) { if (alive && request === generation) toast(errorText(failure), { tone: 'error' }); }
     finally { if (alive && request === generation) { loaded.set(true); loading.set(false); } }
   };
   let typing: ReturnType<typeof setTimeout> | null = null;
@@ -63,7 +63,7 @@ export function EvaPage(ctx: AppContext, status: Cell<EvaStatus | null>, convers
       body: () => html`<div class="ctl-field"><label for="eva-rename">Name</label><input class="input" id="eva-rename" maxlength="120" prop:value=${title}
         on:input=${(event: Event) => title.set((event.target as HTMLInputElement).value)}></div>`,
       footer: close => DialogFooter({ cancel: close, submit: { label: 'Rename', onClick: async () => {
-        try { await eva.change(item.id, { title: title.peek() }); close(); toast('Renamed'); await load(); } catch (failure) { toast(errorText(failure), { icon: 'info' }); }
+        try { await eva.change(item.id, { title: title.peek() }); close(); toast('Renamed'); await load(); } catch (failure) { toast(errorText(failure), { tone: 'error' }); }
       } } }) });
   };
   const archive = async (item: Conversation) => {
@@ -72,13 +72,13 @@ export function EvaPage(ctx: AppContext, status: Cell<EvaStatus | null>, convers
       toast(item.archived ? 'Restored' : 'Archived', item.archived ? {} : { undo: () => void eva.change(item.id, { archived: false }).then(() => load()) });
       if (current.peek() === item.id && !item.archived) void ctx.router.go('eva', {});
       await load();
-    } catch (failure) { toast(errorText(failure), { icon: 'info' }); }
+    } catch (failure) { toast(errorText(failure), { tone: 'error' }); }
   };
   const remove = (item: Conversation) => openModal({ title: 'Delete this chat?', narrow: true, icon: 'trash-2', tint: 'rose',
     body: () => html`<p class="muted">The messages and files of "${item.title}" are deleted for good. Records Eva changed stay as they are.</p>`,
     footer: close => DialogFooter({ cancel: close, submit: { label: 'Delete chat', variant: 'danger', onClick: async () => {
       try { await eva.remove(item.id); close(); toast('Chat deleted'); if (current.peek() === item.id) void ctx.router.go('eva', {}); await load(); }
-      catch (failure) { toast(errorText(failure), { icon: 'info' }); }
+      catch (failure) { toast(errorText(failure), { tone: 'error' }); }
     } } }) });
   const menu = (item: Conversation, anchor: HTMLElement) => openPopover(anchor, close => Menu([
     { label: 'Rename', icon: 'pencil', onSelect: () => rename(item) },
@@ -210,9 +210,9 @@ export function EvaThread(props: { ctx: AppContext; eva: Eva; status: Cell<EvaSt
       const run = approval.run_id;
       await reload();
       if (alive && run && live.peek()?.run !== run) watch(run);
-    } catch (error) { if (alive) { toast(errorText(error), { icon: 'info' }); await reload(); } }
+    } catch (error) { if (alive) { toast(errorText(error), { tone: 'error' }); await reload(); } }
   };
-  const stopRun = async (run: number) => { try { await eva.cancel(run); toast('Stopped'); } catch (error) { toast(errorText(error), { icon: 'info' }); } };
+  const stopRun = async (run: number) => { try { await eva.cancel(run); toast('Stopped'); } catch (error) { toast(errorText(error), { tone: 'error' }); } };
 
   const composer = Composer({ eva, status, busy, running: () => { const now = live.get(); return now && now.status === 'running' ? now.run : null; },
     stop: run => void stopRun(run),
@@ -364,7 +364,7 @@ function Composer(options: ComposerOptions): { node: HTMLElement; fill(text: str
       files.set(files.peek().filter(file => !attached.includes(file)));
     } catch (failure) {
       if (!alive) return;
-      toast(errorText(failure), { icon: 'info' });
+      toast(errorText(failure), { tone: 'error' });
       if (failure instanceof ApiError && failure.kind === 'limited') { try { const value = await eva.status(); if (alive) status.set(value); } catch { /* shown already */ } }
     } finally { busy.set(false); }
   };
@@ -373,15 +373,15 @@ function Composer(options: ComposerOptions): { node: HTMLElement; fill(text: str
     try {
       for (const file of Array.from(list ?? [])) {
         if (!alive || locked()) break;
-        if (files.peek().length >= (status.peek()?.files.max_files ?? 5)) { toast('Attach up to 5 files to one message', { icon: 'info' }); break; }
-        if (file.size > (status.peek()?.files.max_size ?? 1048576)) { toast(`${file.name} is larger than 1 MB`, { icon: 'info' }); continue; }
+        if (files.peek().length >= (status.peek()?.files.max_files ?? 5)) { toast('Attach up to 5 files to one message', { tone: 'info' }); break; }
+        if (file.size > (status.peek()?.files.max_size ?? 1048576)) { toast(`${file.name} is larger than 1 MB`, { tone: 'info' }); continue; }
         try {
           const content = await readFile(file);
           if (!alive) return;
           const uploaded = await eva.upload(file.name, content);
           if (!alive) return;
           files.set([...files.peek(), uploaded]);
-        } catch (failure) { if (alive) toast(errorText(failure), { icon: 'info' }); }
+        } catch (failure) { if (alive) toast(errorText(failure), { tone: 'error' }); }
       }
       if (picker) picker.value = '';
     } finally { uploading.set(uploading.peek() - 1); }
@@ -416,7 +416,7 @@ function Composer(options: ComposerOptions): { node: HTMLElement; fill(text: str
 
 function chooseFile(eva: Eva, picked: (file: FileRef) => void) {
   const query = cell(''), found = cell<Library | null>(null), busy = cell(false);
-  const search = async () => { try { found.set(await eva.library(query.peek())); } catch (failure) { toast(errorText(failure), { icon: 'info' }); } };
+  const search = async () => { try { found.set(await eva.library(query.peek())); } catch (failure) { toast(errorText(failure), { tone: 'error' }); } };
   void search();
   let timer: ReturnType<typeof setTimeout> | null = null;
   openModal({ title: 'Choose a file in Evlet', icon: 'paperclip', tint: 'blue',
@@ -425,7 +425,7 @@ function chooseFile(eva: Eva, picked: (file: FileRef) => void) {
       ${() => { const data = found.get(); if (!data) return html`<p class="eva-none">Loading…</p>`;
         const records = data.records.map(item => html`<button type="button" class="eva-pick" disabled=${busy} on:click=${async () => {
           busy.set(true);
-          try { picked(await eva.importFile(item.model, item.record_id, item.file_id)); close(); } catch (failure) { toast(errorText(failure), { icon: 'info' }); } finally { busy.set(false); }
+          try { picked(await eva.importFile(item.model, item.record_id, item.file_id)); close(); } catch (failure) { toast(errorText(failure), { tone: 'error' }); } finally { busy.set(false); }
         }}>${Icon('file-text', { size: 'sm', tint: 'blue' })}<span class="grow"><b>${item.name}</b><small>On ${item.model.replace(/_/g, ' ')} ${item.record_id} · ${size(item.size)}</small></span></button>`);
         const chats = data.chats.map(item => html`<button type="button" class="eva-pick" on:click=${() => { picked({ id: item.id, name: item.name, size: item.size, kind: 'upload' }); close(); }}>
           ${Icon('message-square', { size: 'sm', tint: 'violet' })}<span class="grow"><b>${item.name}</b><small>From ${item.conversation ? `the chat "${item.conversation}"` : 'an earlier chat'} · ${size(item.size)}</small></span></button>`);

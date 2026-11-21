@@ -6,7 +6,7 @@ import pytest
 
 from evlet import Database, LocalFileStorage, SQLiteStorage, StorageError
 from examples.playground.models import registry
-from tests.test_business import secured, hashed, client
+from tests.support import client
 
 
 def store(secured, tmp_path):

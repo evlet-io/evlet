@@ -9,7 +9,7 @@ import pytest
 from evlet import Database, LocalAuth, Registry, qb
 from evlet.auth import AccessError
 from evlet import auth as auth_module
-from test_business import PASSWORD, client, hashed, http, secured  # noqa: F401
+from support import PASSWORD, client, http
 from test_settings_security import settled  # noqa: F401
 
 

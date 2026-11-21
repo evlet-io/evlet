@@ -31,7 +31,8 @@ export interface Kind {
   suffix?(meta: FieldSchema): string | null;
   align?: 'right';
   inputMode?: string;
-  placeholder?: string;
+  /** Hint in the empty input; a function follows the person's settings (the date format). */
+  placeholder?: string | (() => string);
   /** How the control is built: a text input (default) or a dedicated control. */
   control?: 'textarea' | 'richtext' | 'image' | 'switch' | 'select' | 'link' | 'tags' | 'multiselect' | 'readonly';
   /** A picker next to the text input (pickers.ts). */
@@ -220,12 +221,12 @@ export const KINDS: Record<string, Kind> = {
   date: {
     format: value => formatDate(value as string),
     parse: input => input.trim() ? parseDateText(input) : null,
-    placeholder: 'DD-MM-YYYY', picker: 'date',
+    placeholder: () => dayHint(), picker: 'date',
   },
   datetime: {
     format: value => formatDateTime(value as string),
     parse: input => input.trim() ? parseDateTime(input) : null,
-    placeholder: 'DD-MM-YYYY HH:MM', picker: 'datetime',
+    placeholder: () => `${dayHint()} HH:MM`, picker: 'datetime',
   },
   time: { format: timeText, parse: input => input.trim() ? parseTime(input) : null, placeholder: 'HH:MM', picker: 'time' },
   duration: {

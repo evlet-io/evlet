@@ -5,7 +5,7 @@ a sent Stock Transfer had to be a separate model shown as a Related block before
 import pytest
 
 from evlet import Child, Database, Decimal, Model, Registry, Rule, State, Table, Text, User, ValidationError, action, release
-from test_business import client
+from support import client
 from test_rules_types import start
 
 ADMIN = User(1, 'admin', 'admin')

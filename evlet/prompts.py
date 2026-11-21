@@ -12,7 +12,7 @@ import time
 
 from . import qb
 from .adapter import Column, TableDefinition
-from .auth import AccessError, has_role
+from .auth import AccessError, allow, has_role
 from .documents import Draft, Record, handler_context, settle, source_values
 from .identity import RecordId, jsonable
 from .models import Model, ValidationError, checked_body, storage_name
@@ -465,8 +465,7 @@ def dispatch(business, scope, body, user):
     parts = scope['path'].removeprefix('/api/_prompts/').split('/')
     if len(parts) != 2 or parts[1] not in ('check', 'submit'):
         raise AccessError(404, 'Prompt operation is unavailable')
-    if scope['method'] != 'POST':
-        raise AccessError(405, 'Method not allowed')
+    allow(scope['method'], 'POST')
     checked_body(body, {'values'}, 'Unknown prompt argument')
     submit = parts[1] == 'submit'
     with business.context(user, readonly=not submit) as context:

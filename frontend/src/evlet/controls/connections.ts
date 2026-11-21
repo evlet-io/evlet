@@ -19,7 +19,7 @@ const SECURITY: Record<string, string> = { starttls: 'STARTTLS', ssl: 'SSL/TLS',
 function useListing(ctx: ControlsContext) {
   const listing = cell<Listing | null>(null);
   const load = async () => {
-    try { listing.set(await ctx.api.connectors()); } catch (failure) { toast(message(failure), { icon: 'info' }); }
+    try { listing.set(await ctx.api.connectors()); } catch (failure) { toast(message(failure), { tone: 'error' }); }
   };
   void load();
   return { listing, load };
@@ -131,7 +131,7 @@ function openConnector(ctx: ControlsContext, info: ConnectorInfo, row: Connector
   const disconnect = (close: () => void) => ask(`Disconnect ${info.title}?`,
     'Saved credentials are deleted. Anything that uses this connection stops working until it is set up again.', 'Disconnect', async () => {
       try { await ctx.api.removeConnector(info.id); close(); toast('Disconnected'); await reload(); }
-      catch (failure) { toast(message(failure), { icon: 'info' }); }
+      catch (failure) { toast(message(failure), { tone: 'error' }); }
     }, true);
   openDrawer({ title: info.title, icon: 'link', tint: 'blue', className: 'ctl-drawer',
     body: () => html`<div class="ctl-form">
@@ -154,7 +154,7 @@ export function EmailPage(ctx: ControlsContext): HTMLElement {
   const info = (id: string) => listing.peek()!.connectors.find(item => item.id === id)!;
   const makeDefault = async (row: ConnectorRow) => {
     try { await ctx.api.makeDefault(row.id); toast(`${row.settings.address} is now the default`); await load(); }
-    catch (failure) { toast(message(failure), { icon: 'info' }); }
+    catch (failure) { toast(message(failure), { tone: 'error' }); }
   };
   const failing = () => accounts().filter(row => row.status === 'error');
   return html`<div>
@@ -217,7 +217,7 @@ function openAccount(ctx: ControlsContext, info: (id: string) => ConnectorInfo, 
   const remove = (close: () => void) => {
     ask(`Remove ${row!.settings.address}?`, 'Apps that use it will stop sending or reading through it.', 'Remove', async () => {
       try { await ctx.api.removeConnector(row!.id); close(); toast('Account removed'); await reload(); }
-      catch (failure) { toast(message(failure), { icon: 'info' }); }
+      catch (failure) { toast(message(failure), { tone: 'error' }); }
     }, true);
   };
   openDrawer({ title: row ? row.account! : 'New account', icon: 'mail', tint: 'blue', className: 'ctl-drawer',

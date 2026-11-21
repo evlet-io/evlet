@@ -12,7 +12,16 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 ## What this interface renders
 
 - Sign-in and first-run setup (the first administrator account).
-- Docs, with its topics, from the sidebar and the search palette.
+- Docs, with its topics, from the sidebar and the search palette. People who can open Controls
+  (administrators), everyone on a development server (`evlet dev`, the Playground) and development builds see
+  the developer guide (Build with Evlet, Getting started, Screens and routes, ...) followed by the Help topics.
+  Everyone else sees Help only: **Help** (the lists of their workspace, each with its `Meta.description`),
+  **Working with records** and **Keyboard shortcuts**; a developer topic's address opens Help for them.
+  Docs is display only and holds no data, so this is not a permission check.
+- A cold load after a visit that ended signed in (a per-browser hint, `evlet.signed-in`, that holds nothing
+  about the person) asks for `/api/schema` and `/api/_settings/me` together with `/api/auth/session` and draws
+  the shell's outline (sidebar, top bar, placeholder lines) instead of the blank "Connecting" splash. Without
+  the hint only the session is asked for; a signed-out answer drops the hint.
 - The shell: a top bar across the window with the Evlet brand at its left,
   then at its right the search button, whose palette opens the Explorer ([below](#top-bar-search-and-explorer)),
   a history button for recent records, notifications and shortcuts; under it a light grey sidebar with the Workspace
@@ -24,7 +33,9 @@ The previous SolidJS interface and the Vue regression harness have been removed.
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves (with their remarks), child tables, measures, related records and
   files.
 - Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
-  `/reports/<name>`, listed in the sidebar and in the Explorer.
+  `/reports/<name>`, listed in the sidebar and in the Explorer. A text column that reads a Select field (its
+  `source='model.field'`, or the report model's field of the same name) shows the choice's label, as the list
+  does ("Draft", not "draft").
 - Prompts ([prompts.md](prompts.md)): the form an action (or an `@api` shortcut) opens, built from the
   record engine, calculated in the browser and submitted once through a ticket.
 - Printing ([printing.md](printing.md)): Print in a record's More menu for roles that may print the
@@ -1000,7 +1011,8 @@ the one. It scrolls away with the title.
 
 - The first crumb names the workspace the page belongs to (the first declared one holding it).
   Clicking it shows that workspace in the sidebar, the page staying open. When the page's next crumb
-  has the workspace's name, the two are one crumb.
+  has the workspace's name, the two are one crumb, and a later crumb that only repeats it (a report group
+  named like the workspace) is left out: "Sales / Reports / Invoice register".
 - A record's last crumb is its document number when the model has one ("Projects / PRJ-2026-0021"),
   else its title. The last crumb is darker than the others.
 - Phones keep the last two crumbs; a long last crumb is cut with an ellipsis.
@@ -1041,13 +1053,13 @@ before the page changes or the tab closes.
 ## A small application
 
 ```python
-from evlet import App, Model, Text, Boolean
+from evlet import DevApp, Model, Text, Boolean
 
 class Note(Model):
     title = Text(required=True)
     done = Boolean(default=False)
 
-app = App(name="notes", models=[Note])
+app = DevApp(name="notes", models=[Note])
 ```
 
 Run `uvicorn app:app --host 127.0.0.1 --port 8000 --reload`. Open
@@ -1055,7 +1067,7 @@ http://127.0.0.1:8000, create the first administrator, then sign in. Notes has a
 and a record view. Search, filters, sort and paging run through the model query API.
 Role, field and record permissions stay on the server.
 
-`App` is a local convenience entry point. Its default database is `.data/notes.sqlite3`;
+`DevApp` (named `App` before 0.4.x; that name still works and warns) is a local convenience entry point. Its default database is `.data/notes.sqlite3`;
 its default authentication allows initial setup and insecure cookies only on exact
 loopback origins on port 8000. A deployed site must supply its database and explicit
 `LocalAuth` configuration.
@@ -1397,6 +1409,11 @@ sideways; the page never scrolls sideways. The pinned columns, column resizing, 
 of the card) and the bulk bar work as before. The loading lines and the empty states show inside the
 card. The board sits in the same card, which keeps the board's own height and does not stick.
 On a phone the card scrolls with the page and the table is as tall as its rows.
+
+**Phones** (up to 640 px, `PHONE_LIST` in `app/list-page.ts`) show a list's rows as stacked cards instead of
+the table: the title and the first amount, then the document number and the State badge, then two more key
+fields (`Meta.key_fields`, else the first visible fields). A card opens its record as a row does. A record page
+there reads in one column, whatever its main column's width step. Wider screens keep the table.
 
 A record opened in the list's side panel is its own white card beside the list card, about 13 px
 apart, with its own border and 4 px corners; it is not a drawer against the window's edge. Both cards

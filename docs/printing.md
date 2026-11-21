@@ -147,6 +147,16 @@ What the server enforces:
 - **No network or files.** WeasyPrint may load only the bundled fonts, the design's `assets` and
   `data:` URIs. Every other URL, including `file:` and internal addresses, is refused.
 - **Sandbox.** Templates run in Jinja's immutable sandbox.
+- **Bounded work.** One document's templates share a budget of 30 seconds and 8 million characters of
+  output; a loop over `range()`, a call, an attribute read or an operator past the deadline stops the render.
+  `*` may not make a string or list longer than 1 million items, `**` takes exponents up to 64, and
+  `center`, `indent`, `wordwrap`, `truncate`, `replace`, `join` and `format` refuse widths or results above
+  1 million characters, as do `%` and `format()` with a seven-digit width. The finished HTML is at most 16 million
+  characters. A design past a limit answers 422 with "This print design takes too long to fill" or "makes too
+  much text". At most two documents lay out in WeasyPrint at once in a process (HTTP print routes also wait in the
+  `EVLET_HTTP_HEAVY` lane); another waits up to 30 seconds, then gets 503. These bounds stop runaway loops and
+  oversized values; they are not a hard memory or CPU limit (string concatenation with `~` is not counted until it
+  is output, and WeasyPrint's own layout time is not interrupted), so print-design rights stay with administrators.
 
 ## Permission
 

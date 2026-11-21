@@ -10,7 +10,7 @@ import pytest
 from evlet import (AddIndex, Application, Child, ConflictError, CreateModel, Database, Date, Integer, Link, Migration, Model,
                    Registry, Rule, SchemaError, Select, Table, Text, ValidationError)
 from evlet.auth import LocalAuth
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 FULL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 

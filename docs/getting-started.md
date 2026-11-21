@@ -35,12 +35,14 @@ Read on to see what each step does.
 ```sh
 evlet setup myproject
 cd myproject
-evlet app notes --legacy
+evlet app notes
 ```
 
 The project has two folders: `apps/` for reusable app code and `instances/` for
-sites. The new app lives in `apps/notes/`. It starts with an Item model containing
-a required title. Creating the app does not create a database or run app code.
+sites. The new app is one Python package in `apps/notes/`. Its first model,
+`apps/notes/models/item.py`, is an Item with a required title and the roles that
+may use it. Creating the app does not create a database or run app code.
+[The app layout](app-layout.md) describes each folder.
 
 ## 3. Create your site
 
@@ -51,31 +53,44 @@ evlet install notes --instance acme
 
 Installation asks whether you trust the app. Python app code runs on your
 computer, so review downloaded apps before accepting. For scripts, use `--trust`
-after that review. Installation creates the site's database and records the app
-version and contents in `instances/acme/apps.lock`.
+after that review. Installation creates the site's database, creates the app's
+tables straight from its models, and records the app version and contents in
+`instances/acme/apps.lock`. That is the rule for every app new to an instance,
+including a second app installed later: its first models need no migration.
+From then on, every model change needs one (step 5).
 
 ## 4. Open it
 
+Every instance has a built-in Administrator (username `admin`) with no password, and
+there is no default password. Set one (at least 15 characters by default), then serve:
+
 ```sh
+evlet users set-password acme admin
 evlet serve acme
 ```
 
-Open **http://127.0.0.1:8000**. Create the first administrator using a username and
-a password of at least 15 characters. (Under `evlet dev` in step 5 this is automatic.)
-Sign in, open **Items** under Models and
-create a record. Docs is the first page after sign-in.
+If you skip the first command, `evlet serve` reminds you at startup:
+`The built-in Administrator has no password yet. Set one with: evlet users set-password acme admin`.
+(Under `evlet dev` in step 5 you need neither: it prints a one-time sign-in link that opens
+"Set your password".)
+
+Open **http://127.0.0.1:8000** and sign in as `admin`. You land on the first list,
+**Items**; create a record there. Docs stays reachable from the navigation.
 
 Press Control-C to stop the server. Run the same command to return to your site;
 records, accounts and private files remain in `instances/acme/`.
 
 ## 5. Make a change
 
-The live model is `apps/notes/notes/models/__init__.py`. Presentation settings such
-as labels and `Meta.list_fields` live beside its fields. Use:
+The model is `apps/notes/models/item.py`. Presentation settings such as labels and
+`Meta.list_fields` live beside its fields. Use:
 
 ```sh
-evlet dev --instance acme
+evlet dev acme
 ```
+
+(`evlet dev --instance acme` is the same: every command that takes an instance
+accepts its name either way.)
 
 Python changes reload while you work. At startup it prints a one-time sign-in link for the
 built-in Administrator (`admin`; `--user NAME` signs in someone else). The Administrator has no
@@ -85,8 +100,23 @@ authenticator app, as at a normal sign-in, and the app opens. After that, each l
 straight in with no password or code. Run `evlet dev-link` for a fresh link once one is used or
 expired, and `evlet users set-password acme admin` to change the password from the shell
 ([details](cli.md#development-sign-in-links)). A database field change also needs an
-explicit migration. Follow [What you can customize](customizing.md) for a complete
-example, then stop the server and run `evlet migrate acme` before restarting.
+explicit migration: stop the server, run `evlet makemigration notes --instance acme`,
+review the file it writes, then `evlet migrate acme`. Follow
+[What you can customize](customizing.md) for a complete example.
+
+## 6. Test it
+
+The new app has `apps/notes/tests/test_notes.py`. It starts a temporary instance
+of the app on real SQLite and sends requests through the real HTTP API as an
+editor, a viewer and an admin, so permissions and validation run as they do on
+your site:
+
+```sh
+.venv/bin/python -m pip install pytest
+.venv/bin/python -m pytest apps/notes/tests
+```
+
+[Testing an app](testing.md) describes `evlet.testing`.
 
 ## Another site, same app
 

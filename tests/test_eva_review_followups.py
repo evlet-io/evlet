@@ -8,8 +8,8 @@ from types import SimpleNamespace
 import pytest
 
 from evlet import qb
-from tests.test_eva import Script, NEVER, ask, call, eva, hashed, make, setting
-from tests.test_business import client
+from tests.test_eva import Script, NEVER, ask, call, eva, make, setting
+from tests.support import client
 from tests.test_assistants import connect, rpc, tool
 
 

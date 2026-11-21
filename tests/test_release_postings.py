@@ -8,7 +8,7 @@ from evlet import (Application, Boolean, Child, Currency, Database, Decimal, Lin
 from evlet.auth import LocalAuth
 from evlet.calc import F
 from finite_fixtures import FiniteMeta
-from test_business import client
+from support import client
 from test_rules_types import ALL, start
 
 

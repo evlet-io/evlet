@@ -1,7 +1,9 @@
 # Report view
 
+> Archived: a completed or superseded plan, kept for history. It may describe code that has since changed; the current documentation is in `docs/`.
+
 Status: built on 03-11-2026 with the recommended decisions below (the owner approved the view).
-The public description is [docs/reports.md](../reports.md).
+The public description is [docs/reports.md](../../reports.md).
 
 What landed, against the phases in section 5:
 

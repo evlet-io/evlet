@@ -15,7 +15,7 @@ from evlet.auth import LocalAuth, User
 from evlet.framework import STEPS, upgrade
 from evlet.identity import RecordId, check_ids, has_id_guard
 from evlet.models import ASSIGNED_ID
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 FULL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 ADMIN = User(1, 'admin', 'admin')

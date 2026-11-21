@@ -10,7 +10,7 @@ import pytest
 from evlet import Policy, Rule, qb
 from evlet import auth as auth_module
 from examples.playground.models import Customer, Invoice, Project, registry
-from test_business import PASSWORD, client, hashed, http, secured
+from support import PASSWORD, client, http
 from test_hosts_realms import portal  # noqa: F401
 
 
@@ -165,7 +165,9 @@ def test_a_valid_key_is_never_throttled_by_other_keys_failures(secured, monkeypa
 
 def test_only_a_well_formed_key_skips_the_request_header(secured):
     status, payload, _ = http(secured, 'POST', '/api/customer', {'customer_name': 'x'}, headers={b'authorization': b'Bearer junk', b'x-evlet-request': b''})
-    assert (status, payload) == (403, {'error': 'Missing request protection header'})
+    assert status == 403 and payload['error'].startswith('Missing request protection header')
+    # The answer names what to send.
+    assert 'X-Evlet-Request: 1' in payload['error'] and 'X-CSRF-Token' in payload['error']
 
 
 def test_jobs_queued_with_a_key_keep_its_scope_and_stop_when_it_is_revoked(secured, monkeypatch):
