@@ -20,6 +20,7 @@ import { isRecordId } from '../ids';
 import { batch, cell, derive, effect, onCleanup, untrack } from '../reactive';
 import { Button, CountBadge, EmptyState, Icon, IconButton, SearchInput, SegmentedControl, SummaryStrip, type StatProps } from '../ui/base';
 import { currencyIn, displayValue, placesIn, localField, stateTint, statusTint } from '../ui/fields';
+import type { Tint } from '../ui/core';
 import { humanize } from '../ui/kinds';
 import { closeDialogs, DialogFooter, MenuButton, openModal, toast } from '../ui/layers';
 import { SplitView } from '../ui/split';
@@ -337,12 +338,15 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   }, { name: `${name}.tab values` });
   const tabCount = (value: string) => () => tabCounts.get() ? value === 'all' ? tabCounts.get()!.total : counts.get()![value] ?? 0 : tab.get() === value ? total.get() : null;
   const tabLabel = (value: string) => linkTabs ? () => ctx.links.title(linkTabs, value).get() ?? '…' : state && tabSpec?.field === state.field ? stepLabel(model, value) : humanize(value);
+  /** A tab's dot: the colour its State step or Select choice shows in the list's badges; a Link's tabs have none. */
+  const tabTint = (value: string): Tint | undefined => linkTabs ? undefined
+    : state && tabSpec?.field === state.field ? stepOf(model, value)?.color ?? stateTint(value) : statusTint(tabMeta!, value);
   const tabs = tabSpec ? () => {
     if (finding.get()) return null;
     const values = tabValues.get() ? tabValues.get().split('\n') : [];
-    return untrack(() => Tabs({ label: `${model.plural} by ${tabMeta!.label.toLowerCase()}`, active: tab, idPrefix: `ev-${name}-views`, tabs: [
+    return untrack(() => Tabs({ label: `${model.plural} by ${tabMeta!.label.toLowerCase()}`, active: tab, idPrefix: `ev-${name}-views`, pills: true, tabs: [
       { id: 'all', label: `All ${model.plural.toLowerCase()}`, count: tabCount('all') },
-      ...values.map(value => ({ id: value, label: tabLabel(value), count: tabCount(value) })),
+      ...values.map(value => ({ id: value, label: tabLabel(value), count: tabCount(value), tint: tabTint(value) })),
     ] }));
   } : null;
   let arriving = false;

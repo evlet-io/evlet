@@ -227,6 +227,27 @@ textarea.input{height:auto;padding:8px 10px;resize:vertical;min-height:72px;line
 .tabs button.on::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;background:var(--accent);border-radius:2px}
 .tabs .n{font-size:11.5px;color:var(--fg-3);background:var(--bg-muted);border-radius:5px;padding:0 5px;line-height:17px}
 .tabs .add{color:var(--fg-4)}
+/* Pill tabs (Tabs({ pills: true }), a list's tabs): a coloured dot, the label and a count chip; the chosen one on a
+   light accent fill with a solid chip. Tabs that don't fit wait in More, a dashed button at the row's end. */
+.pill-row{display:flex;align-items:center;gap:8px;min-width:0;padding:8px 12px;border-bottom:1px solid var(--divider)}
+.pill-row>.tabs.pill-tabs{flex:1;min-width:0;margin:0;border-bottom:0;gap:4px;overflow:hidden}
+.pill-tabs button{height:30px;padding:0 10px;border-radius:var(--r);gap:7px;color:var(--fg-2)}
+.pill-tabs button:hover{background:var(--bg-muted);color:var(--fg)}
+.pill-tabs button.on{background:var(--accent-soft);color:var(--accent)}
+.pill-tabs button.on::after{display:none}
+.pill-tabs button .n,.tab-mi .n{border-radius:9px;padding:0 6px;background:var(--bg-muted);color:var(--fg-3);font-size:11.5px;line-height:18px}
+.pill-tabs button.on .n{background:var(--accent-solid);color:var(--accent-fg)}
+.tab-dot{width:7px;height:7px;border-radius:50%;flex:none}
+.dot-blue{background:var(--t-blue)} .dot-green{background:var(--t-green)} .dot-amber{background:var(--t-amber)} .dot-rose{background:var(--t-rose)}
+.dot-violet{background:var(--t-violet)} .dot-teal{background:var(--t-teal)} .dot-slate{background:var(--t-slate)}
+.tab-more{display:flex;align-items:center;gap:6px;flex:none;height:30px;padding:0 10px;border:1px dashed var(--border-strong);border-radius:var(--r);color:var(--fg-2);font-weight:500;font-size:13px;white-space:nowrap}
+.tab-more[hidden]{display:none}
+.tab-more:hover,.tab-more[aria-expanded="true"]{background:var(--bg-muted);color:var(--fg)}
+.tab-more-n{color:var(--fg-3)}
+.tab-more-pop{min-width:200px}
+.tab-mi{display:flex;align-items:center;gap:8px}
+.tab-mi .tab-l{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.tab-mi[aria-checked="true"]{color:var(--accent);font-weight:550}
 .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .toolbar .grow{flex:1}
 .summary{display:flex;gap:16px;font-size:12.5px;color:var(--fg-3);white-space:nowrap}

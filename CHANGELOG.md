@@ -4,6 +4,17 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Changed
+
+- **List tabs are pills with a dot in each state's colour.** Each tab shows a dot in its State step's or Select
+  choice's colour, its label and a count chip. The open tab is on a light accent fill. Tabs that don't fit the
+  card's width go in a **More N** menu at the end of the row ([docs/ui.md](docs/ui.md#list-tabs)).
+  `Tabs({ pills: true })` and `TabItem.tint` draw them on screens of your own
+  ([docs/ui-framework.md](docs/ui-framework.md)).
+- **On phones, a list's search row comes first**, above the tabs.
+
 ## 0.4.17 (20-11-2026)
 
 ### Upgrading to 0.4.17
