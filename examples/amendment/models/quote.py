@@ -1,6 +1,6 @@
 """A finite-v1 document: one formula definition for browser previews and server saves."""
 from evlet import (Model, Child, Table, Decimal, Currency, Boolean, Text, Rule, Link, Date, Integer, Percent, Tags,
-                   State, Sequence, Reference, action, release, Count, Sum, Activity)
+                   State, Sequence, AnyLink, action, release, Count, Sum, Activity)
 from evlet.calc import F, days, parent, round, when
 from amendment.models.masters import Company
 
@@ -15,7 +15,7 @@ class SalesLedger(Model):
     amount = Currency(required=True)
     memo = Text(default='')
     # The quote that posted the row, indexed to find a quote's rows.
-    source = Reference(index=True)
+    source = AnyLink(index=True)
 
 
 class Quote(Model):
@@ -47,11 +47,11 @@ class Quote(Model):
         State.Step('lost', 'Lost', color='slate', lock=True),
         State.Step('void', 'Void', color='rose', lock=True, final=True),
         rules=(
-            State.Rule('draft', 'sent', 'Send', key='sent', when=F('grand_total') > 0, primary=True),
-            State.Rule('sent', 'won', 'Mark won', key='won'),
-            State.Rule('sent', 'lost', 'Mark lost', key='lost'),
-            State.Rule(('sent', 'lost'), 'draft', 'Reopen', key='draft', by=('admin',)),
-            State.Rule('sent', 'void', 'Void', key='void', by=('admin',), remark='required'),
+            State.Move('draft', 'sent', 'Send', key='sent', when=F('grand_total') > 0, primary=True),
+            State.Move('sent', 'won', 'Mark won', key='won'),
+            State.Move('sent', 'lost', 'Mark lost', key='lost'),
+            State.Move(('sent', 'lost'), 'draft', 'Reopen', key='draft', by=('admin',)),
+            State.Move('sent', 'void', 'Void', key='void', by=('admin',), remark='required'),
         ), show='bar', label='Stage')
     # The quote number is given when a quote is first sent, counted per year (Q-2026-0001). A reopened
     # and resent quote keeps its number; only the engine writes it.

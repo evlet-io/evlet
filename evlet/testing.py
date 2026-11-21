@@ -77,13 +77,23 @@ class Client:
         messages = []
         events = [{'type': 'http.request', 'body': body, 'more_body': False}]
 
+        finished = None
+
         async def receive():
-            return events.pop(0) if events else {'type': 'http.disconnect'}
+            if events:
+                return events.pop(0)
+            # Like a real client, stay connected until the whole response has been sent.
+            await finished.wait()
+            return {'type': 'http.disconnect'}
 
         async def send(event):
             messages.append(event)
+            if event['type'] == 'http.response.body' and not event.get('more_body'):
+                finished.set()
 
         async def run():
+            nonlocal finished
+            finished = asyncio.Event()
             await self.application({'type': 'http', 'http_version': '1.1', 'method': method, 'scheme': 'http', 'path': route,
                                     'raw_path': route.encode(), 'query_string': query.encode(), 'headers': sent,
                                     'client': ('127.0.0.1', 50000), 'server': ('127.0.0.1', 8000)}, receive, send)

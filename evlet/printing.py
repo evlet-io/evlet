@@ -11,6 +11,7 @@ from decimal import Decimal
 from html import escape
 from importlib import resources
 import re
+import threading
 
 from . import qb
 from .adapter import Column as StoredColumn, TableDefinition
@@ -817,7 +818,7 @@ MAX_HTML = 16_000_000
 # At most this many documents lay out at once in this process (HTTP print routes also wait in the heavy lane).
 CONCURRENT_RENDERS = 2
 RENDER_WAIT = 30.0
-_renders = None
+_renders = threading.BoundedSemaphore(CONCURRENT_RENDERS)
 TOO_LONG = 'This print design takes too long to fill. Simplify its templates or loops.'
 TOO_LARGE = 'This print design makes too much text. Simplify its templates, or print fewer rows.'
 WIDTH = re.compile(r'[0-9]{7,}')
@@ -946,10 +947,6 @@ def fill(env, template, variables):
 
 
 def _render_slots():
-    global _renders
-    if _renders is None:
-        import threading
-        _renders = threading.BoundedSemaphore(CONCURRENT_RENDERS)
     return _renders
 
 
