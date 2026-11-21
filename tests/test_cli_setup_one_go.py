@@ -232,7 +232,8 @@ def test_host_stops_only_when_dns_is_surely_wrong_and_never_needs_ip(tmp_path, m
     with pytest.raises(SystemExit):
         main(command + ['--ip', '84.12.169.35'])
     captured = capsys.readouterr()
-    assert 'points elsewhere' in captured.out and 'sudo' not in captured.out
+    # No privileged step is shown (the service-account note may mention sudo when this machine's user can use it).
+    assert 'points elsewhere' in captured.out and not any(line.lstrip().startswith('sudo ') for line in captured.out.splitlines())
     assert 'Step "DNS check" failed' in captured.err and not (target / 'deploy/server.json').exists()
     assert (target / 'deploy/evlet-acme.caddy').is_file()
     # No record at all: stop.

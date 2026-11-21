@@ -4,47 +4,55 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.18 (21-11-2026)
 
-### Changed
+### Upgrading to 0.4.18
 
-- **List tabs are pills with a dot in each state's colour.** Each tab shows a dot in its State step's or Select
-  choice's colour, its label and a count chip. The open tab is on a light accent fill. Tabs that don't fit the
-  card's width go in a **More N** menu at the end of the row ([docs/ui.md](docs/ui.md#list-tabs)).
-  `Tabs({ pills: true })` and `TabItem.tint` draw them on screens of your own
-  ([docs/ui-framework.md](docs/ui-framework.md)).
-- **On phones, a list's search row comes first**, above the tabs.
-- **The sidebar is a light grey**, its active child a white card with a border, marked on the children's guide line
-  in the parent's colour. Hover is a light grey.
-
-### Upgrading
-
-- **The Workspace switcher moved from the top bar to the top of the sidebar**, in the same design. The top bar keeps
-  the brand. Nothing to change in apps.
-- **The workspaces entry of `/api/schema` has new keys**: `home` on each workspace; `color`, `section` and `link` on
-  each group; `icon` on each item, `badge` on model items and `new_tab` on URL items. A client that reads the
-  older shape keeps working.
-- **`home` is reserved.** A model stored as `home`, or a workspace, section, group or item labelled or keyed
-  "home", is refused when the app is built. Rename it.
-- **Parents no longer show how many shortcuts they hold while closed.**
-- **Public API is additive only.** `Session.count(..., cap=None)` counts at most `cap` rows; `evlet.testing`
-  (`TestApp`, `Client`, `TestResponse`) is new for app tests; `/api/schema` carries `timezone`.
-- **`evlet serve` no longer accepts first-admin setup over HTTP.** Create the Administrator with
-  `evlet users set-password INSTANCE admin`; `evlet dev` and the Playground still print a sign-in link.
-- **Report runs stop after `EVLET_REPORT_SECONDS` (300)** with a 504; set `0` to turn the limit off.
-- **Generated proxy configs send HSTS and the generated unit is sandboxed.** Re-run `evlet setup --host` or
-  `evlet proxy` to pick them up.
-- **Decimal and Currency text input is strict:** `1_000`, exponents, non-ASCII digits and surrounding spaces are
-  refused, as `calc` already did.
+- **No migrations.** Apps keep working; three names are renamed with deprecated aliases (below), and a few
+  behaviours are stricter. Read the bullets that apply to you.
 - **Three names renamed; the old names still work and warn.** `evlet.App` is now `evlet.DevApp`, `State.Rule` is
   now `State.Move` and `evlet.Reference` is now `evlet.AnyLink`. Each old name returns the same class with a
   `DeprecationWarning` once per process, so `isinstance` checks and existing migrations keep working; nothing is
   stored differently. Switch to the new names before 0.5 (run your tests with `-W error::DeprecationWarning`).
   `makemigration` and the Controls export now write `AnyLink(...)`. `State(rules=...)` keeps its keyword
   ([docs/api-stability.md](docs/api-stability.md#renamed-in-04x-old-names-deprecated)).
-- **The two formula languages' rounding is documented side by side.** String formulas round half even, `F(...)`
-  expressions follow the field's `rounding` (half up for Currency); nothing changed
-  ([docs/finite-calculations.md](docs/finite-calculations.md#two-formula-languages)).
+- **Public API is otherwise additive.** `Session.count(..., cap=None)` counts at most `cap` rows; `evlet.testing`
+  (`TestApp`, `Client`, `TestResponse`) is new for app tests; `/api/schema` carries `timezone`;
+  `TenantApplication(jobs=None)` and `render_deployment(separate_worker=False)` are new keywords.
+- **`evlet serve` no longer accepts first-admin setup over HTTP.** Create the Administrator with
+  `evlet users set-password INSTANCE admin`; `evlet dev` and the Playground still print a sign-in link.
+- **Everyone signs in once more on an instance with a domain.** Its session cookie is now `__Host-evlet_session`.
+  Local instances keep `evlet_session`.
+- **Regenerate deployment files.** Generated Caddy and nginx sites now send
+  `Strict-Transport-Security: max-age=31536000`; once a browser has seen it, it refuses plain HTTP to that host for a
+  year, so turn HTTPS off only after removing it and waiting. The generated systemd unit is sandboxed
+  (`NoNewPrivileges`, `PrivateTmp`, `ProtectSystem=full`, `ProtectHome=read-only`, `ReadWritePaths` on the instance
+  directory, which must exist before the unit starts) and reads an optional `EnvironmentFile=`. Re-run
+  `evlet setup --host` or `evlet proxy`; the next `--apply` replaces the unit and restarts the service, and installs
+  the rendered text itself (`deploy/` is for review only). `--service-user` / `EVLET_SERVICE_USER` picks the account.
+- **Tenant deployments run jobs in the API process.** The generated layout is one process
+  (`EVLET_TENANT_JOBS=1`); `--separate-worker` keeps the old API plus worker units.
+- **Report runs stop after `EVLET_REPORT_SECONDS` (300)** with a 504; set `0` to turn the limit off.
+- **Decimal and Currency text input is strict:** `1_000`, `+5`, `.5`, `5.`, exponents (including
+  `str(Decimal('1E+2'))`), non-ASCII digits and surrounding spaces are refused, as `calc` already did. `Decimal`
+  values from Python are unaffected.
+- **Attachment names with control or format characters** (bidi overrides, zero-width characters) are refused.
+- **Sign-in limits changed.** A sign-in that finishes gives its network attempt back, so the network limit (100 per
+  15 minutes) counts failures. After 50 failures on one account from every network, networks it has not signed in
+  from in 30 days get one attempt every 10 seconds between them
+  ([docs/production-operations.md](docs/production-operations.md#sign-in-limits-and-password-hashing)).
+  `EVLET_PASSWORD_SLOTS` (1 to 8) sets concurrent password hashes; a sign-in waits up to 3 seconds for one, behind a
+  line that always leaves one HTTP write thread free. HTTP lane defaults scale with the CPU count and
+  `EVLET_HTTP_QUEUE` bounds their queues.
+- **The page config's `version` is empty before sign-in.**
+- **`evlet dev --watch` is a no-op** that prints a notice; `evlet dev` reloads on its own.
+- **The workspaces entry of `/api/schema` has new keys**: `home` on each workspace; `color`, `section` and `link` on
+  each group; `icon` on each item, `badge` on model items and `new_tab` on URL items. A client that reads the older
+  shape keeps working.
+- **`home` is reserved.** A model stored as `home`, or a workspace, section, group or item labelled or keyed
+  "home", is refused when the app is built. Rename it.
+- **The Workspace switcher moved from the top bar to the top of the sidebar**, and parents no longer show how many
+  shortcuts they hold while closed. Nothing to change in apps.
 
 ### Added
 
@@ -55,18 +63,42 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   ([docs/ui.md](docs/ui.md#workspaces)).
 - **Child icons, new-tab links and badges.** `Shortcut(icon=...)` replaces the kind's icon. `Shortcut(url=...,
   new_tab=True)` opens an app path in a new tab; http(s) addresses do so by default. Both end with the
-  open-externally icon. `Shortcut('task', badge={...})` shows a count beside a child. The count is bounded: it reads at most
-  the newest 1,000 rows, applies the role's row scope and filters, and stops at 100 ("99+"), from
+  open-externally icon. `Shortcut('task', badge={...})` shows a count beside a child. The count is bounded: it reads
+  at most the newest 1,000 rows, applies the role's row scope and filters, and stops at 100 ("99+"), from
   `GET /api/_nav/badges` ([docs/ui.md](docs/ui.md#badges)).
+- **`evlet.testing`** for app tests on real SQLite: `TestApp`, `Client` and `TestResponse`; `evlet app` scaffolds
+  ship tests ([docs/testing.md](docs/testing.md)).
+- **`docs/app-layout.md`**, a guide to the flat app layout `evlet app` creates; Getting started and Customizing use it.
+- **`evlet backup --with-files`**; `evlet serve` accepts TLS files and warns on non-loopback plain HTTP.
+- **`EVLET_IMAGE_ORIGINS`** narrows the desk's image sources in its Content-Security-Policy.
+- **Every instance command accepts `NAME` or `--instance NAME`**, and `evlet --help` groups the commands.
+
+### Changed
+
+- **List tabs are pills with a dot in each state's colour.** Each tab shows a dot in its State step's or Select
+  choice's colour, its label and a count chip. The open tab is on a light accent fill. Tabs that don't fit the
+  card's width go in a **More N** menu at the end of the row ([docs/ui.md](docs/ui.md#list-tabs)).
+  `Tabs({ pills: true })` and `TabItem.tint` draw them on screens of your own
+  ([docs/ui-framework.md](docs/ui-framework.md)).
+- **The sidebar is a light grey**, its active child a white card with a border, marked on the children's guide line
+  in the parent's colour. Hover is a light grey. A parent whose one child has its own name is a single row.
+- **Phones:** lists show cards and records one column under 640 px, and a list's search row comes first.
+- **Faster cold load:** a browser that was signed in fetches the schema and settings with the session, behind the
+  shell's outline instead of a blank splash.
+- **Docs shows end-user Help** (the workspace's lists, Working with records, Keyboard shortcuts) to people who cannot
+  open Controls; administrators and development servers still see the developer guide first.
+- **Reads take no write turn.** Reports, exports, previews and prints read in one read-only snapshot; link-picker
+  search runs bounded queries; event streams share one poller per app; route results are encoded off the event loop.
+- **Toasts, forms and dates:** error toasts use an error tone and alert role and pause on hover; required fields are
+  checked before create; the date picker follows the person's week start and date format; `today()` follows the
+  instance time zone; a Skip to content link.
+- **Clearer messages:** `evlet dev` serves an error page instead of hanging and lets `migrate` run beside it; Meta,
+  reserved-name and import errors name the model and file; write refusals name the fields without revealing hidden
+  ones; the 403 for a missing request header names it.
+- **`evlet/cli/main.py` is split** into per-command modules; every help text, error and exit code is unchanged.
 
 ### Fixed
 
-- **Links from other sites open the page.** A link to an Evlet page from an email, a chat, a search
-  result or another website answered 403 `Cross-site request rejected`. A top-level page load
-  (`GET`/`HEAD`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`) of a browser page now gets
-  the page, and the visitor signs in there if their session cookie didn't come with the link. `/api/`,
-  frames, fetches and every write stay rejected cross-site
-  ([docs/business-capabilities.md](docs/business-capabilities.md)).
 - **A `DropIndex` by an index's first names after its field was renamed and the name reused.** 0.4.17 renamed the
   field in `Meta.indexes` entries, so after `RenameField("party", "kind", "role_kind")` and a new `AddField` named
   `kind`, a later `DropIndex("party", ("kind", "record_id"), unique=True)` resolved `kind` to the new field, left
@@ -74,6 +106,20 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   "party: Meta.indexes differ". The `DropIndex` now matches the index by the names it had when it was made when no
   index has the names given, and drops the database index on the columns they have now. Instances already past the
   `DropIndex` are not affected ([docs/model-engine.md](docs/model-engine.md)).
+- **Links from other sites open the page.** A link to an Evlet page from an email, a chat, a search
+  result or another website answered 403 `Cross-site request rejected`. A top-level page load
+  (`GET`/`HEAD`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`) of a browser page now gets
+  the page, and the visitor signs in there if their session cookie didn't come with the link. `/api/`,
+  frames, fetches and every write stay rejected cross-site
+  ([docs/business-capabilities.md](docs/business-capabilities.md)).
+- **A new app on an instance that already has apps** gets its tables from its models.
+- **Print** shows DateTime values in the instance time zone; raw-session Sequences date by the session time zone;
+  job retry backoff counts from the failure; dates in years 0001 to 0099 round-trip.
+- **Security hardening:** image uploads and profile photos refuse decompression bombs by their header dimensions;
+  print templates have size and time budgets and at most two renders at once; the mailbox OAuth code stays out of
+  access logs. When Eva's MCP client table is full (1,000), a new registration replaces the oldest one that is at
+  least 10 minutes old and never connected, so registrations cannot keep the table full; Deny redirects only to
+  known clients.
 
 ## 0.4.17 (20-11-2026)
 
