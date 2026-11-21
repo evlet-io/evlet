@@ -27,6 +27,13 @@ dialect. App developers do not need it: they use `Database`, `Session` and `Cont
 | `evlet/database.py` | `Database` (the SQLite database: files, connections, transactions) and the neutral record API, `Session`. |
 | `evlet/writes.py` | SQLite only: the four files, the fair write line-up, and the file tools the instance commands use to open, copy and check SQLite files. |
 
+Request deadlines are part of the connection's lifecycle in `Database`: while
+`evlet.database.DEADLINE` holds a `Deadline`, each checked-out connection interrupts statements
+that run past it (SQLite's progress handler), raising the adapter's `OperationalError`; the
+handler is removed before the connection goes back to the idle pool. Another dialect gives the
+same guarantee with its own statement timeout. A bounded count is plain builder:
+`qb.select(qb.from_query(query.limit(cap), 'counted'), qb.count())` (`evlet.database.capped_count`).
+
 Framework modules outside the dialect never write SQL text and never ask which database they
 run on. A test, `tests/test_query_builder_boundary.py`, enforces this: it fails on a string that
 reads as an SQL statement, or an `execute()` call given text, anywhere outside the dialect.

@@ -411,10 +411,15 @@ with a current watermark; clients reload their authorized records. Cursor `0`
 requests the retained beginning. Pages scan at most 100 events and advance even
 when permissions filter all their records. Follow `more` to drain a backlog.
 
-The stream honors `Last-Event-ID` on reconnect, sends a heartbeat page about once
-per second, and closes after a bounded run of about 25 seconds. It rechecks the
-session, account, tenant/host activation, and read permissions during delivery.
-Revocation closes the stream with a named `unavailable` event. Browser clients
+The stream honors `Last-Event-ID` on reconnect, sends a page when new events arrive and a
+heartbeat page at least every five seconds, and closes after a bounded run of about 25 seconds.
+Open streams do not poll the database each: one poller per application (so per database, and per
+tenant) reads the newest event number once a second and wakes every stream of that application
+when it moves; each stream then reads its own permission-filtered page. An idle stream costs no
+database work between its rechecks. Every page read rechecks the session, account, tenant/host
+activation, and read permissions, so nothing is delivered after a revocation; an idle stream
+notices it within about five seconds and closes with a named `unavailable` event. The number of
+open streams per process is `EVLET_HTTP_STREAM` (default 64, at most 256). Browser clients
 must still use authenticated reads to retrieve the latest values.
 
 Current row scopes filter replay. Deleted rows cannot be checked against a current

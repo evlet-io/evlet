@@ -370,6 +370,9 @@ class Business:
         result['currency_decimals'] = decimals_table(displays)
         if self.tenant:
             result['tenant'] = self.tenant
+        # The IANA zone the server dates today() in (Instance.timezone, UTC by default), so the browser's
+        # calculation previews and date pickers pick the same day as the save.
+        result['timezone'] = self.timezone or 'UTC'
         available = {name for name, model in self.registry.models.items() if self.policy.allows(user, model, 'read')}
         result['models'] = [entry for entry in result['models'] if entry['name'] in available]
         for entry in result['models']:
