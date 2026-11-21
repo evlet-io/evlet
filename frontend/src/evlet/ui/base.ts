@@ -82,10 +82,11 @@ export function Button(props: ButtonProps): HTMLButtonElement {
   const neutral = !['primary', 'success', 'danger'].includes(props.variant ?? 'default');
   const icon = props.icon ? Icon(props.icon, { size: 'sm', tint: props.iconTint, className: neutral && !props.iconTint && !iconOnly ? 'tint' : undefined }) : null;
   const label = iconOnly ? null : props.hideLabelOnPhone ? html`<span class="hide-sm">${props.label}</span>` : html`<span>${props.label}</span>`;
+  // A label hidden on phones (display:none) leaves the accessibility tree too, so it names the button instead.
   const button = html`<button type=${props.type ?? 'button'} class=${classes}
     disabled=${props.disabled ?? false}
     aria-pressed=${props.pressed === undefined ? null : () => String(Boolean(read(props.pressed!)))}
-    aria-label=${props.ariaLabel ?? (iconOnly ? () => read(props.tip ?? '') || null : null)}
+    aria-label=${props.ariaLabel ?? (iconOnly ? () => read(props.tip ?? '') || null : props.hideLabelOnPhone ? () => read(props.label!) : null)}
     on:click=${(event: MouseEvent) => props.onClick?.(event)}>${icon}${label}</button>` as HTMLButtonElement;
   if (props.tip !== undefined) tooltip(button, props.tip, props.tipPlacement);
   return button;

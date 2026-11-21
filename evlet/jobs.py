@@ -492,9 +492,11 @@ class JobQueue:
                     self._release_claim(tx, job_id, token, now + 1)
                     return False
                 retry = task is not None and row['attempts'] < row['max_attempts'] and not isinstance(exc, (AccessError, NotFoundError, ValidationError))
-                due = now + min(86400, task.retry_delay * 2 ** (row['attempts'] - 1)) if retry else now
+                # Backoff counts from the failure, not from when this run started.
+                failed_at = now + int(time.monotonic() - began)
+                due = failed_at + min(86400, task.retry_delay * 2 ** (row['attempts'] - 1)) if retry else failed_at
                 # A resumable task keeps its checkpoint, so the retry resumes after the last committed step.
-                tx.connection.run(qb.update('evlet_jobs', state='queued' if retry else 'failed', run_at=due, completed_at=None if retry else now, lease=None, lease_until=None,
+                tx.connection.run(qb.update('evlet_jobs', state='queued' if retry else 'failed', run_at=due, completed_at=None if retry else failed_at, lease=None, lease_until=None,
                                             error=exc.message if isinstance(exc, AccessError) else type(exc).__name__).where(id=job_id, lease=token))
             return True
 

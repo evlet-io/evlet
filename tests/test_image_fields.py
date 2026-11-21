@@ -10,10 +10,10 @@ import pytest
 from evlet import (AddField, Application, Database, Image, LocalAuth, Migration, Model, Policy, Registry, RichText, Rule,
                    State, Text, ValidationError)
 from evlet.activity import Activity
-from tests.test_business import PASSWORD, http
+from tests.support import PASSWORD, http
 
-PNG = b'\x89PNG\r\n\x1a\n' + b'\x00' * 40
-WEBP = b'RIFF\x24\x00\x00\x00WEBPVP8 ' + b'\x00' * 20
+PNG = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01' + b'\x00' * 24
+WEBP = b'RIFF\x24\x00\x00\x00WEBPVP8 \x18\x00\x00\x00\x00\x00\x00\x9d\x01\x2a\x01\x00\x01\x00' + b'\x00' * 10
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>'
 
 

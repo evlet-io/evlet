@@ -57,6 +57,12 @@ class EventStore:
         tx.connection.run(qb.delete('evlet_events').where(qb.le('id', event_id - self.retention)))
         return token
 
+    def latest(self):
+        """The newest event's number, or 0: one index read. A process polls it once for all its open streams,
+        which read their permission-filtered pages only when it moves (evlet/app.py)."""
+        with self.database._connection() as db:
+            return db.run(qb.select('evlet_events', qb.max('id'))).value() or 0
+
     def page(self, user, policy, *, after=None):
         if after is not None and after != '0' and (not isinstance(after, str) or not re.fullmatch('[0-9a-f]{48}', after)):
             raise ValidationError({'cursor': 'Invalid event cursor'})

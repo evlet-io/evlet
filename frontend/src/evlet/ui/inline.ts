@@ -131,7 +131,7 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
     stop(refocus);
     if (props.confirm !== false) toast(`${meta.label} saved`, {
       undo: async () => {
-        try { batch(() => field.set(previous)); await save(); } catch { toast(`Could not undo the change to ${meta.label}`, { icon: 'info' }); }
+        try { batch(() => field.set(previous)); await save(); } catch { toast(`Could not undo the change to ${meta.label}`, { tone: 'error' }); }
       },
     });
   };

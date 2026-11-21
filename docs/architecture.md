@@ -7,7 +7,7 @@ Status: implemented foundation, not a production business application framework.
 | Object | What it is |
 | --- | --- |
 | `Application` | The ASGI app object you build in Python from a `Database`, usually with `LocalAuth`. |
-| `App` | A shortcut `Application` with local defaults for a quick start. It creates `.data/NAME.sqlite3` and loopback-only `LocalAuth` unless you pass your own. |
+| `DevApp` | A shortcut `Application` with local defaults for a quick start (named `App` before 0.4.x). It creates `.data/NAME.sqlite3` and loopback-only `LocalAuth` unless you pass your own. |
 | `Registry` | Your models. Pass it to `Database`; there is no global registry. |
 | `AppDefinition` | The registration object in `hooks.py` for the nested app layout (`evlet app NAME --legacy`). Flat apps are discovered without it. |
 | `Instance` | One customer's isolated data directory, set in `instances/NAME/config.py` and served by `evlet serve NAME`. |
@@ -55,8 +55,8 @@ SolidJS by Evlet's own UI framework.
    are open to clients that can reach the development server; bind it to loopback.
 6. **Tests at public boundaries.** pytest covers validation, registration,
    transactions, SQL constraints, and complete ASGI requests against temporary
-   SQLite files. Vitest and Vue Test Utils exercise real PrimeVue components,
-   with a deterministic HTTP stub at the network boundary. A separate smoke
+   SQLite files. Vitest with jsdom exercises Evlet's own UI components
+   (`frontend/src/evlet/`), with a deterministic HTTP stub at the network boundary. A separate smoke
    command sends real HTTP requests to the running Playground. CI also builds
    and installs the wheel outside the source tree and builds the frontend.
 
@@ -97,20 +97,26 @@ points upward; every module must be in the map.
 | 2 | `access` | Who may do what | auth, permissions |
 | 3 | `data` | SQL, files, migrations | database, sqlite, migrations, ledger, writes, storage, object_storage, secrets, sequences, images |
 | 4 | `engine` | Document behaviour | documents, statemanager, guards, activity, measures, unsaved, mentions, meaning, prompts |
-| 5 | `web` | HTTP application and routes | app, runtime, routing, business, forms, workspaces, services, events, jobs, framework, devlink, discovery |
+| 5 | `web` | HTTP application and routes | app, runtime, oidc, routing, business, forms, workspaces, services, events, jobs, framework, devlink, discovery, search |
 | 6 | `admin` | Controls and settings | controls, controls_export, controls_system, customization, settings, printing |
 | 7 | `ai` | Eva, MCP, tools | eva, tools, mcp, connector, connectors, assistants, mailboxes |
-| 8 | `site` | Sites, apps, deployment | instances, packages, builds, deployment, tenancy, serverless |
+| 8 | `site` | Sites, apps, deployment, app tests | instances, packages, builds, deployment, tenancy, serverless, testing |
 
-The state manager's declarations (`State`, `State.Step`, `State.Rule`, `State.Level`, `State.Remark`) live in
+The state manager's declarations (`State`, `State.Step`, `State.Move`, `State.Level`, `State.Remark`) live in
 `evlet/declarations.py` in core, so models and sequences import them downward; `evlet/statemanager.py` (engine)
 runs them and re-exports them.
 
 `evlet/ui/`, `evlet/cli/` and `evlet/resources/` sit above all eight layers. A module-level
-import never points upward. Some function-level imports still do; `ALLOWED_UPWARD` in the test
+import of another layered module never points upward. Some function-level imports still do; `ALLOWED_UPWARD` in the test
 lists each one as `(importing module, imported module)`, and the list only shrinks: the test fails
 when an entry no longer occurs. Remove an upward import by moving the code to the layer that owns
 its data, passing a value in, or letting the higher module register itself with the lower one.
+
+An import of `evlet.ui.*` or `evlet.cli.*` from a layered module also points upward. The test names
+these imports by package and module (`ui.metadata`, `cli.project`) and `ALLOWED_TOP` lists the ones
+that exist today, at module or function level; it only shrinks the same way. Most reach the
+model-screen schema compiler in `evlet/ui/metadata.py` and `evlet/ui/scripts.py`, or the generic
+helpers in `evlet/cli/project.py`.
 
 Building a model class or a `Registry` runs steps that belong to higher layers (ledger options,
 state manager hooks, rule guards, sequences, measures, activities, API access). `evlet/models.py`

@@ -1,5 +1,7 @@
 # Continue Evlet locally
 
+> Archived: a completed or superseded plan, kept for history. It may describe code that has since changed; the current documentation is in `docs/`.
+
 Use the existing checkout of `evlet-io/evlet`. Read `AGENTS.md`, `docs/ui.md`,
 `docs/cli.md` and `docs/architecture.md` first. Preserve the stash named
 `Preserve local foundation work before Milestone 1 continuation`. Do not create a

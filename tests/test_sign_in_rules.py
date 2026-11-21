@@ -11,7 +11,7 @@ from evlet.framework import upgrade
 from evlet.migrations import SchemaError
 from evlet.settings import FIXED_PROFILE
 from examples.playground.models import Customer, registry
-from test_business import PASSWORD, client, hashed, http, secured  # noqa: F401
+from support import PASSWORD, client, http
 
 
 def save(c, *changes):

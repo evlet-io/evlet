@@ -186,10 +186,12 @@ describe('personal pages', () => {
     await until(() => expect(requests(sent, 'PATCH', /\/api\/_settings\/me\/prefs$/).map(item => item.body)).toContainEqual({ enter_next: true }));
   });
 
-  it('starts with the region from the server and switches Arabic to right-to-left', async () => {
+  it('starts with the region from the server and keeps untranslated Arabic English, left to right', async () => {
     const { host } = start(routes([['GET', /\/api\/order\?/, screen.orders_open]], me(body => { body.prefs.date = 'd MMM yyyy'; body.prefs.lang = 'ar'; })), '/app/order');
     await until(() => expect(text(host.querySelector('tbody tr[data-key]'))).toContain('20 Oct 2026'));
-    expect(document.documentElement.dir).toBe('rtl');
+    // The interface text is English until a translation ships: lang and dir follow the text, not the choice.
+    expect(document.documentElement.lang).toBe('en');
+    expect(document.documentElement.dir).toBe('');
   });
 
   it('turns on two-step sign-in and shows the backup codes once', async () => {

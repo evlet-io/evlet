@@ -14,7 +14,7 @@ from evlet.calc import F, Document, compile_plan, formula_hash, parent
 from evlet.currencies import MONEY_SCALE, check, decimals_table, stored_excess
 from evlet.identity import RecordId
 from evlet.migrations import SchemaError, money_scale
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 ALL = Rule(('read', 'create', 'update', 'delete'))
 FULL = {'admin': ALL, 'editor': ALL}

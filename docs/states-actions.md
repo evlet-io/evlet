@@ -35,9 +35,9 @@ class Invoice(Model):
         State.Step("paid", "Paid", color="green", lock=True, final=True),
         State.Step("void", "Void", color="rose", lock=True, final=True),
         rules=(
-            State.Rule("draft", "issued", "Issue", key="issue", when=F("total") > 0, primary=True),
-            State.Rule("issued", "paid", "Mark paid", key="pay", by=("admin",)),
-            State.Rule("issued", "void", "Void", key="void", by=("admin",), remark="required"),
+            State.Move("draft", "issued", "Issue", key="issue", when=F("total") > 0, primary=True),
+            State.Move("issued", "paid", "Mark paid", key="pay", by=("admin",)),
+            State.Move("issued", "void", "Void", key="void", by=("admin",), remark="required"),
         ),
         show="bar",
     )
@@ -92,9 +92,9 @@ class Invoice(Model):
 * `release=True` and `final=True` imply `lock=True`. Writing `lock=True` with them is allowed;
   `lock=False` with them fails at declaration.
 
-`State.Rule(from_, to, label=None, *, key=None, by=None, when=None, remark=None, ask=(), primary=False, reject=False)`:
+`State.Move(from_, to, label=None, *, key=None, by=None, when=None, remark=None, ask=(), primary=False, reject=False)`:
 
-* Write the states positionally: `State.Rule("draft", "issued", "Issue")`. `from_` is one
+* Write the states positionally: `State.Move("draft", "issued", "Issue")`. `from_` is one
   state or a tuple of states. `label` defaults to the target, humanized.
 * `key` is the rule's stable id, used in the route, the Activity and the schema. It defaults to
   `<from>_to_<to>`, with tuple sources joined by `_` (`draft_issued_to_void`). Two rules with
@@ -117,8 +117,9 @@ class Invoice(Model):
 * `levels` makes the rule an approval, and `reject=True` marks a rule back from one
   ([Approvals](#approvals)).
 
-`State.Rule`, `State.Step`, `State.Level` and `State.Remark` live on `State` because `evlet.Rule`
-is the permission rule.
+`State.Move`, `State.Step`, `State.Level` and `State.Remark` live on `State`. `State.Move` was named
+`State.Rule` before 0.4.x, which read like `evlet.Rule` (the permission rule); the old name still works
+and warns. A State's moves are still passed as `rules=(...)`, and messages and the Activity call them rules.
 
 ### Approvals
 
@@ -128,11 +129,11 @@ approves, an optional condition and the text the record shows while it waits:
 ```python
 Level = State.Level
 
-State.Rule("review", "approved", "Approve", key="approve", remark="optional",
+State.Move("review", "approved", "Approve", key="approve", remark="optional",
            levels=(Level(by=("manager",), pending="Pending manager approval"),
                    Level(by=("cfo",), when=F("total") >= 10000, pending="Pending CFO approval"),
                    Level(by=("director",), when=F("total") >= 50000, pending="Pending director approval"))),
-State.Rule("review", "draft", "Reject", key="reject", reject=True, remark="required"),
+State.Move("review", "draft", "Reject", key="reject", reject=True, remark="required"),
 ```
 
 * Levels run top to bottom; only the waiting level's approvers can approve. For a total of
@@ -177,10 +178,10 @@ class PriceList(Model):
     docstate = State(
         State.Step("draft"), State.Step("building"), State.Step("ready"), State.Step("failed"),
         rules=(
-            State.Rule("draft", "building", "Start", key="building", by=()),
-            State.Rule("building", "ready", "Finish", key="ready", by=()),
-            State.Rule("building", "failed", "Fail", key="failed", by=()),
-            State.Rule(("ready", "failed"), "draft", "Reopen", key="draft"),
+            State.Move("draft", "building", "Start", key="building", by=()),
+            State.Move("building", "ready", "Finish", key="ready", by=()),
+            State.Move("building", "failed", "Fail", key="failed", by=()),
+            State.Move(("ready", "failed"), "draft", "Reopen", key="draft"),
         ), show="bar")
 ```
 
@@ -307,7 +308,7 @@ replaces a base's hook by defining a method of the same name. Each is a method t
       class Meta:
           api = "read"
       amount = Currency(required=True)
-      source = Reference(index=True)
+      source = AnyLink(index=True)
       reversal = Boolean(default=False)
 
   class Deal(Model):
@@ -323,7 +324,7 @@ replaces a base's hook by defining a method of the same name. Each is a method t
 
   A posted row is validated like any `Session` write and refused in a closed period of its own
   model (the error is keyed by its period field). Use `Meta.api = "read"` or `Meta.ledger = True`
-  for posting tables, and `Reference(index=True)` where you look rows up by source.
+  for posting tables, and `AnyLink(index=True)` where you look rows up by source.
 * A model that still declares `before_close`, `changed`, `check_lifecycle` or an undecorated
   `validate()`, or sets `confirmable` or `track_changes`, fails when the class is created with a
   message pointing here.
@@ -419,7 +420,7 @@ entry (`data.number`, the remark), and the next release takes the next number.
 
 * It needs the `restore` permission (admin by default) and a remark, and the record must be in an
   unlocked step; otherwise it answers 409 "Move back to an editable state first".
-* It is refused while another record links to this one (a Link or a Reference, from it or its
+* It is refused while another record links to this one (a Link or an AnyLink, from it or its
   rows), naming them.
 * Table rows come back as the version had them: rows deleted since are created again under their
   original ids (with the row model's create permission, the fields the role may write and readable
@@ -571,7 +572,7 @@ def record_payment(self, amount): ...
 * One rule decides how inputs are read. With `inputs`, each input is a Field instance
   (no calculations, rules or fetches). The values are cleaned by their fields and passed as
   keyword arguments; missing required inputs, wrong types, failed bounds and unknown names
-  are field errors (422), reported before the method runs. A Link or Reference input must
+  are field errors (422), reported before the method runs. A Link or AnyLink input must
   name a record the caller can read. The method must take exactly those names, and `name`,
   `model`, `record_id` and `self` are reserved because `context.action()` uses them. Each
   input field is copied, so one Field instance may be shared. Without
@@ -618,7 +619,7 @@ class Transfer(Model):
     quantity = Integer(default=1)
     number = Sequence("TR{n:04}", assign_on="sent")
     docstate = State(State.Step("draft"), State.Step("sent", lock=True),
-                     rules=(State.Rule("draft", "sent", "Send", key="send"),))
+                     rules=(State.Move("draft", "sent", "Send", key="send"),))
 
     @state("sent")
     def post_movements(self):

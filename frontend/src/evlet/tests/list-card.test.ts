@@ -124,8 +124,8 @@ describe('the record beside the list', () => {
 });
 
 describe('the shell grounds', () => {
-  it('draws a white sidebar and top bar beside a grey main area, in both themes', () => {
-    expect(rule(STYLES, '.side-body')).toMatch(/background:var\(--surface\)/);
+  it('draws a light grey sidebar and a white top bar beside a grey main area, in both themes', () => {
+    expect(rule(STYLES, '.side-body')).toMatch(/background:var\(--bg-subtle\)/);
     expect(rule(STYLES, '.topbar')).toMatch(/background:var\(--surface\)/);
     expect(rule(STYLES, '.main')).toMatch(/background:var\(--page-bg\)/);
     expect(rule(STYLES, '.sidebar')).toMatch(/border-right:1px solid var\(--border\)/);
@@ -133,6 +133,8 @@ describe('the shell grounds', () => {
     const light = STYLES.slice(STYLES.indexOf(':root{'), STYLES.indexOf('}', STYLES.indexOf(':root{')));
     const dark = STYLES.slice(STYLES.indexOf(':root[data-theme="dark"]{'), STYLES.indexOf('}', STYLES.indexOf(':root[data-theme="dark"]{')));
     for (const block of [light, dark]) expect(value(block, '--page-bg')).not.toBe(value(block, '--surface'));
+    // The sidebar's hover and its active card stand apart from its grey ground.
+    for (const block of [light, dark]) for (const name of ['--side-hover', '--side-on']) expect(value(block, name)).not.toBe(value(block, '--bg-subtle'));
   });
 });
 

@@ -51,14 +51,13 @@ describe('workspaceNav without declared workspaces', () => {
 });
 
 describe('the Workspace switcher', () => {
-  it('opens a card below the top bar button, moves between tiles with the arrow keys, closes on Esc and opens a workspace', async () => {
+  it('opens a card below the sidebar\'s switcher, moves between tiles with the arrow keys, closes on Esc and opens a workspace', async () => {
     const { host } = start(routes(), '/app/customer');
     await until(() => expect(host.querySelector('.app-switch .as-text b')).not.toBeNull());
     const button = host.querySelector<HTMLElement>('.app-switch')!;
-    // In the top bar, after the brand and the pipe; the sidebar's copy is in its head, shown only as a drawer.
-    expect(button.parentElement!.matches('.topbar > .top-left')).toBe(true);
-    expect(button.previousElementSibling!.classList.contains('top-pipe')).toBe(true);
-    expect(host.querySelector('.sidebar .app-switch')!.parentElement!.classList.contains('side-head')).toBe(true);
+    // At the top of the sidebar, above Home and the sections; the top bar keeps only the brand.
+    expect(button.parentElement!.matches('.sidebar > .side-head')).toBe(true);
+    expect(host.querySelector('.topbar .app-switch')).toBeNull();
     expect(text(button.querySelector('.as-text b'))).toBe('Sales');
     expect(button.getAttribute('aria-label')).toBe('Workspace: Sales');
     expect(button.getAttribute('aria-haspopup')).toBe('menu');
@@ -146,8 +145,8 @@ describe('the workspace sidebar', () => {
     await until(() => expect(host.querySelector('.nav-sc.active')).not.toBeNull());
     const marked = () => [...host.querySelectorAll('.nav-sec.on')].map(group => text(group.querySelector('.nav-sec-h .lbl')));
     expect(marked()).toEqual(['Records']);
-    // Each title counts its shortcuts, from the sidebar itself, with no request of its own.
-    expect([...host.querySelectorAll('.nav-sec-h')].map(head => text(head.querySelector('.count')))).toEqual(['1', '2', '2']);
+    // Parents show no count of their own.
+    expect(host.querySelector('.nav-sec-h .count')).toBeNull();
     // Closing the section keeps its mark, so the person still sees where they are.
     const records = byText(host, '.nav-sec', /^Records/)!;
     click(records.querySelector('.nav-sec-h'));
@@ -204,6 +203,9 @@ describe('the Explorer', () => {
     expect(host.querySelector('.topbar .ts-explorer, .topbar [aria-label="Explorer"]')).toBeNull();
     click(host.querySelector('.top-search .ts-search'));
     await until(() => expect(document.querySelector('.palette .pal-ex')).not.toBeNull());
+    // Off a Mac the footer names Ctrl+K, as the search button does.
+    expect(text(document.querySelector('.palette .pal-foot'))).toContain('Ctrl+K Toggle');
+    expect(text(document.querySelector('.palette .pal-foot'))).not.toContain('⌘');
     click(document.querySelector('.palette .pal-ex'));
     await until(() => expect(text(host.querySelector('.ev-explorer .ph h1'))).toBe('Explorer'));
     expect(location.search).toBe('?explorer=reports');

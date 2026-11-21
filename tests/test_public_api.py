@@ -27,7 +27,7 @@ SESSION = ("aggregate", "count", "create", "delete", "get", "insert_many", "list
 CONTEXT = ("session", "move")
 
 # Methods and decorators apps call on exported names, beyond their constructors.
-MEMBERS = {"Model": ("to_dict",), "Child": ("to_dict",), "Prompt": ("load", "submit"), "State": ("Step", "Rule", "Level", "Remark"), "state": ("exit",)}
+MEMBERS = {"Model": ("to_dict",), "Child": ("to_dict",), "Prompt": ("load", "submit"), "State": ("Step", "Move", "Rule", "Level", "Remark"), "state": ("exit",)}
 
 
 def signature(value):

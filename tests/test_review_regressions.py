@@ -10,7 +10,7 @@ import pytest
 
 from evlet import Application, Database, Integer, Model, Registry, Text, ValidationError, validate
 from evlet.auth import AccessError, password_hash
-from test_business import PASSWORD, client, hashed, http, secured
+from support import PASSWORD, client, http
 from test_jobs import queue, raw, submit
 
 
@@ -120,6 +120,10 @@ def test_password_hash_capacity_rejects_excess_work_and_recovers(monkeypatch):
         assert release.wait(3)
         return b'x' * 64
     monkeypatch.setattr(module.hashlib, 'scrypt', hashing)
+    # Two slots, and a request waits briefly behind at most one other before it is refused.
+    monkeypatch.setattr(module, '_HASH_SLOTS', threading.BoundedSemaphore(2))
+    monkeypatch.setattr(module, 'HASH_WAIT', .1)
+    monkeypatch.setattr(module, 'HASH_QUEUE', 1)
     with ThreadPoolExecutor(max_workers=2) as pool:
         pending = [pool.submit(password_hash, PASSWORD) for _ in range(2)]
         entered.wait(3)
@@ -232,21 +236,51 @@ def test_mapped_ipv4_and_loopback_clients_do_not_share_one_throttle_key(secured)
     assert client_network('not an address') == client_network(None) == 'unknown'
 
 
-def test_busy_password_service_does_not_consume_sign_in_attempts(secured, monkeypatch):
+def test_busy_password_service_charges_the_network_but_not_the_account(secured, monkeypatch):
+    import hashlib
     import evlet.auth as module
     auth = secured.business.auth
     busy = threading.BoundedSemaphore(1)
     assert busy.acquire(blocking=False)
     monkeypatch.setattr(module, '_HASH_SLOTS', busy)
+    monkeypatch.setattr(module, 'HASH_WAIT', .01)
     scope = {'client': ('203.0.113.9', 1), 'headers': []}
     for _ in range(12):
         with pytest.raises(AccessError) as failure:
             auth.login(scope, {'username': 'admin', 'password': PASSWORD})
         assert failure.value.status == 503
+    # Holding the slots is not free: each refusal cost the network an attempt, but the person keeps theirs.
+    network, pair, account = auth._limit_keys('203.0.113.9', 'admin')[:3]
     with secured.database._connection() as connection:
-        assert connection.execute('SELECT count(*) FROM evlet_login_limits').fetchone()[0] == 0
+        assert [auth._attempts(connection, key) for key in (network, pair, account)] == [12, 0, 0]
+    assert network == hashlib.sha256(b'network:203.0.113.9').hexdigest()
     busy.release()
     assert auth.login(scope, {'username': 'admin', 'password': PASSWORD})[0]['user']['username'] == 'admin'
     with pytest.raises(AccessError) as failure:
         auth.login(scope, {'username': 'admin', 'password': 'wrong'})
     assert failure.value.status == 401
+
+
+def test_successful_sign_ins_do_not_count_toward_the_network_limit(secured):
+    import hashlib
+    auth = secured.business.auth
+    scope = {'client': ('198.51.100.40', 1), 'headers': []}
+    network = hashlib.sha256(b'network:198.51.100.40').hexdigest()
+    # An office behind one address: the network is one attempt from its ceiling, yet correct passwords keep working.
+    from evlet import qb
+    with secured.database.transaction(store='sessions') as tx:
+        tx.connection.run(qb.insert('evlet_login_limits', client=network, attempts=99, resets=int(time.time()) + 900))
+    for name in ('admin', 'editor', 'viewer', 'admin'):
+        assert auth.login(scope, {'username': name, 'password': PASSWORD})[0]['user']['username'] == name
+
+    def attempts():
+        with secured.database.transaction(store='sessions') as tx:
+            return tx.connection.run(qb.select('evlet_login_limits', 'attempts').where(client=network)).one()['attempts']
+    assert attempts() == 99
+    # Failures still count, and at the ceiling everyone on the network waits.
+    with pytest.raises(AccessError) as failure:
+        auth.login(scope, {'username': 'viewer', 'password': 'wrong'})
+    assert failure.value.status == 401 and attempts() == 100
+    with pytest.raises(AccessError) as failure:
+        auth.login(scope, {'username': 'editor', 'password': PASSWORD})
+    assert failure.value.status == 429

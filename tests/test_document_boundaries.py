@@ -7,7 +7,7 @@ from evlet import (Application, Database, LocalAuth, Registry, Model, Text, Curr
                    Task, JobQueue, validate)
 from evlet.auth import AccessError
 from evlet.identity import RecordId
-from test_business import http, client, PASSWORD
+from support import http, client, PASSWORD
 
 ALL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 

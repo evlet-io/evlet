@@ -1,8 +1,10 @@
 # API surface and period lock
 
+> Archived: a completed or superseded plan, kept for history. It may describe code that has since changed; the current documentation is in `docs/`.
+
 Status: built on 04-11-2026. The public descriptions are in
-[model-engine.md](../model-engine.md#how-much-of-a-model-callers-reach), [effects.md](../effects.md#closed-periods)
-and [controls.md](../controls.md#periods).
+[model-engine.md](../../model-engine.md#how-much-of-a-model-callers-reach), [effects.md](../../effects.md#closed-periods)
+and [controls.md](../../controls.md#periods).
 
 Two generic model options for apps that keep records only their own code may change, such as a
 ledger written by a posting function, and records that must not change once a period is filed.

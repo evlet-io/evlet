@@ -22,8 +22,11 @@ def _instance(root, name):
     return path, data
 
 
-def backup(root, name, directory=None):
-    """Write the instance's four SQLite files as one set into data/backups (or directory). Returns their paths."""
+def backup(root, name, directory=None, *, with_files=False):
+    """Write the instance's four SQLite files as one set into data/backups (or directory). Returns their paths.
+
+    with_files=True also writes `<time>-files.tar.gz`, the instance's files/ folder (uploaded attachments), as the
+    last path. secret.key is never included: keep it apart from the database copies (docs/cli.md#back-up-and-restore)."""
     path, data = _instance(root, name)
     main = data / 'database.sqlite3'
     if not main.is_file():
@@ -31,12 +34,28 @@ def backup(root, name, directory=None):
     target_dir = Path(directory) if directory else data / 'backups'
     target_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     size = sum(item.stat().st_size for item in files(main) if item.exists())
-    require_space(target_dir, size + 16 * 2**20, 'write the backup')
     target = target_dir / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.sqlite3')
+    if with_files:
+        size += sum(item.stat().st_size for item in (path / 'files').rglob('*') if item.is_file() and not item.is_symlink())
+    require_space(target_dir, size + 16 * 2**20, 'write the backup')
     with instance_guard(path, serving=True):
         if (path / '.install-journal.json').exists():
             raise ValueError('Interrupted installation needs recovery before making a backup')
-        return copy_set(main, target)
+        written = copy_set(main, target)
+        if with_files:
+            written = [*written, _files_archive(path / 'files', target.with_name(target.stem + '-files.tar.gz'))]
+        return written
+
+
+def _files_archive(folder, archive):
+    """A gzip tar of the instance's files/ folder, readable by its owner only. Symbolic links are left out."""
+    import os
+    import tarfile
+    fd = os.open(archive, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'wb') as raw, tarfile.open(fileobj=raw, mode='w:gz') as tar:
+        if folder.is_dir() and not folder.is_symlink():
+            tar.add(folder, arcname='files', filter=lambda info: None if info.issym() or info.islnk() else info)
+    return archive
 
 
 def _safety_copy(main, backups):

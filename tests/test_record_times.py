@@ -10,7 +10,7 @@ from evlet import audit
 from evlet.auth import User
 from evlet.framework import upgrade
 from evlet.identity import RecordId
-from test_business import client
+from support import client
 from test_rules_types import ALL, add_user, start
 import test_release_postings as books_module
 import test_activity as activity_module
@@ -86,7 +86,8 @@ def test_discovery_describes_audit_so_tool_clients_validate_it(app):
 def test_the_columns_are_not_fields_and_cannot_be_written(app):
     c = client(app)
     assert all(column not in Note.__fields__ for column in audit.COLUMNS)
-    assert c('POST', '/api/note', {'title': 'x', 'evlet_created_by': 7})[:2] == (403, {'error': 'One or more fields cannot be written'})
+    assert c('POST', '/api/note', {'title': 'x', 'evlet_created_by': 7})[:2] == (
+        403, {'error': 'Unknown field or not yours to write: evlet_created_by'})
     with pytest.raises(Exception, match='Unknown field'):
         with app.database.transaction() as tx:
             tx.create(Note, title='x', evlet_created_by=7)

@@ -5,7 +5,7 @@
 import { html, match, when, type Child } from '../dom';
 import { ApiError, ValidationError, type ApiClient, type User } from '../api';
 import { cell, derive, getOwner, onCleanup, runWithOwner, untrack, type Cell } from '../reactive';
-import { formatDate, formatDateTime, setRegion, type DateFormat, type NumberFormat } from '../model/format';
+import { formatDate, formatDateTime, setRegion, type DateFormat, type NumberFormat, type WeekStart } from '../model/format';
 import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Checkbox, Icon, Switch } from '../ui/base';
 import { DialogFooter, copyText, openModal, toast } from '../ui/layers';
@@ -90,11 +90,17 @@ export async function loadMe(api: ApiClient): Promise<Me | null> {
  * person (signed out) the theme stays as it is, so the sign-in page keeps this device's theme. */
 export function applyMe(me: Me | null) {
   if (me) applyTheme(me.prefs.theme);
-  setRegion(me ? { date: me.prefs.date, number: me.prefs.num, zone: me.prefs.tz } : {});
-  const root = document.documentElement;
-  root.lang = me?.prefs.lang ?? 'en';
-  if (me?.prefs.lang === 'ar') root.dir = 'rtl'; else root.removeAttribute('dir');
+  setRegion(me ? { date: me.prefs.date, number: me.prefs.num, zone: me.prefs.tz, week: me.prefs.week as WeekStart } : {});
+  // The page's language and direction follow the text actually shown: a language without a
+  // translation keeps English text, so the page stays lang="en", left to right (no Arabic voice or
+  // mirrored layout over English words). The saved choice applies once its translation ships.
+  const root = document.documentElement, lang = me?.prefs.lang ?? 'en';
+  root.lang = TRANSLATED.has(lang) ? lang : 'en';
+  if (root.lang === 'ar') root.dir = 'rtl'; else root.removeAttribute('dir');
 }
+
+/** Languages the interface text is translated into. */
+const TRANSLATED = new Set(['en']);
 
 export const displayName = (me: Me | null, fallback: string) => me?.profile.short_name || me?.profile.full_name || fallback;
 export const photoUrl = (version: number) => `/api/_settings/me/photo?v=${version}`;
@@ -120,7 +126,7 @@ export async function chooseTheme(api: ApiClient, me: Cell<Me | null>, theme: Th
 }
 
 const fail = (failure: unknown, fallback = 'That did not save. Try again.') =>
-  toast(failure instanceof ValidationError ? Object.values(failure.fields ?? {})[0] ?? failure.message : failure instanceof ApiError ? failure.message : fallback, { icon: 'info' });
+  toast(failure instanceof ValidationError ? Object.values(failure.fields ?? {})[0] ?? failure.message : failure instanceof ApiError ? failure.message : fallback, { tone: 'error' });
 
 // ---------- layout pieces ----------
 
@@ -274,8 +280,8 @@ function ProfilePage(ctx: SettingsContext): Node {
     const file = (event.target as HTMLInputElement).files?.[0];
     (event.target as HTMLInputElement).value = '';
     if (!file) return;
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { toast('Use a PNG, JPG or WebP image.', { icon: 'info' }); return; }
-    if (file.size > 2 * 1024 * 1024) { toast('That photo is over 2 MB. Choose a smaller one.', { icon: 'info' }); return; }
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) { toast('Use a PNG, JPG or WebP image.', { tone: 'info' }); return; }
+    if (file.size > 2 * 1024 * 1024) { toast('That photo is over 2 MB. Choose a smaller one.', { tone: 'info' }); return; }
     const reader = new FileReader();
     reader.onload = async () => {
       try {
@@ -343,7 +349,7 @@ function administratorEmail(ctx: SettingsContext) {
 
 function changeEmail(ctx: SettingsContext) {
   if (ctx.me.peek().builtin) { administratorEmail(ctx); return; }
-  if (!ctx.me.peek().development) { toast("Email is not set up yet, so your address can't be changed here. Ask your admin.", { icon: 'info' }); return; }
+  if (!ctx.me.peek().development) { toast("Email is not set up yet, so your address can't be changed here. Ask your admin.", { tone: 'info' }); return; }
   const value = cell('');
   confirmIdentity<{ sent: string; link?: string }>(ctx, { title: 'Change your email', icon: 'mail', yes: 'Send link', path: '/api/_settings/me/email',
     before: error => html`<div class="set-field"><label for="ce">New email</label><input class="input" id="ce" type="email" prop:value=${value}
@@ -401,8 +407,8 @@ function showLink(link: string) {
 function AppearancePage(ctx: SettingsContext): Node {
   const prefs = derive(() => ctx.me.get().prefs);
   const set = (key: keyof Me['prefs'], value: unknown) => {
-    if (key === 'lang' && value === 'ar') toast('Arabic is in beta. The layout switches to right-to-left.');
-    void savePrefs(ctx, { [key]: value }, key === 'lang' && value === 'ar');
+    if (key === 'lang' && !TRANSLATED.has(String(value))) toast('Arabic is not translated yet. The interface stays in English until it is.', { tone: 'info', icon: 'info' });
+    void savePrefs(ctx, { [key]: value }, key === 'lang' && !TRANSLATED.has(String(value)));
     if (key === 'lang') ctx.changed();
   };
   const today = new Date().toISOString().slice(0, 10);
@@ -428,7 +434,7 @@ function AppearancePage(ctx: SettingsContext): Node {
     ])}
     ${PwaSettings()}
     ${section('Language and region', '', [
-      row('Language', 'Arabic switches the layout to right-to-left.', select(prefs.peek().lang, [['en', 'English'], ['ar', 'العربية (Arabic)']], value => set('lang', value), 'Language')),
+      row('Language', 'Arabic is not translated yet: the interface stays in English, left to right.', select(prefs.peek().lang, [['en', 'English'], ['ar', 'العربية (Arabic, not yet translated)']], value => set('lang', value), 'Language')),
       row('Time zone', '', select(prefs.peek().tz, ZONES.some(([zone]) => zone === prefs.peek().tz) ? ZONES : [...ZONES, [prefs.peek().tz, prefs.peek().tz]], value => set('tz', value), 'Time zone')),
       row('Date format', html`Today shows as <strong>${() => { prefs.get(); return formatDate(today); }}</strong>`,
         select(prefs.peek().date, (['d MMM yyyy', 'dd-MM-yyyy', 'yyyy-MM-dd', 'MM/dd/yyyy'] as DateFormat[]).map(format => [format, sample(format)]), value => set('date', value), 'Date format')),
@@ -769,7 +775,7 @@ function Control(field: AppField, value: () => unknown, change: (value: unknown)
       aria-pressed=${() => String(chosen().includes(item))} disabled=${readOnly} on:click=${() => {
         if (readOnly) return;
         const next = (field.choices ?? []).filter(each => each === item ? !chosen().includes(each) : chosen().includes(each));
-        if (!next.length) { toast('Choose at least one', { icon: 'info' }); return; }
+        if (!next.length) { toast('Choose at least one', { tone: 'info' }); return; }
         change(next);
       }}>${() => chosen().includes(item) ? Icon('check', { size: 'xs' }) : null}${humanize(item)}</button>`)}</div>`;
   }
@@ -781,7 +787,7 @@ function Control(field: AppField, value: () => unknown, change: (value: unknown)
       try { change(kind.parse ? kind.parse(target.value, field) : target.value); }
       catch (error) {
         if (!(error instanceof InputError)) throw error;
-        toast(error.message, { icon: 'info' });
+        toast(error.message, { tone: 'error' });
         target.value = (kind.edit ?? kind.format)(untrack(value), field);
       }
     }}>` as HTMLInputElement;

@@ -9,6 +9,7 @@ import { toast } from '../ui/layers';
 import { Callout, Head, plural, type ControlsContext } from './app';
 import type { EvaConfig, EvaUsage } from './client';
 import { idOf } from './drafts';
+import { settingKit } from '../ui/settings-helpers';
 import { message } from './people';
 
 const GROUPS: Array<[string, string, string]> = [
@@ -21,15 +22,11 @@ const GROUPS: Array<[string, string, string]> = [
 export function EvaSettingsPage(ctx: ControlsContext): HTMLElement {
   const { drafts } = ctx;
   const config = cell<EvaConfig | null>(null);
-  void ctx.api.evaConfig().then(value => config.set(value), failure => toast(message(failure), { icon: 'info' }));
+  void ctx.api.evaConfig().then(value => config.set(value), failure => toast(message(failure), { tone: 'error' }));
   const id = (key: string) => idOf('setting', `eva.${key}`);
   const get = <T>(key: string) => drafts.value<T>(id(key));
   const set = (key: string, value: unknown) => drafts.set(id(key), value);
-  const mark = (key: string) => () => drafts.overridden(id(key)) ? html`<span class="ctl-tag">Changed</span>${IconButton({ icon: 'rotate-ccw', size: 'small',
-    tip: 'Reset to the file value', onClick: () => drafts.reset(id(key)) })}` : null;
-  const error = (key: string) => when(() => drafts.errors.get().has(id(key)), () => html`<span class="ctl-err">${() => drafts.errors.get().get(id(key))}</span>`);
-  const row = (key: string | null, title: string, text: Child, control: Child) => html`<div class="ctl-setrow"><div class="grow">
-    <strong>${title} ${key ? mark(key) : null}</strong><p>${text}</p>${key ? error(key) : null}</div><div class="ctl-setctl">${control}</div></div>`;
+  const { row, mark, error } = settingKit(drafts, id);
   const on = () => get<boolean>('enabled');
   type Limit = { amount: string | number | null; unit: 'aed' | 'tokens' | 'requests'; period: 'day' | 'week' | 'month' };
   const limit = (key: 'instance_limit' | 'user_limit', label: string) => {

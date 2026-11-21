@@ -363,7 +363,7 @@ def migration_plan(definitions, database):
     return tuple(available[key] for key in (*existing, *(key for key in available if key not in existing)))
 
 
-def build_instance(config, path, packages, *, port=8000, database_path=None, storage_path=None):
+def build_instance(config, path, packages, *, port=8000, database_path=None, storage_path=None, development=False):
     from .builds import prepare
     pinned, manifest = prepare(path.parent.parent, packages)
     definitions = load_definitions(pinned, modules=manifest['modules'])
@@ -375,7 +375,10 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     database = Database(database_path, registry, migrations=migrations)
     routes = resolve_routes(definitions, config, read_routes(path), port=port, roots={package.name: package.source_root for package in pinned})
     secure = routes.primary is not None
-    auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=secure, allow_setup=not secure,
+    # A public instance's cookies carry the __Host- prefix, so a sibling subdomain cannot set or shadow them.
+    # Browsers holding a session under the plain name from an earlier release sign in again once.
+    auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=secure, allow_setup=development and not secure,
+                     cookie_name='__Host-evlet_session' if secure else 'evlet_session',
                      trusted_proxies=config.trusted_proxies, security=config.security,
                      **({'oidc': config.oidc} if config.oidc is not None else {}))
     rules, schedules, roles = {}, [], {role: role for role in ('admin', 'editor', 'viewer', 'portal')}
@@ -546,7 +549,7 @@ def load_runtime(root, name, *, port=8000, development=False, public=False):
         expected = portable_lock_entry(package.name, locked['apps'][package.name])
         if current != expected and (not development or any(current[key] != expected[key] for key in ('version', 'source', 'commit'))):
             raise ValueError(f'{package.name} differs from apps.lock; stop serving and run evlet migrate {name}')
-    app, _ = build_instance(config, path, packages, port=port)
+    app, _ = build_instance(config, path, packages, port=port, development=development)
     if development and app.routes.primary:
         raise ValueError('Development serving requires a local instance and loopback host')
     if public and not app.routes.primary:

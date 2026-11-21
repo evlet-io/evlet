@@ -12,7 +12,7 @@ from evlet.identity import RecordId
 from evlet.tenancy import dns_txt, hostname
 from examples.playground.manage import provision
 from examples.playground.tenants import tenant_app
-from tests.test_business import http, PASSWORD, hashed
+from tests.support import http, PASSWORD
 
 
 @pytest.fixture

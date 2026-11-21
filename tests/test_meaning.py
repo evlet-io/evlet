@@ -7,7 +7,7 @@ import pytest
 
 from evlet import (Application, Attachments, Child, ChildTable, Currency, Database, Date, Integer, Link, LocalAuth, LongText,
                    Model, Registry, Related, Rule, Table, Text)
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 from test_rules_types import ALL, add_user
 
 
@@ -122,8 +122,9 @@ def test_related_can_hide_a_discovered_relation():
     ({'relations': (Related('note', 'owner'), Related('note', 'owner', label='Again'))}, 'declared twice'),
     ({'relations': (Related('note', 'owner', order='missing'),)}, 'stored fields'),
     ({'attachments': (1, 2)}, 'Attachments'),
-    ({'unknown': 1}, 'Model.Meta supports'),
-    ({'open_in': 'drawer'}, 'open_in must be "page" or "panel"'),
+    ({'unknown': 1}, 'Owner.Meta.unknown is not a Meta option'),
+    ({'open_ins': 'page'}, 'did you mean open_in?'),
+    ({'open_in': 'drawer'}, 'Owner.Meta.open_in must be "page" or "panel", not'),
 ])
 def test_meaning_metadata_is_validated_at_registration(meta, message):
     class Row(Child):

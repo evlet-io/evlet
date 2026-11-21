@@ -899,6 +899,7 @@
      "title_field": "place"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -906,10 +907,13 @@
      "app": "app",
      "groups": [
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:shipment",
          "kind": "model",
          "label": "Shipments",
@@ -918,13 +922,18 @@
         }
        ],
        "key": "documents",
-       "label": "Documents"
+       "label": "Documents",
+       "link": false,
+       "section": null
       },
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:parcel",
          "kind": "model",
          "label": "Parcels",
@@ -933,9 +942,12 @@
         }
        ],
        "key": "records",
-       "label": "Records"
+       "label": "Records",
+       "link": false,
+       "section": null
       }
      ],
+     "home": null,
      "icon": "layers",
      "key": "app",
      "label": "Evlet",
@@ -2702,6 +2714,7 @@
      "title_field": "note"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -2709,10 +2722,13 @@
      "app": "app",
      "groups": [
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:site",
          "kind": "model",
          "label": "Sites",
@@ -2721,13 +2737,18 @@
         }
        ],
        "key": "documents",
-       "label": "Documents"
+       "label": "Documents",
+       "link": false,
+       "section": null
       },
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:job",
          "kind": "model",
          "label": "Jobs",
@@ -2736,9 +2757,12 @@
         }
        ],
        "key": "records",
-       "label": "Records"
+       "label": "Records",
+       "link": false,
+       "section": null
       }
      ],
+     "home": null,
      "icon": "layers",
      "key": "app",
      "label": "Evlet",
@@ -3568,6 +3592,7 @@
      "title_field": "title"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -3575,10 +3600,13 @@
      "app": "app",
      "groups": [
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:account",
          "kind": "model",
          "label": "Accounts",
@@ -3587,9 +3615,12 @@
         }
        ],
        "key": "records",
-       "label": "Records"
+       "label": "Records",
+       "link": false,
+       "section": null
       }
      ],
+     "home": null,
      "icon": "layers",
      "key": "app",
      "label": "Evlet",
@@ -4281,6 +4312,7 @@
      "sources": {}
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -4288,10 +4320,13 @@
      "app": "app",
      "groups": [
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:customer",
          "kind": "model",
          "label": "Customers",
@@ -4300,18 +4335,23 @@
         }
        ],
        "key": "records",
-       "label": "Records"
+       "label": "Records",
+       "link": false,
+       "section": null
       },
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "icon": null,
          "key": "report:CustomerRates",
          "kind": "report",
          "label": "Customer rates",
          "report": "CustomerRates"
         },
         {
+         "icon": null,
          "key": "report:RatesByTerms",
          "kind": "report",
          "label": "Rates by terms",
@@ -4319,9 +4359,12 @@
         }
        ],
        "key": "reports",
-       "label": "Reports"
+       "label": "Reports",
+       "link": false,
+       "section": null
       }
      ],
+     "home": null,
      "icon": "layers",
      "key": "app",
      "label": "Evlet",
@@ -6677,6 +6720,7 @@
      "title_field": "id"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -6684,10 +6728,13 @@
      "app": "app",
      "groups": [
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:order",
          "kind": "model",
          "label": "Orders",
@@ -6696,13 +6743,18 @@
         }
        ],
        "key": "documents",
-       "label": "Documents"
+       "label": "Documents",
+       "link": false,
+       "section": null
       },
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:customer",
          "kind": "model",
          "label": "Customers",
@@ -6710,7 +6762,9 @@
          "view": "list"
         },
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:product",
          "kind": "model",
          "label": "Products",
@@ -6718,7 +6772,9 @@
          "view": "list"
         },
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:contact",
          "kind": "model",
          "label": "Contacts",
@@ -6726,7 +6782,9 @@
          "view": "list"
         },
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:quote",
          "kind": "model",
          "label": "Quotes",
@@ -6735,9 +6793,12 @@
         }
        ],
        "key": "records",
-       "label": "Records"
+       "label": "Records",
+       "link": false,
+       "section": null
       }
      ],
+     "home": null,
      "icon": "layers",
      "key": "app",
      "label": "Evlet",
@@ -9165,6 +9226,7 @@
      "title_field": "item"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -9172,10 +9234,13 @@
      "app": "app",
      "groups": [
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:bill",
          "kind": "model",
          "label": "Bills",
@@ -9184,9 +9249,12 @@
         }
        ],
        "key": "documents",
-       "label": "Documents"
+       "label": "Documents",
+       "link": false,
+       "section": null
       }
      ],
+     "home": null,
      "icon": "layers",
      "key": "app",
      "label": "Evlet",
@@ -11432,6 +11500,7 @@
      "title_field": "id"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -11439,10 +11508,13 @@
      "app": "app",
      "groups": [
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:order",
          "kind": "model",
          "label": "Orders",
@@ -11451,13 +11523,18 @@
         }
        ],
        "key": "documents",
-       "label": "Documents"
+       "label": "Documents",
+       "link": false,
+       "section": null
       },
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:customer",
          "kind": "model",
          "label": "Customers",
@@ -11465,7 +11542,9 @@
          "view": "list"
         },
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:product",
          "kind": "model",
          "label": "Products",
@@ -11473,7 +11552,9 @@
          "view": "list"
         },
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:contact",
          "kind": "model",
          "label": "Contacts",
@@ -11481,7 +11562,9 @@
          "view": "list"
         },
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:quote",
          "kind": "model",
          "label": "Quotes",
@@ -11490,9 +11573,12 @@
         }
        ],
        "key": "records",
-       "label": "Records"
+       "label": "Records",
+       "link": false,
+       "section": null
       }
      ],
+     "home": null,
      "icon": "layers",
      "key": "app",
      "label": "Evlet",
@@ -12707,6 +12793,7 @@
      "title_field": "tool"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -12714,10 +12801,13 @@
      "app": "app",
      "groups": [
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:crew",
          "kind": "model",
          "label": "Crews",
@@ -12726,13 +12816,18 @@
         }
        ],
        "key": "documents",
-       "label": "Documents"
+       "label": "Documents",
+       "link": false,
+       "section": null
       },
       {
+       "color": null,
        "icon": null,
        "items": [
         {
+         "badge": false,
          "filters": null,
+         "icon": null,
          "key": "model:crewvisit",
          "kind": "model",
          "label": "Crew visits",
@@ -12741,9 +12836,12 @@
         }
        ],
        "key": "records",
-       "label": "Records"
+       "label": "Records",
+       "link": false,
+       "section": null
       }
      ],
+     "home": null,
      "icon": "layers",
      "key": "app",
      "label": "Evlet",

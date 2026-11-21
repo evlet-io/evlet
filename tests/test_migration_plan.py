@@ -136,7 +136,7 @@ def test_plan_names_each_difference_writes_nothing_and_its_suggestion_migrates(p
     assert database_bytes(project) == before
 
     main(['migrate', 'acme', '--trust'])
-    assert 'app6_people__0001_dependents' in capsys.readouterr().out
+    assert 'Applied migrations: people 0001_dependents' in capsys.readouterr().out
     main(['migrate', 'acme', '--plan', '--trust'])
     assert 'The migrations produce the current models.' in capsys.readouterr().out
 
@@ -538,7 +538,7 @@ def test_cli_migrate_allow_destructive_keeps_a_backup(project, capsys):
     assert '--allow-destructive' in capsys.readouterr().err
     main(['migrate', 'acme', '--trust', '--allow-destructive'])
     output = capsys.readouterr().out
-    assert 'app6_people__0002_drop_reason' in output and 'Backup: ' in output
+    assert 'Applied migrations: people 0002_drop_reason' in output and 'Backup: ' in output
     backup = output.split('Backup: ')[1].strip()
     with sqlite3.connect(backup) as connection:
         assert connection.execute('SELECT reason FROM leaveapplication').fetchall() == [('Annual',)]
@@ -842,6 +842,63 @@ def test_drop_index_by_old_names_after_a_rename_drops_the_database_index(tmp_pat
         assert Database(path, target).plan(migrations).text().endswith('The migrations produce the current models.')
         database.create(target.models['party'], role_kind='customer', record_id=1)
         database.create(target.models['party'], role_kind='customer', record_id=1)
+
+
+def test_drop_index_by_its_first_names_after_a_rename_and_a_new_field_under_the_old_name(tmp_path):
+    """0001 made a unique (kind, record_id) index; 0002 renamed kind to role_kind and added a new kind field; 0003
+    drops the index by the names it had when 0001 made it. kind now names the new field, which no index covers, so
+    the DropIndex matches the renamed entry: an instance created at 0001 migrates, its database index is gone and the
+    plan reports no drift. An index made later on the new field's names is still the one a DropIndex by them drops."""
+    from evlet import AddField, AddIndex, DropIndex, RenameField
+
+    def party_model(indexed, *fields):
+        attributes = {'__module__': __name__, 'title': Text(max_length=120), 'record_id': Integer(),
+                      **{name: Text(max_length=20) for name in fields}}
+        if indexed:
+            attributes['Meta'] = type('Meta', (), {'indexes': [(indexed, {'unique': True})]})
+        return type('Party', (Model,), attributes)
+
+    first = Migration('0001_initial', CreateModel(party_model(('kind', 'record_id'), 'kind')))
+    reshaped = Migration('0002_reshape', RenameField('party', 'kind', 'role_kind'),
+                         AddField('party', 'kind', Text(max_length=20)))
+    dropped = Migration('0003_drop', DropIndex('party', ('kind', 'record_id'), unique=True))
+    target = Registry(party_model(None, 'role_kind', 'kind'))
+    migrations = [first, reshaped, dropped]
+    path = tmp_path / 'fresh.sqlite3'
+    Database(path, Registry(party_model(('kind', 'record_id'), 'kind')), migrations=[first]).migrate([first])
+    plan = Database(path, target).plan(migrations)
+    assert plan.text().endswith('The migrations produce the current models.')
+    assert Database(path, target).migrate(migrations) == ['0002_reshape', '0003_drop']
+    database = Database(path, target, migrations=migrations)
+    database.initialize()
+    assert index_shape(database, 'party') == []
+    with sqlite3.connect(path) as connection:
+        assert not connection.execute("SELECT name FROM sqlite_master WHERE type = 'index' AND sql LIKE '%record_id%'").fetchall()
+    database.create(target.models['party'], role_kind='customer', record_id=1)
+    database.create(target.models['party'], role_kind='customer', record_id=1)
+
+    # The same with 0002 applied in an earlier upgrade: the rename comes from the applied migrations.
+    stepwise = tmp_path / 'stepwise.sqlite3'
+    Database(stepwise, Registry(party_model(('kind', 'record_id'), 'kind')), migrations=[first]).migrate([first])
+    Database(stepwise, Registry(party_model(('role_kind', 'record_id'), 'role_kind', 'kind'))).migrate([first, reshaped])
+    assert Database(stepwise, target).migrate(migrations) == ['0003_drop']
+    database = Database(stepwise, target, migrations=migrations)
+    database.initialize()
+    assert index_shape(database, 'party') == []
+    assert Database(stepwise, target).plan(migrations).text().endswith('The migrations produce the current models.')
+
+    # An index on the new field's names wins over the renamed one: the DropIndex drops the index it names now.
+    both = party_model(None, 'role_kind', 'kind')
+    both.Meta = type('Meta', (), {'indexes': [(('role_kind', 'record_id'), {'unique': True})]})
+    later = [first, reshaped, Migration('0003_new', AddIndex('party', ('kind', 'record_id'), unique=True)),
+             Migration('0004_drop', DropIndex('party', ('kind', 'record_id'), unique=True))]
+    other = tmp_path / 'later.sqlite3'
+    Database(other, Registry(party_model(('kind', 'record_id'), 'kind')), migrations=[first]).migrate([first])
+    kept = Registry(party_model(('role_kind', 'record_id'), 'role_kind', 'kind'))
+    assert Database(other, kept).migrate(later) == ['0002_reshape', '0003_new', '0004_drop']
+    database = Database(other, kept, migrations=later)
+    database.initialize()
+    assert index_shape(database, 'party') == [(('role_kind', 'record_id'), True)]
 
 
 def test_drop_field_takes_its_composite_index_out_of_the_plan(tmp_path):

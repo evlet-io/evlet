@@ -4,11 +4,11 @@
 // picking easier: values keep the wire format and the server checks them again.
 //
 // Dates are ISO days (YYYY-MM-DD) in the person's zone, shown in their date format
-// (DD-MM-YYYY by default). Weeks start on Monday, as in the UAE.
+// (DD-MM-YYYY by default). Weeks start on the person's chosen day (Monday by default, as in the UAE).
 
 import { html, when, type Child } from '../dom';
 import { cell, derive, untrack, type Cell } from '../reactive';
-import { formatDate, todayGst } from '../model/format';
+import { currentRegion, formatDate, todayDate } from '../model/format';
 import { parseDay } from './dateparse';
 import { Icon } from './base';
 import { read, uid } from './core';
@@ -36,7 +36,12 @@ export function addMonths(day: string, count: number): string {
 }
 /** 0 for Monday to 6 for Sunday. */
 const weekday = (day: string) => { const [year, month, date] = partsOf(day); return (new Date(Date.UTC(year, month - 1, date)).getUTCDay() + 6) % 7; };
-const startOfWeek = (day: string) => addDays(day, -weekday(day));
+/** The day the person's week starts on (Settings, Week starts on), as weekday() counts it. */
+const FIRST_DAY = { mon: 0, sun: 6, sat: 5 } as const;
+const firstDay = () => FIRST_DAY[currentRegion().week] ?? 0;
+/** The weekday names in the order the person's week runs. */
+const weekNames = () => { const first = firstDay(); return WEEKDAYS.map((_, index) => WEEKDAYS[(first + index) % 7]); };
+const startOfWeek = (day: string) => addDays(day, -((weekday(day) - firstDay() + 7) % 7));
 const startOfMonth = (day: string) => `${day.slice(0, 8)}01`;
 const endOfMonth = (day: string) => addDays(addMonths(startOfMonth(day), 1), -1);
 const longDay = (day: string) => { const [year, month, date] = partsOf(day); return `${WEEKDAYS[weekday(day)]}, ${date} ${MONTHS[month - 1]} ${year}`; };
@@ -279,7 +284,7 @@ export interface CalendarProps {
  * The title opens a month grid, and the month grid's title a grid of years.
  */
 export function Calendar(props: CalendarProps): HTMLElement {
-  const today = todayGst();
+  const today = todayDate();
   const focus = cell(untrack(props.value) ?? props.start ?? today, { name: 'calendar.focus' });
   const view = cell<'days' | 'months' | 'years'>('days');
   const month = derive(() => focus.get().slice(0, 7));
@@ -313,7 +318,7 @@ export function Calendar(props: CalendarProps): HTMLElement {
     };
     const isEnd = (day: string) => { const [from, to] = props.range?.() ?? [null, null]; return day === from || day === to; };
     return html`<div class="cal-grid" role="grid" id=${gridId} aria-label=${props.label ?? 'Choose a day'} on:keydown=${dayKeys}>
-      <div class="cal-row cal-head" role="row">${WEEKDAYS.map(name => html`<span role="columnheader" aria-label=${name}>${name.slice(0, 2)}</span>`)}</div>
+      <div class="cal-row cal-head" role="row">${weekNames().map(name => html`<span role="columnheader" aria-label=${name}>${name.slice(0, 2)}</span>`)}</div>
       ${weeks.map(week => html`<div class="cal-row" role="row">${week.map(day => html`<button type="button" role="gridcell" class="cal-day" data-day=${day}
         class:out=${!day.startsWith(month.peek())} class:today=${day === today} class:on=${() => props.value() === day || isEnd(day)} class:between=${() => inRange(day)}
         aria-selected=${() => String(props.value() === day || isEnd(day))} aria-current=${day === today ? 'date' : null} aria-label=${longDay(day)}
@@ -433,7 +438,7 @@ export interface DatePanelProps {
 /** A calendar with Today and Clear. Picking a day closes it (the control decides). */
 export function DatePanel(props: DatePanelProps): HTMLElement {
   return html`<div class="pick">${Calendar({ value: props.value, onPick: props.onPick, label: props.label })}
-    ${footer(textButton('Today', () => props.onPick(todayGst())), html`<span class="grow"></span>`,
+    ${footer(textButton('Today', () => props.onPick(todayDate())), html`<span class="grow"></span>`,
       props.clearable ? when(() => props.value() !== null, () => textButton('Clear', () => props.onPick(null))) : null)}</div>` as HTMLElement;
 }
 
@@ -444,7 +449,7 @@ export function DateTimePanel(props: { value: () => DateTimeValue | null; now: (
   onDone: () => void; clearable: boolean; label: string }): HTMLElement {
   const start = untrack(props.value);
   const day = cell<string | null>(start?.day ?? null), hours = cell(start?.hours ?? 9), minutes = cell(start?.minutes ?? 0);
-  const report = () => props.onChange({ day: day.peek() ?? todayGst(), hours: hours.peek(), minutes: minutes.peek() });
+  const report = () => props.onChange({ day: day.peek() ?? todayDate(), hours: hours.peek(), minutes: minutes.peek() });
   return html`<div class="pick">${Calendar({ value: () => day.get(), onPick: picked => { day.set(picked); report(); }, label: props.label })}
     <div class="pick-time">${Icon('clock', { size: 'sm' })}${TimeSteppers({ hours, minutes, onChange: report })}</div>
     ${footer(textButton('Now', () => { const now = props.now(); day.set(now.day); hours.set(now.hours); minutes.set(now.minutes); report(); }),
@@ -484,7 +489,7 @@ export function DurationPanel(props: { value: () => number | null; onChange: (se
 export type DateRange = [string, string];
 
 /** The named ranges a range picker offers, for a given today. */
-export function rangePresets(today = todayGst()): Array<{ label: string; range: DateRange }> {
+export function rangePresets(today = todayDate()): Array<{ label: string; range: DateRange }> {
   const [year, month] = partsOf(today);
   const quarter = isoDay(year, Math.floor((month - 1) / 3) * 3 + 1, 1);
   const lastMonth = addMonths(startOfMonth(today), -1);

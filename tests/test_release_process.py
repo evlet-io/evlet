@@ -10,7 +10,7 @@ from evlet.calc import F
 from evlet.periods import set_lock
 from evlet.auth import User
 from evlet.identity import RecordId
-from test_business import client
+from support import client
 from test_rules_types import ALL, start
 from test_states import etag
 

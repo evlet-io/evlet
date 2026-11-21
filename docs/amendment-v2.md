@@ -1,5 +1,9 @@
 # Declarative application amendment
 
+Internal design history: the decisions and contract behind the flat app layout, written for
+framework reviewers. To build an app, read [the app layout](app-layout.md),
+[What you can customize](customizing.md) and the feature guides instead.
+
 Baseline: `36a60c24fad714bbd378ab5e1c8fafe3b62a4d31` (1 November 2026).
 
 ## Compatibility decisions
@@ -35,7 +39,7 @@ evlet app selling
 evlet build --trust
 evlet instance local
 evlet install selling --instance local --trust
-evlet dev --instance local --watch
+evlet dev --instance local
 ```
 
 A new app has one Python package root: `apps/selling/__init__.py`, `models/`,

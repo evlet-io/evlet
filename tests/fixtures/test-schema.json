@@ -358,6 +358,7 @@
           "help_text": "Recorded separately; this does not calculate the total.",
           "placeholder": "",
           "suffix": "%",
+          "display_scale": 2,
           "hidden": false,
           "read_only": false,
           "default_kind": "static",
@@ -397,7 +398,7 @@
             "paid"
           ],
           "colors": {
-            "unpaid": "rose",
+            "unpaid": "slate",
             "partly_paid": "amber",
             "paid": "green"
           },

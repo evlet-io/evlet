@@ -9,6 +9,7 @@ import { Dropdown } from '../ui/pickers';
 import { Callout, Head, type ControlsContext } from './app';
 import { OPS, type ModelInfo, type PermValue } from './client';
 import { idOf, SETTING_LABELS } from './drafts';
+import { settingKit } from '../ui/settings-helpers';
 import { RoleChip } from './people';
 
 const ORDER = ['read', 'create', 'update', 'delete', 'activity', 'print', 'void', 'revise', 'unpost', 'repost'];
@@ -114,7 +115,7 @@ function openRule(ctx: ControlsContext, role: string, model: ModelInfo) {
       if (read.includes(name)) { read = read.filter(item => item !== name); write = write.filter(item => item !== name); }
       else read = [...read, name];
     } else write = write.includes(name) ? write.filter(item => item !== name) : [...write, name];
-    if (!read.length) { toast('Keep at least one readable field, or turn off read instead', { icon: 'info' }); return; }
+    if (!read.length) { toast('Keep at least one readable field, or turn off read instead', { tone: 'info' }); return; }
     drafts.set(id, normalize({ ...value(), read: ordered(read), write: ordered(write.filter(item => read.includes(item))) }, file));
   };
   const scopes = file.scope ? [file.scope] : model.scopes;
@@ -157,11 +158,8 @@ export function SecurityPage(ctx: ControlsContext): HTMLElement {
   const id = (key: string) => idOf('setting', key);
   const get = <T>(key: string) => drafts.value<T>(id(key));
   const file = <T>(key: string) => drafts.saved.peek().get(id(key))!.file as T;
-  const mark = (key: string) => () => drafts.overridden(id(key)) ? html`<span class="ctl-tag">Changed</span>${IconButton({ icon: 'rotate-ccw', size: 'small',
-    tip: 'Reset to the file value', onClick: () => drafts.reset(id(key)) })}` : null;
   const desk = () => state.get().roles.filter(role => role.realm === 'desk');
-  const row = (key: string, title: string, text: Child, control: Child) => html`<div class="ctl-setrow"><div class="grow"><strong>${title} ${mark(key)}</strong><p>${text}</p>
-    ${when(() => drafts.errors.get().has(id(key)), () => html`<span class="ctl-err">${() => drafts.errors.get().get(id(key))}</span>`)}</div><div class="ctl-setctl">${control}</div></div>`;
+  const { row, mark, error } = settingKit(drafts, id);
   // Only values up to the file's: Controls can make these stricter, never looser.
   const choose = (key: string, unit: string, options: number[]) => Dropdown({ label: SETTING_LABELS[key], ariaLabel: SETTING_LABELS[key], className: 'ctl-select',
     value: () => String(get<number>(key)), onChange: value => { if (value !== null) drafts.set(id(key), Number(value)); },
@@ -172,8 +170,8 @@ export function SecurityPage(ctx: ControlsContext): HTMLElement {
     const input = event.target as HTMLInputElement;
     let value = Number.parseInt(input.value, 10);
     if (Number.isNaN(value)) value = file<number>('security.password_min');
-    if (value < 1) { value = 1; toast("Minimum password length can't go below 1", { icon: 'info' }); }
-    if (value > 64) { value = 64; toast("Minimum password length can't go above 64", { icon: 'info' }); }
+    if (value < 1) { value = 1; toast("Minimum password length can't go below 1", { tone: 'info' }); }
+    if (value > 64) { value = 64; toast("Minimum password length can't go above 64", { tone: 'info' }); }
     input.value = String(value);
     drafts.set(id('security.password_min'), value);
   };

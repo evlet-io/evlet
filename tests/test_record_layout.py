@@ -13,7 +13,7 @@ import pytest
 from evlet import (Chart, Child, Count, Database, Decimal, Html, Integer, Link, LongText, Model, Ref, Registry, Related, Rule,
                    Section, Select, Sum, Table, TableSection, Text)
 from evlet.ui.metadata import ui_schema, view_for
-from test_business import client
+from support import client
 from test_meaning import serve
 from test_rules_types import ALL, add_user
 

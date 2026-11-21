@@ -9,7 +9,7 @@ from evlet import (Application, Child, Currency, Database, Date, Decimal, Link, 
 from evlet.auth import User, password_hash
 from evlet.calc import F, today
 from evlet.services import Endpoint
-from test_business import PASSWORD, client, http  # noqa: F401 (fixtures)
+from support import PASSWORD, client, http
 
 ALL = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update')),
        'viewer': Rule(('read',))}

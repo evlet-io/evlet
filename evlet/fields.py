@@ -10,6 +10,19 @@ from urllib.parse import urlsplit
 
 from .identity import RecordId
 
+
+# Old public names already warned about in this process (renamed_warning).
+_WARNED = set()
+
+
+def renamed_warning(old, new, stacklevel=3):
+    """Warn once per process that public name `old` is now `new` (docs/api-stability.md, Renamed in 0.4.x)."""
+    if old not in _WARNED:
+        _WARNED.add(old)
+        import warnings
+        warnings.warn(f'{old} was renamed {new}; {old} keeps working until at least 0.5 (docs/api-stability.md)',
+                      DeprecationWarning, stacklevel=stacklevel)
+
 MISSING = object()
 
 
@@ -53,8 +66,6 @@ MAX_INTEGER = 2**63 - 1
 ROUNDING = ("half_up", "half_even")
 # Finite-v1 expression options a field may declare, besides compute=.
 RULES = ("applies_when", "required_when", "locked_when")
-# Display only: hides a field (or a Table) while false; its value is kept, saved and validated as usual.
-DISPLAY_RULES = ("visible_when",)
 
 
 def rounding_mode(value, default):
@@ -462,6 +473,9 @@ class Decimal(Field):
     def validate(self, value):
         if isinstance(value, bool) or not isinstance(value, (str, int, DecimalValue)):
             raise ValueError("Use a decimal string, e.g. '12.50'")
+        # The grammar of evlet.calc.NUMBER and the browser: no underscores, exponents, spaces or non-ASCII digits.
+        if isinstance(value, str) and not DECIMAL_TEXT.fullmatch(value):
+            raise ValueError("Use a decimal string, e.g. '12.50'")
         try:
             with localcontext(Context(prec=40)) as context:
                 context.prec = 40
@@ -515,6 +529,9 @@ def _tidy(value):
     places = max(2, -exponent if isinstance(exponent, int) else 0)
     return value.quantize(DecimalValue(1).scaleb(-places))
 
+
+# Decimal text a write accepts: the same grammar as evlet.calc.NUMBER (ASCII digits only).
+DECIMAL_TEXT = re.compile(r'-?(0|[1-9][0-9]*)(\.[0-9]+)?', re.ASCII)
 
 CURRENCY_SOURCE = re.compile(r"[A-Z]{3}|[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)?|settings\.[a-z][a-z0-9_]{0,62}\.[a-z][a-z0-9_]{0,40}")
 
@@ -826,6 +843,14 @@ def duration_text(seconds):
     return ("P" + (f"{days}D" if days else "") + ("T" + clock if clock else "")) if days or clock else "PT0S"
 
 
+def size_text(size):
+    """A byte limit as people read it: 2 MiB, 512 KiB, 1536 bytes."""
+    for unit, scale in (("MiB", 1024 * 1024), ("KiB", 1024)):
+        if size % scale == 0:
+            return f"{size // scale} {unit}"
+    return "1 byte" if size == 1 else f"{size} bytes"
+
+
 class Duration(Integer):
     """Whole seconds stored as an integer; serialized as ISO 8601 (PT1H30M). Accepts that format or seconds."""
     kind = "duration"
@@ -933,8 +958,9 @@ class MultiSelect(Tags):
         return {**super().metadata(), "choices": list(self.choices)}
 
 
-class Reference(Field):
+class AnyLink(Field):
     """A link to a record of any registered model, stored as <name>_model and <name>_id; no SQL foreign key.
+    Named Reference before 0.4.x; that name still works and warns (docs/api-stability.md).
 
     The value is {"model": "<storage name>", "id": "<text id>"}. Writes check that the record exists.
     index=True creates one index over both columns, (<name>_model, <name>_id).
@@ -944,7 +970,7 @@ class Reference(Field):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if self.unique:
-            raise ValueError("Reference fields cannot be unique")
+            raise ValueError("AnyLink fields cannot be unique")
 
     def validate(self, value):
         if isinstance(value, (list, tuple)) and len(value) == 2:
@@ -978,6 +1004,10 @@ class Reference(Field):
 
     def serialize(self, value):
         return None if value is None else {"model": value[0], "id": RecordId(value[1])}
+
+
+# The framework's own modules still import the old name from here; apps get evlet.AnyLink.
+Reference = AnyLink
 
 
 class RichText(LongText):

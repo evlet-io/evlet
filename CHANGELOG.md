@@ -14,6 +14,60 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `Tabs({ pills: true })` and `TabItem.tint` draw them on screens of your own
   ([docs/ui-framework.md](docs/ui-framework.md)).
 - **On phones, a list's search row comes first**, above the tabs.
+- **The sidebar is a light grey**, its active child a white card with a border, marked on the children's guide line
+  in the parent's colour. Hover is a light grey.
+
+### Upgrading
+
+- **The Workspace switcher moved from the top bar to the top of the sidebar**, in the same design. The top bar keeps
+  the brand. Nothing to change in apps.
+- **The workspaces entry of `/api/schema` has new keys**: `home` on each workspace; `color`, `section` and `link` on
+  each group; `icon` on each item, `badge` on model items and `new_tab` on URL items. A client that reads the
+  older shape keeps working.
+- **`home` is reserved.** A model stored as `home`, or a workspace, section, group or item labelled or keyed
+  "home", is refused when the app is built. Rename it.
+- **Parents no longer show how many shortcuts they hold while closed.**
+- **Public API is additive only.** `Session.count(..., cap=None)` counts at most `cap` rows; `evlet.testing`
+  (`TestApp`, `Client`, `TestResponse`) is new for app tests; `/api/schema` carries `timezone`.
+- **`evlet serve` no longer accepts first-admin setup over HTTP.** Create the Administrator with
+  `evlet users set-password INSTANCE admin`; `evlet dev` and the Playground still print a sign-in link.
+- **Report runs stop after `EVLET_REPORT_SECONDS` (300)** with a 504; set `0` to turn the limit off.
+- **Generated proxy configs send HSTS and the generated unit is sandboxed.** Re-run `evlet setup --host` or
+  `evlet proxy` to pick them up.
+- **Decimal and Currency text input is strict:** `1_000`, exponents, non-ASCII digits and surrounding spaces are
+  refused, as `calc` already did.
+- **Three names renamed; the old names still work and warn.** `evlet.App` is now `evlet.DevApp`, `State.Rule` is
+  now `State.Move` and `evlet.Reference` is now `evlet.AnyLink`. Each old name returns the same class with a
+  `DeprecationWarning` once per process, so `isinstance` checks and existing migrations keep working; nothing is
+  stored differently. Switch to the new names before 0.5 (run your tests with `-W error::DeprecationWarning`).
+  `makemigration` and the Controls export now write `AnyLink(...)`. `State(rules=...)` keeps its keyword
+  ([docs/api-stability.md](docs/api-stability.md#renamed-in-04x-old-names-deprecated)).
+- **The two formula languages' rounding is documented side by side.** String formulas round half even, `F(...)`
+  expressions follow the field's `rounding` (half up for Currency); nothing changed
+  ([docs/finite-calculations.md](docs/finite-calculations.md#two-formula-languages)).
+
+### Added
+
+- **Section titles, coloured parents and Home in the sidebar.** `NavSection('Build', items=...)` is a bold title in
+  capitals that never collapses. `NavGroup(..., color='teal')` draws the parent's icon on a tile in that colour,
+  and its children's icons take it. A `Shortcut` placed directly in a section is a parent that is a link, with
+  its own `icon=` and `color=`. `Workspace(home=True)` puts Home directly under the switcher, above every section
+  ([docs/ui.md](docs/ui.md#workspaces)).
+- **Child icons, new-tab links and badges.** `Shortcut(icon=...)` replaces the kind's icon. `Shortcut(url=...,
+  new_tab=True)` opens an app path in a new tab; http(s) addresses do so by default. Both end with the
+  open-externally icon. `Shortcut('task', badge={...})` shows a count beside a child. The count is bounded: it reads at most
+  the newest 1,000 rows, applies the role's row scope and filters, and stops at 100 ("99+"), from
+  `GET /api/_nav/badges` ([docs/ui.md](docs/ui.md#badges)).
+
+### Fixed
+
+- **A `DropIndex` by an index's first names after its field was renamed and the name reused.** 0.4.17 renamed the
+  field in `Meta.indexes` entries, so after `RenameField("party", "kind", "role_kind")` and a new `AddField` named
+  `kind`, a later `DropIndex("party", ("kind", "record_id"), unique=True)` resolved `kind` to the new field, left
+  the renamed entry and its database index in place, and an instance created before the rename stopped with
+  "party: Meta.indexes differ". The `DropIndex` now matches the index by the names it had when it was made when no
+  index has the names given, and drops the database index on the columns they have now. Instances already past the
+  `DropIndex` are not affected ([docs/model-engine.md](docs/model-engine.md)).
 
 ## 0.4.17 (20-11-2026)
 

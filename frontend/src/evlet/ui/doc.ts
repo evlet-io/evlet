@@ -130,7 +130,7 @@ export function DocHeader(props: DocHeaderProps): HTMLElement {
  */
 export function MoveButton(props: ButtonProps & { blocked: Prop<string | null>; onMove: () => void }): HTMLButtonElement {
   const reason = () => read(props.blocked) || null;
-  const button = Button({ ...props, tip: reason, onClick: () => { const why = reason(); if (why) toast(why, { icon: 'info' }); else props.onMove(); } });
+  const button = Button({ ...props, tip: reason, onClick: () => { const why = reason(); if (why) toast(why, { tone: 'info' }); else props.onMove(); } });
   const sync = () => { const why = reason(); button.toggleAttribute('data-blocked', Boolean(why)); if (why) button.setAttribute('aria-disabled', 'true'); else button.removeAttribute('aria-disabled'); };
   // Keep the blocked look in step with the guard.
   effect(sync);
@@ -167,7 +167,7 @@ export function StatusFlow(props: {
       class:lost=${(props.bad ?? []).includes(step.value)} class:plain=${() => !open()} aria-current=${() => now() ? 'step' : null}>${() => open()
         ? html`<button type="button" class="step-go" aria-label=${() => `${name()}. Move to ${step.label}`} on:click=${() => {
             const why = props.blocked?.(step.value) ?? null;
-            if (why) toast(why, { icon: 'info' }); else props.onMove!(step.value);
+            if (why) toast(why, { tone: 'info' }); else props.onMove!(step.value);
           }}>${content}</button>`
         : html`<span class="step-tx" aria-label=${name}>${content}</span>`}</div>`;
   })}</div>` as HTMLElement;
@@ -214,7 +214,7 @@ export function StatusBadge(props: {
       aria-label=${`${name}: ${text}. Change ${name.toLowerCase()}`}>${inner}${Icon('chevron-down', { size: 'xs', className: 'chev' })}</button>` as HTMLButtonElement;
     button.addEventListener('click', () => openPopover(button, close => Menu(moves.map(move => ({ label: move.label, icon: 'arrow-right', onSelect: () => {
       const why = props.blocked?.(move.to) ?? null;
-      if (why) toast(why, { icon: 'info' }); else props.onMove!(move.to);
+      if (why) toast(why, { tone: 'info' }); else props.onMove!(move.to);
     } })), close), { label: `Change ${name.toLowerCase()}` }));
     return button;
   };

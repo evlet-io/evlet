@@ -11,9 +11,11 @@ import { Icon, SegmentedControl, Button } from '../ui/base';
 import { highlighted, tint as safeTint, type Tint } from '../ui/core';
 import { openModal } from '../ui/layers';
 import { tooltip } from '../ui/tooltip';
+import { formatKeys } from '../ui/shortcuts';
 import { resolveTheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
 import { identity, rootModels, type ScreenModel } from './meta';
+import { can } from '../model/schema';
 import { REPORT_ICON, reportsOf } from './report-page';
 import { EXPLORER_VIEWS, hasLedgerReports, openExplorer } from './explorer';
 import { EXPLORER_ICONS, KIND_TINTS, SHELL_ICONS } from './nav-icons';
@@ -35,7 +37,7 @@ export function quickTiles(ctx: AppContext): Tile[] {
   for (const model of rootModels(ctx.schema)) {
     const { icon, tint } = identity(model);
     tiles.push({ id: `l-${model.name}`, group: 'Lists', icon, tint, label: model.plural, badge: 'list', run: () => void ctx.router.go('list', { model: model.name }) });
-    if (model.api !== 'read' && model.permissions?.create !== false) tiles.push({ id: `n-${model.name}`, group: 'Documents', icon, tint, label: `New ${model.label.toLowerCase()}`, badge: 'plus',
+    if (can(model, 'create')) tiles.push({ id: `n-${model.name}`, group: 'Documents', icon, tint, label: `New ${model.label.toLowerCase()}`, badge: 'plus',
       run: () => void ctx.router.go('create', { model: model.name }) });
   }
   for (const report of reportsOf(ctx)) tiles.push({ id: `r-${report.name}`, group: 'Reports', icon: REPORT_ICON, tint: 'rose', label: report.label,
@@ -204,5 +206,5 @@ function paletteBody(ctx: AppContext, close: () => void) {
 
   return html`<div class="pal-in">${Icon('search', { size: 'lg' })}${input}${explorer}<kbd>Esc</kbd></div>
     <div class="pal-list" id="ev-pal-list" role="listbox" aria-label="Results">${() => query.get().trim() ? results() : home()}</div>
-    <div class="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> Move</span><span><kbd>↵</kbd> Open</span><span class="hide-sm"><kbd>⌘</kbd><kbd>K</kbd> Toggle</span></div>`;
+    <div class="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> Move</span><span><kbd>↵</kbd> Open</span><span class="hide-sm"><kbd>${formatKeys('Mod+K')}</kbd> Toggle</span></div>`;
 }

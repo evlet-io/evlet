@@ -4,6 +4,7 @@ from argparse import Namespace
 import functools
 import os
 import sqlite3
+from pathlib import Path
 import subprocess
 import sys
 
@@ -302,16 +303,18 @@ def test_apply_runs_each_privileged_step_after_showing_it(tmp_path, monkeypatch,
     main(['setup', str(target), '--app', 'notes', '--instance', 'acme', '--trust', '--host', 'erp.example.com', '--ip', '203.0.113.7', '--apply'])
     out = capsys.readouterr().out
     root = target.resolve()
+    # Root installs the text this command rendered, through standard input, never the copies in deploy/.
     assert [args for args, _ in ran] == [
-        ['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-acme.service', '/etc/systemd/system/evlet-acme.service'],
-        ['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-acme.caddy', '/etc/caddy/evlet-acme.caddy'],
-        ['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-global.caddy', '/etc/caddy/evlet-global.caddy'],
+        ['sudo', 'install', '-m', '644', '/dev/stdin', '/etc/systemd/system/evlet-acme.service'],
+        ['sudo', 'install', '-m', '644', '/dev/stdin', '/etc/caddy/evlet-acme.caddy'],
+        ['sudo', 'install', '-m', '644', '/dev/stdin', '/etc/caddy/evlet-global.caddy'],
         ['sudo', 'tee', '-a', str(caddyfile)],
         ['sudo', 'sed', '-i', '1i import /etc/caddy/evlet-global.caddy', str(caddyfile)],
         ['sudo', 'systemctl', 'daemon-reload'],
         ['sudo', 'systemctl', 'enable', '--now', 'evlet-acme'],
         ['sudo', 'systemctl', 'reload', 'caddy']]
     assert ran[3][1] == '\nimport /etc/caddy/evlet-acme.caddy\n'
+    assert [given for _, given in ran[:3]] == [(root / 'deploy' / name).read_text() for name in ('evlet-acme.service', 'evlet-acme.caddy', 'evlet-global.caddy')]
     # The global options switch on strict SNI; the site file carries none, since Caddy reads them from the first block only.
     assert 'strict_sni_host on' in (root / 'deploy/evlet-global.caddy').read_text()
     assert 'strict_sni_host' not in (root / 'deploy/evlet-acme.caddy').read_text()
@@ -342,6 +345,18 @@ def test_apply_needs_systemd(monkeypatch):
     monkeypatch.setattr(shutil, 'which', lambda name: None)
     with pytest.raises(ValueError, match='needs systemd'):
         site.run_privileged([['sudo', 'true']])
+
+
+def test_unit_is_sandboxed_and_keeps_its_instance_writable():
+    from pathlib import Path
+    text = proxy.systemd_unit(Path('/srv/acme'), 'acme', 8000, 'evlet')
+    for line in ('NoNewPrivileges=true', 'PrivateTmp=true', 'ProtectSystem=full', 'ProtectHome=read-only',
+                 'ReadWritePaths=/srv/acme/instances/acme'):
+        assert line + '\n' in text.split('[Install]')[0]
+    # ProtectHome would hide a project kept in a home directory.
+    for root in ('/home/ops/acme', '/root/acme'):
+        text = proxy.systemd_unit(Path(root), 'acme', 8000, 'evlet')
+        assert 'ProtectHome' not in text and f'ReadWritePaths={root}/instances/acme\n' in text and 'NoNewPrivileges=true' in text
 
 
 def test_unit_keeps_paths_literal(tmp_path):
@@ -393,16 +408,16 @@ def test_host_remembers_the_public_address_and_replaces_outdated_installed_files
     def fake(args, **values):
         ran.append(args)
         if args[:2] == ['sudo', 'install']:
-            shutil.copyfile(args[-2], args[-1])  # what sudo install does
+            Path(args[-1]).write_text(values['input'])  # what sudo install /dev/stdin does
     actual_run = subprocess.run
     monkeypatch.setattr(site.subprocess, 'run', lambda args, **values: fake(args, **values) if args[0] == 'sudo' else actual_run(args, **values))
     monkeypatch.setattr(site, 'site_answers', lambda host: 'checked ' + host)
     main(command + ['--apply'])
     out = capsys.readouterr().out
     assert 'is out of date. Installing the new file.' in out
-    assert ran == [['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-acme.service', f'{etc}/systemd/evlet-acme.service'],
-                   ['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-acme.caddy', f'{etc}/caddy/evlet-acme.caddy'],
-                   ['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-global.caddy', f'{etc}/caddy/evlet-global.caddy'],
+    assert ran == [['sudo', 'install', '-m', '644', '/dev/stdin', f'{etc}/systemd/evlet-acme.service'],
+                   ['sudo', 'install', '-m', '644', '/dev/stdin', f'{etc}/caddy/evlet-acme.caddy'],
+                   ['sudo', 'install', '-m', '644', '/dev/stdin', f'{etc}/caddy/evlet-global.caddy'],
                    ['sudo', 'systemctl', 'daemon-reload'],
                    ['sudo', 'systemctl', 'enable', '--now', 'evlet-acme'],
                    ['sudo', 'systemctl', 'restart', 'evlet-acme'],

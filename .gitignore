@@ -16,3 +16,4 @@ coverage/
 evlet/ui/static/
 # Connector secret keys (instances/<name>/secret.key)
 secret.key
+docs/ui-design/reference/mockup.html

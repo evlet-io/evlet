@@ -9,7 +9,7 @@ from evlet import (AddField, Migration, Application, Database, LocalAuth, Regist
 from evlet.calc import round, parent
 from evlet.business import Business
 from evlet.identity import RecordId, sequential_ids
-from test_business import http, client, PASSWORD
+from support import http, client, PASSWORD
 from finite_fixtures import FiniteMeta, Invoice
 
 ALL = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}

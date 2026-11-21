@@ -9,6 +9,7 @@ import { copyText, DialogFooter, openModal, toast } from '../ui/layers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
 import type { McpOverview, McpReach } from './client';
 import { idOf } from './drafts';
+import { settingKit } from '../ui/settings-helpers';
 import { ask, message } from './people';
 
 export const TOOLS: Array<[string, string, boolean]> = [
@@ -39,14 +40,10 @@ export function McpPage(ctx: ControlsContext): HTMLElement {
   const set = (key: string, value: unknown) => drafts.set(id(key), value);
   const on = () => get<boolean>('enabled'), writes = () => get<boolean>('allow_writes');
   const overview = cell<McpOverview | null>(null);
-  const load = async () => { try { overview.set(await ctx.api.mcp()); } catch (failure) { toast(message(failure), { icon: 'info' }); } };
+  const load = async () => { try { overview.set(await ctx.api.mcp()); } catch (failure) { toast(message(failure), { tone: 'error' }); } };
   void load();
 
-  const mark = (key: string) => () => drafts.overridden(id(key)) ? html`<span class="ctl-tag">Changed</span>${IconButton({ icon: 'rotate-ccw', size: 'small',
-    tip: 'Reset to the file value', onClick: () => drafts.reset(id(key)) })}` : null;
-  const error = (key: string) => when(() => drafts.errors.get().has(id(key)), () => html`<span class="ctl-err">${() => drafts.errors.get().get(id(key))}</span>`);
-  const row = (key: string | null, title: string, text: Child, control: Child) => html`<div class="ctl-setrow"><div class="grow">
-    <strong>${title} ${key ? mark(key) : null}</strong><p>${text}</p>${key ? error(key) : null}</div><div class="ctl-setctl">${control}</div></div>`;
+  const { row, mark, error } = settingKit(drafts, id);
   const toggle = (list: 'disabled_tools' | 'hidden_models', name: string) => {
     const now = get<string[]>(list);
     set(list, now.includes(name) ? now.filter(item => item !== name) : [...now, name]);
@@ -61,21 +58,21 @@ export function McpPage(ctx: ControlsContext): HTMLElement {
     const input = event.target as HTMLInputElement;
     let value = Number.parseInt(input.value, 10);
     if (Number.isNaN(value) || value < 1) value = 1;
-    if (value > 60) { value = 60; toast('The framework allows at most 60 tool calls a minute', { icon: 'info' }); }
+    if (value > 60) { value = 60; toast('The framework allows at most 60 tool calls a minute', { tone: 'info' }); }
     input.value = String(value);
     set('rate', value);
   };
   const signOut = (client: McpOverview['clients'][number]) => ask(`Sign out ${client.client_name}?`,
     `${client.username}'s ${client.client_name} loses access straight away. They can connect again by signing in.`, 'Sign out', async () => {
       try { overview.set(await ctx.api.signOutAssistant(client.id)); toast('Client signed out'); }
-      catch (failure) { toast(message(failure), { icon: 'info' }); }
+      catch (failure) { toast(message(failure), { tone: 'error' }); }
     }, true);
   const totals = () => overview.get()?.totals ?? { reads: 0, writes: 0, denied: 0 };
   // Reachability is checked only when an admin asks; the server keeps the answer for half a minute.
   const reach = cell<McpReach | null>(null), checking = cell(false);
   const check = async () => {
     checking.set(true);
-    try { reach.set(await ctx.api.mcpReach()); } catch (failure) { toast(message(failure), { icon: 'info' }); } finally { checking.set(false); }
+    try { reach.set(await ctx.api.mcpReach()); } catch (failure) { toast(message(failure), { tone: 'error' }); } finally { checking.set(false); }
   };
   const reachPill = () => {
     const value = reach.get();

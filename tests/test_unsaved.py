@@ -11,7 +11,7 @@ from evlet.framework import upgrade
 from evlet.unsaved import DAY
 from examples.playground.models import Customer, Invoice, Project, ProjectTask
 from test_api_keys import create as create_key, with_key
-from test_business import PASSWORD, client, hashed, http, secured  # noqa: F401
+from support import PASSWORD, client, http  # noqa: F401
 
 REVISION = '"' + 'a' * 64 + '"'
 

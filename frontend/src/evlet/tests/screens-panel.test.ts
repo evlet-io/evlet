@@ -257,6 +257,10 @@ describe('records in a side panel beside the list', () => {
     click(byText(host, '.ev-list .ph-actions button, .ev-list button', /New invoice/));
     await until(() => expect(location.search).toBe('?open=new'));
     await until(() => expect(panelTitle(host)).toBe('New invoice'));
+    // One Cancel / Create pair: the sticky create bar, not a second one in the title row.
+    const named = (label: RegExp) => [...panel(host)!.querySelectorAll('button')].filter(button => label.test(button.textContent ?? ''));
+    expect(named(/^\s*Create invoice\s*$/)).toHaveLength(1);
+    expect(named(/^\s*Cancel\s*$/)).toHaveLength(1);
     click(byText(panel(host)!, '.ev-savebar button', 'Cancel'));
     await until(() => expect(location.search).toBe(''));
     expect(panel(host)).toBeNull();

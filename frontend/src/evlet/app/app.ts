@@ -9,7 +9,7 @@
 import { html, match, type Child } from '../dom';
 import { ApiError, type Session } from '../api';
 import { cell, derive, onCleanup } from '../reactive';
-import { SchemaIndex, type AppSchema } from '../model/schema';
+import { can, SchemaIndex, type AppSchema } from '../model/schema';
 import { setCurrencyDecimals, setCurrencyDisplays } from '../model/format';
 import { Button, EmptyState } from '../ui/base';
 import { apiLinks, setLinkSource } from '../ui/fields';
@@ -48,6 +48,20 @@ export interface AppOptions {
 
 type Phase = 'connecting' | 'signin' | 'password' | 'twostep' | 'ready';
 
+/** A per-browser hint that the last visit ended signed in, so a cold load asks for the schema and the person's
+ * settings together with the session and draws the shell's outline instead of a blank splash. Only a hint: the
+ * session answer decides, and the hint never carries anything about the person. */
+const SIGNED_IN_HINT = 'evlet.signed-in';
+const hintStore = (storage: Storage | null | undefined): Storage | null => {
+  if (storage !== undefined) return storage;
+  try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
+};
+const readHint = (storage: Storage | null) => { try { return storage?.getItem(SIGNED_IN_HINT) === '1'; } catch { return false; } };
+const writeHint = (storage: Storage | null, on: boolean) => {
+  try { if (on) storage?.setItem(SIGNED_IN_HINT, '1'); else storage?.removeItem(SIGNED_IN_HINT); } catch { /* private window: no hint */ }
+};
+type Prefetch = Promise<[AppSchema, Me | null]>;
+
 export function App(options: AppOptions): Node {
   const { router } = options;
   const api = options.api ?? new AppClient();
@@ -56,6 +70,8 @@ export function App(options: AppOptions): Node {
   const context = cell<AppContext | null>(null, { name: 'app.context' });
   const error = cell(''), busy = cell(false);
   const challenge = cell<Challenge | null>(null, { name: 'app.challenge' });
+  const hints = hintStore(options.storage);
+  const expectShell = readHint(hints);
   // The bundled provider returns only to /login. Leave model filters/prefills named oidc alone.
   // Remove the non-secret marker before requests; a retry/reload must not replay the one-use finish.
   const returned = new URL(window.location.href);
@@ -69,9 +85,10 @@ export function App(options: AppOptions): Node {
   let alive = true;
   onCleanup(() => { alive = false; context.peek()?.prefs.dispose(); });
 
-  const enter = async (current: Session) => {
+  const enter = async (current: Session, prefetch: Prefetch | null = null) => {
     // Eva's status only when /api/_settings/me says Eva answers this person: no failing request without it.
-    const [schemaData, settings] = await Promise.all([api.schema<AppSchema>(), loadMe(api)]);
+    // A cold load that expected a signed-in person asked for both together with the session (connect).
+    const [schemaData, settings] = await (prefetch?.catch(() => null) ?? Promise.resolve(null)) ?? await Promise.all([api.schema<AppSchema>(), loadMe(api)]);
     const eva = settings?.eva === false ? null : await evaStatus(api).catch(() => null);
     const schema = new SchemaIndex(schemaData);
     if (!alive) return;
@@ -102,6 +119,7 @@ export function App(options: AppOptions): Node {
     };
     session.set(current);
     context.set(ctx);
+    writeHint(hints, true);
     usePrompts(ctx);
     error.set('');
     phase.set('ready');
@@ -117,9 +135,19 @@ export function App(options: AppOptions): Node {
     phase.set('connecting');
     error.set('');
     try {
+      // With the signed-in hint, the schema and the person's settings load alongside the session (one round trip,
+      // not three in a row). Without it nothing extra is asked, so a signed-out visit makes no refused requests.
+      const prefetch: Prefetch | null = readHint(hints) ? Promise.all([api.schema<AppSchema>(), loadMe(api)]) : null;
+      prefetch?.catch(() => null);
       const current = await api.session();
       if (!alive) return;
       session.set(current);
+      if (prefetch && !(current.user && !current.password_needed && !oidcReturn)) {
+        // Not used: wait for it so its refusal (401) cannot clear the sign-in token after the session set it.
+        await prefetch.catch(() => null);
+        api.csrf = current.csrf ?? api.csrf;
+        if (!current.user) writeHint(hints, false);
+      }
       if (oidcReturn) {
         const result = oidcReturn; oidcReturn = null;
         if (result === 'error' || !current.oidc) { error.set('Company sign-in did not finish. Try again or use your password.'); phase.set('signin'); return; }
@@ -131,7 +159,7 @@ export function App(options: AppOptions): Node {
       }
       // Signed in by a development link without a password yet: choose one before anything else.
       if (current.user && current.password_needed) phase.set('password');
-      else if (current.user) await enter(current);
+      else if (current.user) await enter(current, prefetch);
       else phase.set('signin');
     } catch (failure) {
       if (!alive) return;
@@ -233,6 +261,7 @@ export function App(options: AppOptions): Node {
     // The sign-in screen does not keep the last user's region or language; it keeps this device's theme.
     applyMe(null);
     error.set(message);
+    writeHint(hints, false);
     session.set({ ...(session.peek() ?? { user: null }), user: null, setup: false });
     phase.set('signin');
     void router.go('login', {}, {}, { replace: true });
@@ -243,7 +272,7 @@ export function App(options: AppOptions): Node {
   void connect();
 
   return match(phase, {
-    connecting: () => Connecting(),
+    connecting: () => Connecting(expectShell),
     password: () => SetPasswordScreen({ session: session.peek(), error, busy, onSubmit: value => void setPassword(value), onCancel: () => void signOut() }),
     twostep: () => TwoStepScreen({ session: session.peek(), challenge: challenge.peek()!, error, busy, onSubmit: code => void sendCode(code),
       onCancel: () => { challenge.set(null); error.set(''); phase.set('signin'); } }),
@@ -285,7 +314,7 @@ function page(ctx: AppContext): Child {
     case 'record': case 'view': return known(route.params.model) ? RecordPage(ctx, route.params.model, route.params.id) : unavailable(ctx);
     case 'create': {
       const model = known(route.params.model);
-      return model && model.api !== 'read' && model.permissions?.create !== false ? RecordPage(ctx, model.name, 'new') : unavailable(ctx);
+      return model && can(model, 'create') ? RecordPage(ctx, model.name, 'new') : unavailable(ctx);
     }
     case 'settings': case 'appSettings': {
       const me = ctx.me.peek();

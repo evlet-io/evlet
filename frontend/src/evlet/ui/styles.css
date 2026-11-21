@@ -49,13 +49,15 @@
   /* The list and record pages' side padding, and the gap above and below a list's measure cards (their own gap). */
   --page-gutter:12px; --page-gap:8px;
   --accent-solid:#2f5be8; --accent-solid-hover:#244ed4; --on-tint:#ffffff; --knob:#ffffff;
-  --inverse-bg:#151821; --inverse-fg:#ffffff; --inverse-ok:#4ade80; --inverse-hover:rgba(127,127,127,.25);
+  --inverse-bg:#151821; --inverse-fg:#ffffff; --inverse-ok:#4ade80; --inverse-err:#f87171; --inverse-hover:rgba(127,127,127,.25);
   /* The two themes' grounds, cards and lines in every theme, for the theme pictures in Settings. */
   --swatch-light:#f4f5f8; --swatch-light-card:#ffffff; --swatch-light-line:#d8dce3; --swatch-dark:#14171c; --swatch-dark-card:#1a1e25; --swatch-dark-line:#323844;
   --shadow-edge:rgba(16,24,40,.035);
   /* The sidebar's active section and shortcut: the primary blue for text and icons, and a light tint of it
      (about 9%) behind the active shortcut. Text on the tint is 4.9:1 light and 4.6:1 dark. */
   --nav-on-fg:#2f5be8; --nav-on-bg:#ecf0fd;
+  /* The sidebar's light grey ground, its hover, and the white card of its active item. */
+  --side-hover:#eef0f4; --side-on:#ffffff;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
@@ -69,9 +71,10 @@
   --t-slate:#9aa1b0; --t-slate-bg:#1e222a;
   --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 1px 2px rgba(0,0,0,.3),0 4px 12px rgba(0,0,0,.25); --shadow-lg:0 2px 6px rgba(0,0,0,.3),0 18px 48px rgba(0,0,0,.5);
   --accent-solid:#4167e6; --accent-solid-hover:#3a60de; --on-tint:#0f1115; --knob:#ffffff;
-  --inverse-bg:#e8eaf0; --inverse-fg:#0f1115; --inverse-ok:#0e7340; --inverse-hover:rgba(127,127,127,.25);
+  --inverse-bg:#e8eaf0; --inverse-fg:#0f1115; --inverse-ok:#0e7340; --inverse-err:#b42318; --inverse-hover:rgba(127,127,127,.25);
   --shadow-edge:rgba(0,0,0,.22);
   --nav-on-fg:#6488f6; --nav-on-bg:#1f2739;
+  --side-hover:#1e222a; --side-on:#1d2129;
   color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0f1115; --bg-subtle:#13161b; --bg-muted:#1a1e25; --side-bg:#14171c; --page-bg:#0f1115; --surface:#16191f; --overlay:rgba(0,0,0,.55);
@@ -84,9 +87,10 @@
   --t-slate:#9aa1b0; --t-slate-bg:#1e222a;
   --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 1px 2px rgba(0,0,0,.3),0 4px 12px rgba(0,0,0,.25); --shadow-lg:0 2px 6px rgba(0,0,0,.3),0 18px 48px rgba(0,0,0,.5);
   --accent-solid:#4167e6; --accent-solid-hover:#3a60de; --on-tint:#0f1115; --knob:#ffffff;
-  --inverse-bg:#e8eaf0; --inverse-fg:#0f1115; --inverse-ok:#0e7340; --inverse-hover:rgba(127,127,127,.25);
+  --inverse-bg:#e8eaf0; --inverse-fg:#0f1115; --inverse-ok:#0e7340; --inverse-err:#b42318; --inverse-hover:rgba(127,127,127,.25);
   --shadow-edge:rgba(0,0,0,.22);
   --nav-on-fg:#6488f6; --nav-on-bg:#1f2739;
+  --side-hover:#1e222a; --side-on:#1d2129;
   color-scheme:dark}
 
 *{box-sizing:border-box}
@@ -145,7 +149,7 @@ kbd{font-family:var(--font);font-size:11px;font-weight:500;color:var(--fg-3);bac
 .me .n{font-weight:550;font-size:13px;white-space:nowrap}
 .me .e{font-size:11.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .app.collapsed .side-search span,.app.collapsed .side-search kbd,.app.collapsed .nav-label,
-.app.collapsed .nav-item .lbl,.app.collapsed .nav-item .count,.app.collapsed .nav-item .badge,.app.collapsed .me>div,.app.collapsed .side-foot .icon-btn{display:none}
+.app.collapsed .nav-item .lbl,.app.collapsed .nav-item .count,.app.collapsed .nav-item .badge,.app.collapsed .nav-badge,.app.collapsed .nav-out,.app.collapsed .me>div,.app.collapsed .side-foot .icon-btn{display:none}
 .app.collapsed .nav-item{justify-content:center;padding:0}
 .app.collapsed .side-search{justify-content:center;padding:0;margin:4px 10px 8px}
 
@@ -598,6 +602,8 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .toast{display:flex;align-items:center;gap:10px;background:var(--inverse-bg);color:var(--inverse-fg);padding:10px 10px 10px 14px;border-radius:var(--r-lg);box-shadow:var(--shadow-lg);font-size:13px;font-weight:500;
   animation:tin .2s ease;max-width:380px}
 .toast .ok{color:var(--inverse-ok)}
+.toast .err{color:var(--inverse-err)}
+.toast .note{color:inherit;opacity:.8}
 .toast button{color:inherit;font-weight:600;padding:3px 8px;border-radius:var(--r-sm);background:var(--inverse-hover)}
 .toast.out{animation:tout .18s ease forwards}
 @keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
@@ -619,12 +625,12 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .lb-row .bar span{display:block;height:100%;background:var(--t-green);border-radius:3px}
 
 /* ---------- app bar + sidebar body ---------- */
-/* A white sidebar beside the grey main area, whose cards are white too. */
-.sidebar{background:var(--surface)}
+/* A light grey sidebar beside the grey main area, whose cards are white. */
+.sidebar{background:var(--bg-subtle)}
 .ab-more>span{color:var(--fg-3)}
-.side-body{flex:1;display:flex;flex-direction:column;min-height:0;background:var(--surface)}
-/* Top bar left: the Evlet brand, a pipe, then the Workspace switcher. As wide as the expanded sidebar, so the
-   history button and the breadcrumb start over the main column; just as wide as it needs when collapsed. */
+.side-body{flex:1;display:flex;flex-direction:column;min-height:0;background:var(--bg-subtle)}
+/* Top bar left: the Evlet brand. As wide as the expanded sidebar, so the history button and the breadcrumb start
+   over the main column; just as wide as it needs when collapsed. */
 .sidebar{grid-row:2}
 .app>.main{grid-row:2}
 .top-left{display:flex;align-items:center;gap:12px;min-width:0;flex:none;width:calc(var(--sidebar-w) - 16px);padding-right:8px}
@@ -632,10 +638,9 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .brand{display:flex;align-items:center;gap:9px;flex:none}
 .brand .ev-lockup{height:26px}
 .brand .ev-logo{display:none;width:26px;height:26px}
-.top-pipe{width:1px;height:16px;background:var(--border-strong);flex:none}
 .app-switch{display:flex;align-items:center;gap:6px;min-width:0;height:32px;padding:0 6px 0 9px;border:1px solid var(--border);border-radius:var(--r);background:none;color:var(--fg);text-align:left}
-.app-switch:hover{background:var(--bg-muted)}
-.app-switch[aria-expanded="true"]{background:var(--bg-muted);border-color:var(--border-strong)}
+.app-switch:hover{background:var(--side-hover)}
+.app-switch[aria-expanded="true"]{background:var(--side-hover);border-color:var(--border-strong)}
 .app-switch:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .as-text{min-width:0;display:flex;align-items:baseline;gap:6px;white-space:nowrap;overflow:hidden}
 .as-text b{font-weight:500;font-size:13.5px;overflow:hidden;text-overflow:ellipsis}
@@ -649,33 +654,52 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .ws-item.on{color:var(--accent);font-weight:550}
 .ws-check{flex:none;margin-left:8px;color:var(--accent)}
 .ws-pop .mi:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-/* Sections of the current workspace: a collapsible title (icon, bold label, count of its shortcuts while
-   closed, chevron), then its shortcuts on a thin guide line that starts under the title's icon. */
-.nav-secs{display:flex;flex-direction:column;gap:2px;margin-top:8px}
-.nav-sec-h{display:flex;align-items:center;gap:10px;width:100%;height:38px;padding:0 8px;border-radius:var(--r);color:var(--fg-2);font-weight:600;font-size:13.5px;text-align:left}
-.nav-sec-h:hover{background:var(--bg-muted)}
+/* The Workspace switcher at the top of the sidebar, as wide as it, above Home and the sections. In the drawer the
+   brand sits above it (below). Collapsed, it keeps its chevrons only. */
+.side-head{display:flex;flex-direction:column;align-items:stretch;gap:12px;padding:10px 8px 2px;background:var(--bg-subtle)}
+.side-head .brand{display:none}
+.side-head .app-switch{width:100%;justify-content:space-between}
+.app.collapsed .side-head .as-text{display:none}
+.app.collapsed .side-head .app-switch{justify-content:center;padding:0}
+/* The sidebar's rows: hover a light grey, the active one a white card with a border. */
+.sidebar .nav-item:hover,.sidebar .nav-sec-h:hover{background:var(--side-hover);color:var(--fg)}
+.sidebar .nav-item.active{background:var(--side-on);color:var(--fg);box-shadow:inset 0 0 0 1px var(--border-strong)}
+/* Level one: a section title, bold and in capitals, that never collapses. */
+.nav-title{padding:14px 8px 6px;font-size:11.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--fg)}
+.nav-secs>.nav-title:first-child{padding-top:8px}
+/* Level two: a parent, its icon on a tile in its colour (--nav-tint), its label and a chevron; or a parent link. */
+.nav-secs{display:flex;flex-direction:column;gap:2px;margin-top:6px}
+.nav-tile{width:24px;height:24px;border-radius:var(--r);display:grid;place-items:center;flex:none}
+.nav-tile svg.i{width:14px;height:14px}
+.nav-sec-h{display:flex;align-items:center;gap:10px;width:100%;height:36px;padding:0 8px;border-radius:var(--r);color:var(--fg);font-weight:500;font-size:13.5px;text-align:left}
 .nav-sec-h .lbl{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nav-sec-h .count{font-size:12px;color:var(--fg-3);font-weight:400}
-.nav-sec.open .nav-sec-h .count{display:none}
-.nav-sec-ic{color:var(--fg-2);width:16px;height:16px;flex:none}
 .nav-sec-chev{color:var(--fg-3);flex:none;transition:transform .15s ease}
 .nav-sec.open .nav-sec-chev{transform:rotate(90deg)}
-.nav-sec-items{display:none;margin:0 0 6px 15px;padding-left:8px;border-left:1px solid var(--border)}
+.nav-item.nav-par{height:36px;gap:10px;color:var(--fg);font-weight:500;font-size:13.5px}
+.nav-home{margin-bottom:2px}
+/* A closed parent holding the page keeps a bolder label, so the person still sees where they are. */
+.nav-sec.on:not(.open) .nav-sec-h .lbl{font-weight:600}
+/* Level three: the children on a vertical guide line under the parent's tile, each with its icon in the parent's
+   colour. The active child is the white card, marked on the line at its own height in the parent's colour. */
+.nav-sec-items{display:none;margin:2px 0 6px 19px;padding-left:10px;border-left:1px solid var(--border-strong)}
 .nav-sec.open .nav-sec-items{display:block}
 .nav-item.nav-sc{position:relative;height:33px;gap:8px;padding-left:8px;font-weight:400;font-size:13px;color:var(--fg-2)}
-.nav-sc .nav-ic{color:var(--fg-3)}
+.nav-sc .nav-ic{color:var(--nav-tint,var(--fg-3))}
 .nav-sc .count{font-size:12px;font-weight:400}
-/* The section holding the page: its icon, label and chevron in the primary blue, with no fill, open or closed.
-   Its shortcut: a light blue tint across the row, blue semibold label and icon; the count stays muted. */
-.nav-sec.on .nav-sec-h,.nav-sec.on .nav-sec-ic,.nav-sec.on .nav-sec-chev{color:var(--nav-on-fg)}
-.nav-item.nav-sc.active{background:var(--nav-on-bg);color:var(--nav-on-fg);font-weight:600;box-shadow:none}
-.nav-sc.active .nav-ic{color:var(--nav-on-fg)}
-/* Collapsed: section titles give way to a thin rule, and every shortcut shows its kind's icon, a little larger. */
-.app.collapsed .nav-sec-h{display:none}
+.sidebar .nav-item.nav-sc.active{font-weight:600}
+.nav-item.nav-sc.active::before{content:"";position:absolute;left:-12px;top:7px;bottom:7px;width:3px;border-radius:2px;background:var(--nav-tint,var(--accent))}
+/* A child's badge: the bounded count of its badge filter ("99+" from 100). */
+.nav-badge{flex:none;min-width:20px;padding:0 6px;border-radius:9px;background:var(--side-hover);color:var(--fg-2);font-size:11.5px;font-weight:550;line-height:18px;text-align:center}
+.nav-item.active .nav-badge{background:var(--bg-muted)}
+/* A new-tab item ends with the open-externally icon. */
+.nav-out{flex:none;margin-left:auto;color:var(--fg-3)}
+/* Collapsed: titles and parent headings give way to a thin rule, and every child shows its icon, a little larger. */
+.app.collapsed .nav-title,.app.collapsed .nav-sec-h{display:none}
 .app.collapsed .nav-sec+.nav-sec{border-top:1px solid var(--border);padding-top:4px;margin-top:4px}
 .app.collapsed .nav-sec .nav-sec-items{display:block;margin:0;padding:0;border:0}
-.app.collapsed .nav-sc{padding:0}
+.app.collapsed .nav-sc,.app.collapsed .nav-par{padding:0;justify-content:center}
 .app.collapsed .nav-sc .nav-ic{width:16px;height:16px}
+.app.collapsed .nav-item.nav-sc.active::before{display:none}
 /* Collapse and expand: a round button on the sidebar's edge, just above the account card. */
 .app{position:relative}
 .side-edge{position:absolute;left:calc(var(--sidebar-w) - 12px);bottom:68px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;z-index:5;
@@ -1150,7 +1174,6 @@ th:hover>.rz::after{background:var(--border-strong)}
    page. The menu button at the top bar's left opens them as a drawer over it: the brand as the top bar draws it,
    the switcher, then the navigation. The collapsed rail is a wide-window choice only (app/shell.ts). */
 .nav-menu-btn{display:none}
-.side-head{display:none}
 @media (max-width:1220px){
   .app,.app.collapsed{grid-template-columns:minmax(0,1fr)}
   .sidebar{position:fixed;top:0;bottom:0;left:0;width:min(280px,86vw);z-index:52;transform:translateX(-100%);transition:transform .22s ease,visibility 0s .22s;visibility:hidden;
@@ -1158,9 +1181,9 @@ th:hover>.rz::after{background:var(--border-strong)}
   .app.mobile-open .sidebar{transform:none;box-shadow:var(--shadow-lg);visibility:visible;transition:transform .22s ease}
   .nav-menu-btn{display:grid;margin-left:-6px}
   .side-edge{display:none}
-  .top-left,.top-pipe{display:none}
-  .side-head{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:13px 12px 12px;border-bottom:1px solid var(--border);background:var(--surface)}
-  .side-head .app-switch{width:100%;justify-content:space-between}
+  .top-left{display:none}
+  .side-head{padding:13px 12px 12px;border-bottom:1px solid var(--border)}
+  .side-head .brand{display:flex}
   .side-head .brand .ev-lockup{display:block}
   .side-head .brand .ev-logo{display:none}
 }
@@ -1484,6 +1507,8 @@ mark.hit{background:color-mix(in srgb,var(--accent) 15%,transparent);color:inher
 .dt tbody tr.cur td:first-child{box-shadow:inset 3px 0 0 var(--accent),var(--edge,0 0 transparent)}
 
 /* ---------- drag lists (draglist.ts) ---------- */
+.skip-link{position:fixed;left:8px;top:-48px;z-index:100;padding:8px 12px;background:var(--surface);color:var(--fg);border-radius:var(--r-md);box-shadow:var(--shadow-lg);font-weight:600}
+.skip-link:focus{top:8px}
 .sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
 [data-drag-handle]{touch-action:none;cursor:grab}
 .drag-active,.drag-active [data-drag-handle]{cursor:grabbing;user-select:none}

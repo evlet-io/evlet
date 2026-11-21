@@ -5,7 +5,7 @@ import pytest
 
 from evlet import Child, Currency, Decimal, Link, Model, Registry, Select, Table, Text
 from evlet.fields import help_references
-from test_business import client, hashed  # noqa: F401
+from support import client
 from test_controls import add_user, password, save  # noqa: F401
 from test_customization import build, models
 

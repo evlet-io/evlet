@@ -9,7 +9,7 @@ from evlet import (Application, Boolean, Currency, Database, Date, DateTime, Lin
 from evlet.auth import AccessError, LocalAuth, User
 from evlet.periods import set_lock
 from finite_fixtures import FiniteMeta
-from test_business import PASSWORD, client, hashed, http, secured  # noqa: F401 - fixtures
+from support import PASSWORD, client, http
 from test_rules_types import ALL
 
 FULL = {**ALL, 'editor': Rule(('read', 'create', 'update', 'delete'))}

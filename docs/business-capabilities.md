@@ -67,7 +67,7 @@ do not apply HTTP permissions.
 ### HTTP access
 
 - `GET /api/auth/session` returns the signed-in user and CSRF token, or `user: null`.
-- `POST /api/auth/setup` creates the first local administrator when explicitly enabled.
+- `POST /api/auth/setup` creates the first local administrator when explicitly enabled. Instances enable it only under `evlet dev` on loopback; under `evlet serve` use `evlet users set-password`.
 - `POST /api/auth/login` accepts username/password and issues a new session cookie.
 - `POST /api/auth/logout` revokes the current session.
 - Admin-only `GET/POST /api/auth/users` lists or creates accounts. Lists return
@@ -330,7 +330,7 @@ system sets, such as a calculated payment status, as a badge that is never edite
 header ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)). The list offers a
 board, one column per state, only when `Meta.board` names the State field, such as
 `board = "docstate"` (a State field is always named `docstate`); any other field fails registration. A move only the application makes,
-such as one a background job takes, is declared `State.Rule(..., by=())`: it has no roles, no
+such as one a background job takes, is declared `State.Move(..., by=())`: it has no roles, no
 caller can make it, and trusted Python makes it with `context.move()`
 ([states-actions.md](states-actions.md#system-moves)). A job gets that context with
 `job.business(tx, ...)`, and an action queues a job with `self.context.enqueue(...)`

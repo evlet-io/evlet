@@ -6,7 +6,7 @@ import pytest
 
 from evlet import ControlsAccess, ValidationError
 from evlet.controls_export import export
-from tests.test_business import client, hashed, secured
+from tests.support import client
 
 
 EXPORT = '/api/_controls/overrides/export?kind=setting&key=security.controls_ips'

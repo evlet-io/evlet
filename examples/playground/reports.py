@@ -3,28 +3,38 @@
 A report reads through its context, so each person sees only the rows and fields they may read.
 """
 
-from evlet import Chart, Column, Count, Date, Link, Report, Select, Sum
+from evlet import Chart, Column, Count, Date, Link, Report, Select, Sum, ValidationError
 
 from .models import Customer, Invoice, LedgerEntry
 
+# A filter's `in` takes at most 100 values (evlet/query.py), so a report reads at most that many customers.
+MOST_CUSTOMERS = 100
+
+
 def aed_customers(context):
     """Customers billed in AED. A total needs one declared unit, so these reports keep to one currency.
-    Filters never follow a Link to another model, so the customers are read first."""
-    ids, offset = [], 0
-    while True:
-        page = context.list(Customer, filters={'currency': 'AED'}, order_by=('id',), limit=100, offset=offset)
+    Filters never follow a Link to another model, so the customers are read first: keyset pages (id after
+    the last one read) cost one index range each, where OFFSET pages would rescan every earlier row."""
+    ids = []
+    while len(ids) <= MOST_CUSTOMERS:
+        after = {'id__gt': ids[-1]} if ids else {}
+        page = context.list(Customer, filters={'currency': 'AED', **after}, order_by=('id',), limit=100)
         ids += [row['id'] for row in page['rows']]
-        offset += len(page['rows'])
-        if not page['rows'] or offset >= page['total']: return ids
+        if len(page['rows']) < 100 and len(ids) <= MOST_CUSTOMERS: return ids
+    raise ValidationError({'customer': f'More than {MOST_CUSTOMERS} customers bill in AED: pick one customer'})
 
 
 def invoice_filters(report):
     """The invoice filters of a run, or None when no customer is billed in AED."""
-    customers = aed_customers(report.context)
-    if not customers: return None
-    filters = {'customer__in': customers}
-    # The grouped report has no customer filter.
-    if getattr(report, 'customer', None): filters['customer'] = report.customer
+    # A chosen customer needs one indexed read instead of every AED customer; the grouped report has no customer filter.
+    if getattr(report, 'customer', None):
+        chosen = report.context.list(Customer, filters={'id': report.customer, 'currency': 'AED'}, limit=1)
+        if not chosen['rows']: return None
+        filters = {'customer': report.customer}
+    else:
+        customers = aed_customers(report.context)
+        if not customers: return None
+        filters = {'customer__in': customers}
     if report.status: filters['status'] = report.status
     if report.from_date: filters['posting_date__gte'] = report.from_date
     if report.to_date: filters['posting_date__lte'] = report.to_date

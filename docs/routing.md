@@ -75,8 +75,12 @@ so it can show its own sign-in screen; its data still goes through the API check
 Every page the framework serves gets one non-executable block in `<head>`:
 
 ```html
-<script id="evlet-config" type="application/json">{"frontend":"crm.customer_portal","base":"/","api":"/api","realm":"portal","host":"portal.acme.com","docs":null,"theme":"system","version":"0.4.0"}</script>
+<script id="evlet-config" type="application/json">{"frontend":"crm.customer_portal","base":"/","api":"/api","realm":"portal","host":"portal.acme.com","docs":null,"theme":"system","version":""}</script>
 ```
+
+`version` is the Evlet release once the visitor is signed in, and `""` before sign-in (on the
+sign-in page, and on Docs or a frontend opened signed out), so an anonymous visitor cannot pick
+out the release. The field is always present. Asset URLs carry content hashes, not the version.
 
 Pages on a public host carry no block at all ([Public websites](#public-websites)).
 The desk shell's router and API client read `base`, `docs` and `api` from it, so one
@@ -85,6 +89,14 @@ the host's realm, which decides the session cookie: a portal frontend also mount
 the primary host reports `desk` there. `theme` is the signed-in person's theme (`light`,
 `dark` or `system`; see [settings.md](settings.md)); the framework's own pages also carry it
 as `data-theme` on `<html>`, and a static or server frontend may read it from the block.
+
+The pages Evlet serves send one Content-Security-Policy. Its `img-src` is `'self' https: data:`,
+since records may hold `https` image URLs. To allow only some image hosts, set
+`EVLET_IMAGE_ORIGINS` for the server process to exact, lowercase `https` origins separated by
+spaces (`EVLET_IMAGE_ORIGINS="https://cdn.example.com https://img.example.com"`): `img-src`
+becomes `'self'`, those origins and `data:`. An empty value allows no other host. An origin with a
+path, a wildcard or another scheme stops the server from starting. The variable is read once at
+startup; the rendered tenant Caddyfile uses the value of the process that renders it.
 
 `evlet.controls` serves Controls ([controls.md](controls.md)), and `evlet.settings` serves
 Settings ([settings.md](settings.md)) and redirects `/settings/accounts` to `/controls/users`. Flat-layout apps cannot
@@ -121,7 +133,11 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
   hosts have no sign-in. Sessions record their realm in `evlet_sessions.realm`, and a
   session holds only while the user's role is still of that realm.
 - **Cookies** are host-only, with no `Domain`, and named per realm: `evlet_session`
-  for the desk and `evlet_portal_session` for portals. Sessions and cookies in every
+  for the desk and `evlet_portal_session` for portals. An instance with a `domain` serves them
+  as `__Host-evlet_session` and `__Host-evlet_portal_session`, which a browser accepts only
+  as Secure, host-only cookies with `Path=/`, so a sibling subdomain cannot set or shadow them.
+  Instances that served the unprefixed names before sign everyone in again once after the
+  update; the old cookie is ignored and expires. Sessions and cookies in every
   realm last `security.session_hours` from Controls (12 hours, or `Security(session_hours=...)` in config.py, unless lowered).
 - **API scope.** `/api` on a portal sub-host serves `/api/auth/session`, `login` and `logout`,
   plus exactly what its frontend's `api` scopes list. Everything else answers 404 there,
@@ -258,6 +274,14 @@ only if that address is your reverse proxy: any device on the network can send t
 before signing in, so the lines are never merged. The item goes away as soon as the instance
 trusts that address. Peers with public addresses are clients behind their own proxies and are
 not noted.
+
+Trusting `127.0.0.1` and `::1`, as `evlet setup --host` does for its local Caddy, trusts every
+process on the server, not only Caddy: any local account or service (or a request forgery bug in one)
+can connect to Evlet's loopback port with its own `X-Forwarded-For` and pass the Controls allowlist
+or spread sign-in attempts over made-up networks. Trust loopback only while a reverse proxy on the
+same server is the only way in, keep other accounts off a server that runs Evlet behind loopback
+trust, and leave `trusted_proxies` empty when nothing proxies (as `evlet dev` and a plain
+`evlet serve` do). A proxy on another machine should be named by its own address instead.
 
 The Playground has a working example: `examples/playground/portal` is a static portal
 served at `http://portal.localhost:8000` (and `/portal`), limited to customers and

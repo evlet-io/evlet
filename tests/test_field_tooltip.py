@@ -3,7 +3,7 @@
 import pytest
 
 from evlet import Currency, Model, Registry, Sequence, Text
-from test_business import client, hashed, secured  # noqa: F401
+from support import client
 from test_controls import add_user, password, save  # noqa: F401
 from test_customization import build, models
 

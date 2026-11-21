@@ -3,7 +3,7 @@ import pytest
 
 from evlet.controls import grant, reset_two_step_from_shell
 from test_api_keys import create, with_key
-from test_business import PASSWORD, client, hashed, secured  # noqa: F401
+from support import PASSWORD, client
 from test_settings_security import settled  # noqa: F401
 import test_assistants as A
 

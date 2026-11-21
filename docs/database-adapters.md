@@ -27,6 +27,13 @@ dialect. App developers do not need it: they use `Database`, `Session` and `Cont
 | `evlet/database.py` | `Database` (the SQLite database: files, connections, transactions) and the neutral record API, `Session`. |
 | `evlet/writes.py` | SQLite only: the four files, the fair write line-up, and the file tools the instance commands use to open, copy and check SQLite files. |
 
+Request deadlines are part of the connection's lifecycle in `Database`: while
+`evlet.database.DEADLINE` holds a `Deadline`, each checked-out connection interrupts statements
+that run past it (SQLite's progress handler), raising the adapter's `OperationalError`; the
+handler is removed before the connection goes back to the idle pool. Another dialect gives the
+same guarantee with its own statement timeout. A bounded count is plain builder:
+`qb.select(qb.from_query(query.limit(cap), 'counted'), qb.count())` (`evlet.database.capped_count`).
+
 Framework modules outside the dialect never write SQL text and never ask which database they
 run on. A test, `tests/test_query_builder_boundary.py`, enforces this: it fails on a string that
 reads as an SQL statement, or an `execute()` call given text, anywhere outside the dialect.
@@ -140,9 +147,11 @@ values or server details in a message. A busy database raises `writes.Busy`.
 A new database is two classes and a compiler:
 
 1. **A `Database` subclass** that overrides how connections are opened and transactions run:
-   `__init__`, `_connection()`, `transaction(store=None)`, `schema_transaction()`,
+   `__init__`, `_connection()`, `transaction(store=None)`, `read_transaction()`, `schema_transaction()`,
    `read_only()`, `owns(session)`, `upgrade_storage()`, `backup()`, `files()` and `close()`.
-   Their contracts are in the docstrings of `evlet/database.py`. Writers must not interleave:
+   Their contracts are in the docstrings of `evlet/database.py`. `read_transaction()` must not
+   take the write turn or a write lock and must refuse writes: read-only contexts (reports,
+   exports, previews, prints) run in it while saves go on. Writers must not interleave:
    Evlet relies on one write transaction at a time per database for sequences, ledgers and
    the job queue.
 2. **A connection class** that implements `evlet.adapter.Connection`, with `run(statement)`
@@ -204,7 +213,7 @@ The move onto the query builder was done in steps, one commit each, in the 0.4.5
 | 4 | Jobs and messages: `jobs.py`, `events.py`, `mailboxes.py`, `mentions.py`, `connectors.py`, `tools.py`, `devlink.py`, `services.py`, `framework.py`. | Done |
 | 5 | Eva: `eva.py`, `assistants.py`. | Done |
 | 6 | The rest: `measures.py`, `business.py`, `effects.py`, `corrections.py`, `currencies.py`, `forms.py`, `printing.py`, `slips.py`, `storage.py`, `object_storage.py`. The temporary text bridge (`SqlQuery.where_sql`, `ordering_sql`, `reference_sql`, `Policy.scope_sql`, `compile_condition`) is removed. | Done |
-| 7 | The instance tools (`instances.py`, `tenancy.py`, `cli/backup.py`, `cli/install.py`, `cli/activity.py`, `cli/main.py`, `cli/serve.py`, `cli/site.py`). They keep working on SQLite files, which is what an instance is, but open them with the file tools in `evlet/writes.py` (`read_file`, `file_transaction`, `copy_set`, `copy_file`, `snapshot_set`, `check_file`, `settle`) and run query builder statements on the connection they get. The tenant catalog's tables are `TableDefinition`s. | Done |
+| 7 | The instance tools (`instances.py`, `tenancy.py`, `cli/backup.py`, `cli/install.py`, `cli/activity.py`, `cli/main.py`, `cli/commands/`, `cli/serve.py`, `cli/site.py`). They keep working on SQLite files, which is what an instance is, but open them with the file tools in `evlet/writes.py` (`read_file`, `file_transaction`, `copy_set`, `copy_file`, `snapshot_set`, `check_file`, `settle`) and run query builder statements on the connection they get. The tenant catalog's tables are `TableDefinition`s. | Done |
 
 `tests/test_query_builder_boundary.py` fails on SQL text anywhere outside the dialect, so new
 framework code uses the query builder from the start.

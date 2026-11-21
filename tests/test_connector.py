@@ -13,7 +13,7 @@ from evlet import ConnectorError, HTTPClient, MCPServer, TenantRegistry, TenantA
 from evlet.connector import origin
 from examples.playground.models import Customer, Project
 from examples.playground.tenants import tenant_app
-from tests.test_business import hashed, PASSWORD
+from tests.support import PASSWORD
 
 
 def connector_app():

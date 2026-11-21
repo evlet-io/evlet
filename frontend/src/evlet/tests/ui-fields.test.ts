@@ -5,6 +5,7 @@ import { apiLinks, BaseField, ComputedField, CurrencyField, fieldFor, localField
 import { durationText, InputError, KINDS, parseDateTime, parseDuration, parseTime } from '../ui/kinds';
 import { SchemaIndex } from '../model/schema';
 import { tipText } from '../ui/tooltip';
+import { setRegion } from '../model/format';
 import { backend, id, bigOrder, change, cleanup, key, pick, render, schema, watch } from './ui-helpers';
 
 afterEach(() => { setLinkSource(null); cleanup(); });
@@ -66,6 +67,25 @@ describe('field types: parsing and display', () => {
 });
 
 describe('BaseField', () => {
+  it('marks a required Link as required for screen readers', () => {
+    const required = render(() => BaseField({ field: localField({ name: 'customer', type: 'link', label: 'Customer', required: true, target: 'customer' } as FieldSchema) }));
+    expect(required.querySelector('.in-link')!.getAttribute('aria-required')).toBe('true');
+    const optional = render(() => BaseField({ field: localField({ name: 'owner', type: 'link', label: 'Owner', required: false, target: 'user' } as FieldSchema) }));
+    expect(optional.querySelector('.in-link')!.hasAttribute('aria-required')).toBe(false);
+  });
+
+  it('hints dates in the person\'s date format', () => {
+    const input = (type: string) => render(() => BaseField({ field: localField({ name: type, type, label: type, required: false } as FieldSchema) })).querySelector('input')!;
+    try {
+      expect(input('date').placeholder).toBe('DD-MM-YYYY');
+      setRegion({ date: 'MM/dd/yyyy' });
+      expect(input('date').placeholder).toBe('MM/DD/YYYY');
+      expect(input('datetime').placeholder).toBe('MM/DD/YYYY HH:MM');
+      setRegion({ date: 'yyyy-MM-dd' });
+      expect(input('date').placeholder).toBe('YYYY-MM-DD');
+    } finally { setRegion({}); }
+  });
+
   it('labels its input, marks required, shows errors and binds aria', () => {
     const field = localField({ name: 'deal', type: 'text', label: 'Deal name', required: true });
     const host = render(() => TextField({ field }));
@@ -237,7 +257,7 @@ describe('fields bound to the record store', () => {
 });
 
 describe('hint and tooltip', () => {
-  it('shows help text under the input, linked to it, and the error in its place', () => {
+  it('shows help text under the input, linked to it, and keeps it under an error that is not an alert', () => {
     const field = localField({ name: 'reference', type: 'text', label: 'Reference', help_text: 'The number on the customer’s order', required: true });
     const host = render(() => BaseField({ field }));
     const input = host.querySelector('input')!, help = host.querySelector<HTMLElement>('.fld-help')!;
@@ -246,8 +266,10 @@ describe('hint and tooltip', () => {
     expect(help.hidden).toBe(false);
     change(input, '');
     expect(field.error.peek()).toBe('Reference is required');
-    expect(help.hidden).toBe(true);
+    expect(help.hidden).toBe(false);
     expect(host.querySelector('.err')!.textContent).toBe('Reference is required');
+    expect(host.querySelector('.err')!.getAttribute('role')).toBeNull();
+    expect(input.getAttribute('aria-describedby')!.split(' ')).toEqual(expect.arrayContaining([host.querySelector('.err')!.id, help.id]));
     change(input, 'PO-7');
     expect(help.hidden).toBe(false);
     expect(render(() => BaseField({ field: localField({ name: 'x', type: 'text', label: 'X' }) })).querySelector('.fld-help')).toBeNull();

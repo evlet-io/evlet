@@ -6,7 +6,7 @@ from evlet import (Model, Child, Table, Decimal, Currency, Text, Rule, Registry,
                    Database, LocalAuth, Application, User, ValidationError, action, depends, Ref, validate)
 from evlet.identity import RecordId
 from evlet.reactivity import compile_expression, evaluate
-from test_business import http, client, PASSWORD
+from support import http, client, PASSWORD
 from pathlib import Path
 import json
 

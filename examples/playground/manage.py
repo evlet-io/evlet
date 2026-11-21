@@ -61,7 +61,9 @@ def main(argv=None):
     schedule.add_argument('--start-at', type=int)
     for name in ('enable-schedule', 'disable-schedule'):
         command = commands.add_parser(name); command.add_argument('slug'); command.add_argument('name')
-    commands.add_parser('render').add_argument('--output', required=True)
+    render = commands.add_parser('render')
+    render.add_argument('--output', required=True)
+    render.add_argument('--separate-worker', action='store_true', help='Also render evlet-worker.service and run jobs there')
     args = parser.parse_args(argv)
     os.umask(0o077)
     try:
@@ -117,7 +119,7 @@ def main(argv=None):
                 jobs.set_schedule_active(args.name, args.command == 'enable-schedule')
                 print('Schedule state updated.')
         elif args.command == 'render':
-            files = render_deployment(catalog)
+            files = render_deployment(catalog, separate_worker=args.separate_worker)
             target = Path(args.output)
             target.mkdir(parents=True, exist_ok=False)
             for name, content in files.items():

@@ -1,5 +1,7 @@
 # finite-v1 rebuild plan
 
+> Archived: a completed or superseded plan, kept for history. It may describe code that has since changed; the current documentation is in `docs/`.
+
 Goal: one formula language (finite-v1) with simpler engines, keeping every feature.
 Source: the formulas audit of 12-11-2026 (findings 1 to 13, "Proposed target design").
 Each step is one small pull request the owner can approve on its own.

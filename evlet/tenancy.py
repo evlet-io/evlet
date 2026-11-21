@@ -6,6 +6,7 @@ from concurrent.futures import Future
 from dataclasses import dataclass
 import json
 import logging
+import os
 from pathlib import Path
 import re
 import secrets
@@ -217,10 +218,20 @@ class _Abandoned(Exception):
 
 
 class TenantApplication:
-    """Resolve Host before touching a tenant database. Forwarded hosts are ignored."""
+    """Resolve Host before touching a tenant database. Forwarded hosts are ignored.
 
-    def __init__(self, catalog, factory):
+    jobs=True runs every active tenant's job queue in this process while the ASGI lifespan runs, the way
+    evlet serve --jobs does for one instance: job steps take the same write queue as requests, so people's
+    saves go first and jobs rest while people write. jobs=None (the default) reads EVLET_TENANT_JOBS: "1"
+    runs them, anything else leaves them to a separate worker process."""
+
+    def __init__(self, catalog, factory, *, jobs=None):
         self.catalog, self.factory = catalog, factory
+        self.jobs = os.environ.get('EVLET_TENANT_JOBS') == '1' if jobs is None else jobs
+        if type(self.jobs) is not bool:
+            raise ValueError('jobs is True, False or None')
+        self._worker = None
+        self._jobs_stopped = None
         self._apps = {}
         self._initializing = {}
         self._retired = []
@@ -234,9 +245,50 @@ class TenantApplication:
             self._stopping = True
             self._work.stop()
             apps = [app for _, app in self._apps.values()] + self._retired
+        if self._jobs_stopped is not None:
+            self._jobs_stopped.set()
         for app in apps:
             app.stop()
+            if app.business is not None and app.business.jobs is not None:
+                app.business.jobs.wake()
         return apps
+
+    async def _run_jobs(self, stopped):
+        """One pass after another over the active tenants: each runs at most one job step per pass, in a worker
+        thread, through its own database's write queue. Mirrors evlet serve --jobs and examples.playground.worker."""
+        while not stopped.is_set():
+            worked = False
+            try:
+                entries = await asyncio.to_thread(lambda: self.catalog.inventory()['tenants'])
+            except Exception:
+                logger.exception('Tenant job pass could not read the catalog')
+                entries = []
+            for entry in entries:
+                if stopped.is_set() or self._stopping:
+                    break
+                if not entry['active']:
+                    continue
+                try:
+                    tenant = await asyncio.to_thread(self.catalog.get, entry['slug'])
+                    if not tenant.hosts:
+                        continue
+                    app = await self._ready(tenant)
+                    if app.business.jobs is None:
+                        continue
+                    host = tenant.hosts[0]
+                    def active(tenant=tenant, host=host):
+                        return not stopped.is_set() and not self._stopping and self.catalog.resolve(host) == tenant
+                    worked = await asyncio.to_thread(app.business.jobs.run_one, active=active) or worked
+                except Busy:
+                    break
+                except Exception:
+                    logger.exception('Tenant job pass failed for %s', entry['slug'])
+            if not worked:
+                # Half a second between idle passes, or less when stopping.
+                try:
+                    await asyncio.wait_for(stopped.wait(), 0.5)
+                except TimeoutError:
+                    pass
 
     def _cached(self, tenant):
         if not tenant.database_path.is_file() or tenant.database_path.is_symlink():
@@ -386,6 +438,10 @@ class TenantApplication:
 
     async def _drain(self):
         self.stop()
+        if self._worker is not None:
+            # The job runner finishes its current step before the tenants' databases close.
+            await self._worker
+            self._worker = None
         await self._work.drain()
         while True:
             with self._lock:
@@ -412,6 +468,9 @@ class TenantApplication:
                         self._work.start()
                         with self._lock:
                             self._stopping = False
+                        if self.jobs:
+                            self._jobs_stopped = asyncio.Event()
+                            self._worker = asyncio.create_task(self._run_jobs(self._jobs_stopped))
                     except Exception:
                         logger.exception('Tenant router startup failed')
                         await send({'type': 'lifespan.startup.failed', 'message': 'Tenant router startup failed'})

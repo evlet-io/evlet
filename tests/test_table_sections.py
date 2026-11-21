@@ -13,7 +13,7 @@ from evlet import (Application, Child, Database, Decimal, Integer, Model, PrintD
 from evlet.auth import LocalAuth
 from evlet.printing import Column, Table as PrintTable, document_context
 from evlet.sections import STORE
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 FULL = {'admin': Rule(('read', 'create', 'update', 'delete')),
         'editor': Rule(('read', 'create', 'update', 'delete')),

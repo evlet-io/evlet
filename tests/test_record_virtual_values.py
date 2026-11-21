@@ -8,7 +8,7 @@ import pytest
 from evlet import Child, Database, Decimal, Model, Registry, Table, Text, User
 from evlet.calc import F, when
 from finite_fixtures import FiniteMeta
-from test_business import client
+from support import client
 from test_rules_types import ALL, start
 
 ADMIN = User(1, 'admin', 'admin')

@@ -90,8 +90,31 @@ retain a lazy boundary only while it gives a measurable benefit without changing
   to 30,000 values. Tests walk 20,000 groups 500 at a time with a traced Python peak under
   1.5 MB; holding all groups at once takes about 5.7 MB.
 
+- Request deadlines. A report run, export or print (`POST /api/_reports/...`) only reads, and its
+  database work stops after `EVLET_REPORT_SECONDS` (default 300; `0` turns it off): SQLite's
+  progress handler interrupts the running statement and the request answers 504 "The request took
+  longer than its time limit". `EVLET_REQUEST_SECONDS` sets the same limit for every other request
+  and is off unless set; a write it interrupts rolls back. When the client of a report disconnects,
+  its work is interrupted five seconds later, and stopping the server interrupts running report work
+  at once, so abandoned runs free their worker and do not hold up a restart.
+  (`evlet.database.Deadline`; the limit is checked every few thousand SQLite instructions.)
+- List totals. A list page with fewer rows than its limit already tells its total, so
+  `Database.page` skips the second, counting scan for it (the common case for a search with few
+  matches). `Session.count(..., cap=n)` (and `Database.count`) counts at most `n` rows in one scan
+  that stops there, for callers that show "n+" instead of an exact total.
+- Response encoding. JSON responses are encoded in the request's worker thread, not on the event
+  loop, so a large detail or report page does not stall other connections or stream heartbeats.
+- Event streams share one poller per application (see [Jobs and realtime](jobs-realtime.md)).
+
 SQLite writes remain serialized per file. Neither additional API workers nor these local benchmark
 numbers establish parallel write capacity or production readiness.
+
+**One web process per database.** Sign-in limits (`evlet_login_limits`) live in the database and
+hold across processes. API key rate limits (300 requests per key and minute), the remote MCP and
+connection-test limits, the write turn and the tenant application cache are kept in the process,
+so several workers serving one database each count them separately (four workers allow four times
+the rate). Run one web process per database (the generated service files pass `--workers 1`); at
+startup the server logs a warning when it sees more (`uvicorn --workers N` or `WEB_CONCURRENCY`).
 
 ## Local results, 29 October 2026
 
@@ -177,6 +200,15 @@ of the file's time and keeps going; a job on its own runs at full speed. A write
 processes, such as a CLI command or a second server process, are not in the line: against them
 SQLite's own busy wait still applies.
 
+**Reads take no turn.** A read-only context (`business.context(user, readonly=True)`, which reports,
+report filters, CSV export, draft and calculation previews and print rendering use) runs in
+`Database.read_transaction()`: a deferred SQLite read transaction on a pooled connection with
+`PRAGMA query_only` on. It takes no turn and no write lock, so a report that reads for seconds
+never holds up a save, a job step or an audit write; WAL lets writers commit alongside it. Its
+reads all see one snapshot, taken at the first read, and the same row, field and action checks
+apply. Any write inside it is refused. (It used to open a write transaction, so every save
+waited for the report and failed after `write_wait`.)
+
 **Slow writes.** A write transaction that holds a file longer than 1 second logs a warning
 naming the file and the request (`POST /api/...`) or the job (`job #12 import_invoices`). Set
 `Database.slow_write` to another number of seconds, or to `None` to turn it off.
@@ -191,8 +223,13 @@ rate-limited warnings when full; business records and audit transactions are una
 these numbers save the batch first. Tool-call rows are not batched: the per-minute MCP rate and
 the order of the log read them, so each is one short write to `logs.sqlite3`.
 
-**Connections.** Idle connections use a small cross-thread pool: at most two per `Database`
-and eight per process, with 60-second expiry pruned on access. Active connections are never
+**Connections.** Idle connections use a cross-thread pool: at most eight per `Database`
+(the default HTTP read lane's workers, so concurrent requests reuse open connections and their
+page cache instead of opening four files each) and, across every database and tenant of the
+process, `EVLET_IDLE_CONNECTIONS` (1 to 1,024). By default that follows the process's file
+descriptor limit, since an attached connection can hold twelve descriptors: a quarter of the
+limit, between 8 (a 256 limit, as on macOS) and 32 (a limit of 1,536 or more). Idle connections
+expire after 60 seconds, pruned on access. Active connections are never
 evicted. Reuse requires the same four files on disk; a restore or replacement invalidates
 old handles, and an open transaction is rolled back before caching. `Database.close()`
 drains in-flight log flushing and invalidates old checkouts so they cannot repopulate the
@@ -487,12 +524,15 @@ measured: the pane gave no frame timing while it was hidden.
 ## Record search
 
 `GET /api/{model}/search` ([model-engine.md](model-engine.md#record-search-and-link-options)) serves
-Link dropdowns, record pickers and the search bar. For a model with `Meta.search_fields` it runs one
-SQL query that reads **at most 200 candidates** (`CANDIDATES` in `evlet/search.py`): rows whose
-title or a readable search field holds the typed characters in order (`lower(column) LIKE
-'%b%o%x%'`, the pattern a bound value with `%`, `_` and `\` escaped), within the Link's filters and
-the role's row scope, starts-with matches first, then text matches, then the rest. Python ranks those
-candidates and keeps `limit` (at most 20). Building the options adds one query for their columns, one
+Link dropdowns, record pickers and the search bar. For a model with `Meta.search_fields` it reads
+**at most 200 candidates per query** (`CANDIDATES` in `evlet/search.py`), within the Link's filters
+and the role's row scope. The first query reads rows whose title or a readable search field holds
+the typed characters in order (`lower(column) LIKE '%b%o%x%'`, the pattern a bound value with `%`,
+`_` and `\` escaped). Fewer than 200 means that was every match. When it fills up, a second query
+reads rows whose title or a search field holds the text, and when that fills up too, a third reads
+rows starting with it, since each kind ranks above the one before. No query sorts: each stops at its
+`LIMIT`, so a common text such as `b` reads a few hundred rows instead of sorting every match on each
+keystroke. Python ranks the candidates and keeps `limit` (at most 20). Building the options adds one query for their columns, one
 per `F("link.field")` hop and one grouped query per aggregate part, each over at most 20 ids.
 
 Limits:
@@ -500,13 +540,24 @@ Limits:
 - **A scan.** A `LIKE` that starts with `%` cannot use an index, so a fuzzy search reads every row of
   the model the filters and scope leave, in each searched column (up to nine: the title and eight
   search fields). Its cost grows with the table, not with the result. Filters on indexed columns and
-  row scopes narrow it first.
-- **Bounded ranking.** When more than 200 rows match, the 200 kept are the starts-with matches first,
-  then the text matches, each in id order; a weaker match beyond them is not ranked. Type more to narrow.
+  row scopes narrow it first. A text with many in-order matches but few text matches scans twice.
+- **Bounded ranking.** When more than 200 rows match one query, the 200 kept are the first SQLite reads,
+  not the best of that kind; a match beyond them is not ranked. Type more to narrow.
 - **Case.** SQLite's `lower()` folds ASCII letters only, so for other scripts case must match.
 - **Text.** At most 100 characters; spaces are ignored for the in-order match.
 - **Models without `Meta.search_fields`** keep the list's search: the text inside a default search
   field, in the list's order, which stops at `limit` rows and stays fast at any size.
+
+### Local results, 20-11-2026
+
+The same benchmark in the cloud container, before and after the bounded queries (no sort):
+
+| Search | p50 before | p50 after |
+|---|---|---|
+| Fuzzy, common text (`box`) | 47.9 ms | 5.4 ms |
+| Fuzzy, characters in order (`bxtp`) | 44.4 ms | 46.6 ms |
+| Fuzzy, no match (`qzx`) | 41.0 ms | 38.8 ms |
+| Fuzzy, a barcode | 51.9 ms | 57.3 ms |
 
 ### Local results, 17-11-2026
 
@@ -544,6 +595,12 @@ and scheduled jobs in the customer's expected proportions. Record these together
 | Steady/peak RSS, password-hash peak, CPU and disk latency | Leave headroom for authentication, rendering, backups and traffic bursts |
 | Job age, bounded-step duration and retry rate | Reserve background capacity without delaying interactive writes |
 | Four-file backup duration, restore check and measured recovery time/data loss | Agree on recovery objectives and verify them before rollout |
+
+Sign-in is CPU- and memory-bound by design: one password hash takes about 0.3 s and 128 MiB, so
+one hashing slot signs in about three people a second, and a burst waits briefly for a slot
+rather than being refused (see [sign-in limits](production-operations.md#sign-in-limits-and-password-hashing)).
+HTTP lane defaults scale with the CPU count and each lane's queue is bounded, so a surge beyond
+it is answered 503 at once (see [bounded HTTP work](production-operations.md#bounded-http-work-and-correlation)).
 
 Repeat at normal demand, a bounded burst and recovery after overload. Check correctness:
 no duplicate postings/numbers, lost updates or partial business transactions; cancellations,

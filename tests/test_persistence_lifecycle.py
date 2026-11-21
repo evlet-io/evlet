@@ -156,7 +156,7 @@ for i in range(40):
     with db.schema_transaction() as c:
         c.execute('CREATE TABLE marker(n)')
     databases.append(db)
-assert len(writes.IDLE) <= writes.IDLE_LIMIT
+assert len(writes.IDLE) <= writes.idle_limit() == 8
 for db in databases:
     db.check()
     db.close()

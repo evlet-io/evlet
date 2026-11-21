@@ -16,7 +16,7 @@ from evlet import (Application, Boolean, Child, Database, Decimal, Integer, Link
 from evlet.auth import AccessError, KeyAccess, LocalAuth, User
 from evlet.connector import ConnectorError
 from evlet.tools import ApprovalNeeded
-from test_business import PASSWORD, client, http
+from support import PASSWORD, client, http
 
 FULL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 ADMIN = User(1, 'admin', 'admin')
@@ -380,7 +380,7 @@ def test_declarations_are_checked_when_the_model_is_defined():
             total = Decimal(scale=2, stored=False, derived=True)
             def derive(self): pass
     # Meta.derives was removed: an unknown Meta option.
-    with pytest.raises(ValueError, match='Meta supports'):
+    with pytest.raises(ValueError, match='Old.Meta.derives is not a Meta option'):
         class Old(Model):
             class Meta:
                 derives = ('count',)

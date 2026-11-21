@@ -15,9 +15,9 @@ from evlet.routing import ControlsAccess
 from evlet.settings import KEY_PROBLEM, NO_EMAIL, TOO_MANY_CODES, VERIFY, totp
 from examples.playground.app import build_app
 from examples.playground.migrate import configured_database
-from test_business import PASSWORD, client, hashed, http, secured  # noqa: F401
+from support import PASSWORD, client, http
 
-PNG = b'\x89PNG\r\n\x1a\n' + b'\0' * 64
+PNG = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01' + b'\x00' * 48
 
 
 @pytest.fixture

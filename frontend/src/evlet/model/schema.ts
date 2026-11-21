@@ -213,7 +213,9 @@ export interface AppSchema { version: number; ui_version: number; models: ModelS
   currency_display?: Record<string, CurrencyDisplay>;
   /** Decimal places of every currency code that does not have 2 (ISO 4217 with the site's changes); others have 2. */
   currency_decimals?: Record<string, number>;
-  /** Named sidebars (evlet.Workspace), with only what this role can open; docs/ui.md#workspaces. */ workspaces?: WorkspaceSchema[] }
+  /** Named sidebars (evlet.Workspace), with only what this role can open; docs/ui.md#workspaces. */ workspaces?: WorkspaceSchema[];
+  /** The IANA zone the server dates today() in (Instance.timezone, UTC by default). Absent from older servers. */
+  timezone?: string }
 
 /** A workspace: declared by an app, or the automatic one of an app that declares none. */
 export interface WorkspaceSchema {
@@ -224,23 +226,33 @@ export interface WorkspaceSchema {
   app: string | null;
   /** custom: added on this site (Controls workspace overrides). */
   source: 'declared' | 'automatic' | 'custom';
+  /** Home, directly under the switcher above every section (Workspace(home=...)): kind 'home' opens the start
+   * page, any other kind its target. Absent from older servers. */
+  home?: WorkspaceItem | null;
   groups: WorkspaceGroup[];
 }
 
-/** A titled group of a workspace's sidebar; never empty. */
-export interface WorkspaceGroup { key: string; label: string; icon: string | null; items: WorkspaceItem[] }
+/** A parent of a workspace's sidebar; never empty. Its section is the bold title above it (NavSection), its colour one
+ * of the tints (null: a stable one from its key). A link (`link`) is a parent that opens its one item. The colour,
+ * section and link are absent from older servers. */
+export interface WorkspaceGroup { key: string; label: string; icon: string | null; color?: string | null;
+  section?: { key: string; label: string } | null; link?: boolean; items: WorkspaceItem[] }
 
 /** One sidebar entry. The key is stable: model:<name>[:<label or view>], report:<name>, api:<endpoint> or url:<label>. */
-export type WorkspaceItem =
+export type WorkspaceItem = { /** Replaces the kind's icon (Shortcut(icon=...)). */ icon?: string | null } & (
   | { key: string; kind: 'model'; label: string; model: string; view: 'list' | 'board';
-      /** Conditions in the list address form (?f=), or null for the whole list. */ filters: unknown[] | null }
+      /** Conditions in the list address form (?f=), or null for the whole list. */ filters: unknown[] | null;
+      /** A badge filter is declared and this role may count by it (GET /api/_nav/badges). */ badge?: boolean }
   | { key: string; kind: 'report'; label: string; report: string }
   | { key: string; kind: 'api'; label: string; api: string }
-  | { key: string; kind: 'url'; label: string; url: string };
+  | { key: string; kind: 'url'; label: string; url: string; /** Opens in a new tab, with the open-externally icon. */ new_tab?: boolean }
+  | { key: string; kind: 'home'; label: string });
 
 /** A report column: its type, and for a link column the model its values open. */
 export interface ReportColumn { name: string; type: 'text' | 'integer' | 'decimal' | 'currency' | 'date' | 'boolean' | 'link'; label: string | null;
-  link: string | null; total: boolean; unit: string | null }
+  link: string | null; total: boolean; unit: string | null;
+  /** 'model.field' the column reads: hidden from people who cannot read that field; a Select there gives the cell its labels. */
+  source?: string | null }
 
 /** A report (GET /api/_reports or the schema's reports): its filters are the fields of a transient form. */
 export interface ReportSchema {
@@ -299,3 +311,12 @@ export class SchemaIndex {
 
 /** Whether the value of this field is calculated (compute=), so it is never edited. */
 export const isCalculated = (field: FieldSchema) => field.compute !== null && field.compute !== undefined;
+
+/** A write a person may be offered on a model's screens. */
+export type Verb = 'create' | 'update' | 'delete';
+
+/** Whether screens offer this write on the model: never for Meta.api = "read", and only when the server's
+ * permissions for the signed-in person grant it. The server always sends permissions, so absent means no.
+ * Display only: the backend checks every write again. */
+export const can = (model: Pick<ModelSchema, 'api' | 'permissions'> | null | undefined, verb: Verb): boolean =>
+  Boolean(model && model.api !== 'read' && model.permissions?.[verb] === true);

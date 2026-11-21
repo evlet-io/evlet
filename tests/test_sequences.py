@@ -12,7 +12,7 @@ from evlet.auth import User
 from evlet.calc import F
 from evlet.identity import RecordId
 from evlet.sequences import backfill, parse_format
-from test_business import client
+from support import client
 from test_rules_types import ALL, add_user, start
 
 ADMIN = User(1, 'admin', 'admin')

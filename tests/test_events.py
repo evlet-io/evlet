@@ -5,7 +5,7 @@ import pytest
 
 from evlet import EventStore, Policy, Rule, User
 from examples.playground.models import Customer, Project
-from test_business import secured, hashed, client, http
+from support import client, http
 
 
 def test_transactional_events_and_filtered_replay(secured):
@@ -52,7 +52,10 @@ def test_retention_resets_stale_cursor(secured):
     assert events.page(User(1, 'admin', 'admin'), secured.business.policy, after='0')['reset']
 
 
-def test_stream_rechecks_sessions_and_closes_on_revocation(secured):
+def test_stream_rechecks_sessions_and_closes_on_revocation(secured, monkeypatch):
+    # An idle stream rereads its page (and so its session) every STREAM_RECHECK seconds; shortened here.
+    import evlet.app
+    monkeypatch.setattr(evlet.app, 'STREAM_RECHECK', 0.2)
     c = client(secured)
     async def run():
         sent = []
@@ -73,7 +76,9 @@ def test_stream_rechecks_sessions_and_closes_on_revocation(secured):
     assert sent[-1]['more_body'] is False
 
 
-def test_stream_checks_tenant_revocation(secured):
+def test_stream_checks_tenant_revocation(secured, monkeypatch):
+    import evlet.app
+    monkeypatch.setattr(evlet.app, 'STREAM_RECHECK', 0.2)
     c = client(secured)
     assert http(secured, 'GET', '/api/_events/stream', headers={b'host': b'evil.test'})[0] == 403
     async def run():
