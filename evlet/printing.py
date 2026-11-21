@@ -13,12 +13,23 @@ from importlib import resources
 import re
 import threading
 
-from . import qb
+from . import qb, sections
 from .adapter import Column as StoredColumn, TableDefinition
 from .auth import AccessError, has_role
-from .fields import RichText, size_text
+from .fields import (
+    RichText, size_text, Boolean, Currency, Date as DateField, DateTime as DateTimeField, Decimal as DecimalField,
+    Integer, Link, Percent, Text as TextField,
+)
 from .models import Model, ValidationError
 from .richtext import sanitise
+from .activity import file
+from .business import Download
+from .currencies import currency_decimals, money_html, round_money
+from .documents import Context, settle
+from .forms import form_draft
+from .identity import RecordId
+from .images import embed
+from .statemanager import check_attachments
 
 INSTALL = 'Printing is not installed on this server (pip install evlet[print])'
 # Report designs read the report page by page, up to this many rows.
@@ -513,8 +524,6 @@ class Prints:
         business = self.business
         if model not in business.attachments:
             raise AccessError(409, 'This record does not keep attachments')
-        from .documents import Context
-        from .statemanager import check_attachments
         check_attachments(Context(business, tx, user, readonly=True), model, tx.get(model, record_id))
         limits = business.attachment_limits[model]
         if len(content) > limits.max_size:
@@ -524,7 +533,6 @@ class Prints:
         if tx.connection.run(files).value() >= limits.max_files:
             raise ValidationError({'attachment': f'Use at most {limits.max_files} attachment{"s" if limits.max_files > 1 else ""} per record'})
         file_id = business.storage.add(tx, name, record_id, filename, content)
-        from .activity import file
         file(business, tx, user, model, record_id, 'added', {'id': file_id, 'name': filename, 'size': len(content)})
         business.changed(tx, model, record_id)
         return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []
@@ -553,7 +561,6 @@ def safe_filename(value):
 
 
 def pdf_response(content, filename, disposition):
-    from .business import Download
     from urllib.parse import quote
     # An inline PDF may show in the application's own preview frame; browsers do not show a sandboxed PDF.
     policy = b"default-src 'none'; frame-ancestors 'self'" if disposition == 'inline' else b"default-src 'none'; sandbox"
@@ -582,7 +589,6 @@ def shown_fields(business, user, model):
 
 def document_context(business, tx, user, model, record):
     """The template context for one record, built from the same permission-filtered detail as a read."""
-    from .fields import Link
     from .ui.metadata import view_for
     detail = business.detail(tx, user, record, row_limit=None)
     linked = {}
@@ -612,7 +618,6 @@ def document_context(business, tx, user, model, record):
                 # Sanitised again here, so a template's {{ doc.brief }} is safe markup, never raw HTML; the
                 # record's own images are embedded as data: URIs (evlet/images.py).
                 from markupsafe import Markup
-                from .images import embed
                 value = Markup(embed(business, tx, definition, values.get('id'), sanitise(value)[0])) \
                     if isinstance(value, str) and values.get('id') is not None else Markup(sanitise(value)[0]) if isinstance(value, str) else None
             else:
@@ -624,7 +629,6 @@ def document_context(business, tx, user, model, record):
         result.setdefault('name', values.get('id'))
         return result
 
-    from . import sections
     groups = {}
 
     def tree(definition, values):
@@ -662,9 +666,6 @@ def document_context(business, tx, user, model, record):
 
 def report_context(context, report, filters):
     """Applied filters and every row (page by page, up to MAX_REPORT_ROWS) of a report."""
-    from .documents import settle
-    from .fields import Boolean, Currency, Date as DateField, Decimal as DecimalField, Integer, Text as TextField
-    from .forms import form_draft
     from .ui.metadata import label_for
     draft = form_draft(report, context, filters)
     errors, _ = settle(context, draft, complete=True)
@@ -717,7 +718,6 @@ class Formats:
             return ''
         amount = Decimal(str(value))
         code = currency or self.design.currency
-        from .currencies import currency_decimals, money_html, round_money
         # As many places as the currency has on this site (KWD 3, JPY 0); a code-less amount has 2.
         places = currency_decimals(code, self.currencies)
         amount = round_money(amount, code, displays=self.currencies)
@@ -776,7 +776,6 @@ def currency_code(field, row, business, design):
 
 def display(field, value, row, formats, business, design):
     """A value as print text, formatted by its field type (escaped by the caller's markup)."""
-    from .fields import Boolean, Currency, Date as DateField, DateTime as DateTimeField, Decimal as DecimalField, Integer, Link, Percent
     if value is None or value == '':
         return ''
     if isinstance(field, RichText):
@@ -802,7 +801,6 @@ def display(field, value, row, formats, business, design):
 
 
 def numeric(field):
-    from .fields import Currency, Decimal as DecimalField, Integer, Link
     return isinstance(field, (Currency, DecimalField, Integer)) and not isinstance(field, Link)
 
 
@@ -1061,7 +1059,6 @@ class Compiler:
     def table_spec(self, block):
         """(columns as (name, label, field, column)), rows, row fields."""
         if self.report is not None:
-            from .fields import Boolean, Currency, Date as DateField, Decimal as DecimalField, Integer, Text as TextField
             types = {'text': TextField, 'integer': Integer, 'decimal': DecimalField, 'currency': Currency, 'date': DateField, 'boolean': Boolean, 'link': TextField}
             declared = {column.name: column for column in self.report.columns}
             wanted = block.columns or tuple(Column(name) for name in declared)
@@ -1143,7 +1140,6 @@ class Compiler:
 
     @staticmethod
     def table_field(column):
-        from .fields import Currency, Decimal as DecimalField, Integer
         kinds = {'currency': Currency, 'decimal': DecimalField, 'integer': Integer}
         kind = kinds.get(column.type, DecimalField)
         return kind(currency=column.unit) if kind is Currency and column.unit and re.fullmatch('[A-Z]{3}', column.unit) else kind()
@@ -1566,7 +1562,6 @@ class Designer:
             raise ValidationError({'definition': str(exc)}) from None
         business = self.prints.business
         if design.model is not None:
-            from .identity import RecordId
             try:
                 record_id = RecordId(body.get('record'))
             except (ValueError, TypeError):

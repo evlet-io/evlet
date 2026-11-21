@@ -10,7 +10,7 @@ import uuid
 from urllib.parse import parse_qs, urlsplit
 
 from .adapter import OperationalError
-from .database import DEADLINE, ConflictError, Deadline, NotFoundError
+from .database import DEADLINE, ConflictError, Deadline, NotFoundError, using
 from .identity import jsonable, path_id
 from .models import ValidationError
 from .permissions import CALLER, CORRECTIONS, read_only
@@ -19,6 +19,8 @@ from .business import Business, Download
 from .writes import WRITE_LABEL
 from .runtime import Busy, Work, runtime
 from .storage import StorageError
+from .images import limits
+from .naming import check_declarations
 
 logger = logging.getLogger(__name__)
 MAX_BODY_BYTES = 64 * 1024
@@ -99,7 +101,6 @@ class _Encoded:
 
 
 def image_limit(business):
-    from .images import limits
     return limits(business)[0]
 
 
@@ -116,7 +117,6 @@ class Application:
 
     def __init__(self, database, *, auth=None, policy=None, children=(), attachments=(), storage=None, jobs=None, events=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, ai=None, prints=(), workspaces=()):
         from .routing import RouteTable, resolve_routes
-        from .naming import check_declarations
         check_declarations(database.registry, {child.model for child in database.registry.children})
         if routes is not None and not isinstance(routes, RouteTable):
             raise ValueError('Pass a RouteTable from resolve_routes')
@@ -660,7 +660,6 @@ class Application:
             return 200, {"status": "ok"}, []
         if self.business:
             self.business.controls.refresh()
-        from .database import using
         from .ui.routes import dispatch
         with using(self.database):
             response = dispatch(self, scope)

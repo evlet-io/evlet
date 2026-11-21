@@ -17,6 +17,8 @@ from .adapter import Column, TableDefinition
 from .auth import AccessError, User, page_query
 from .database import NotFoundError
 from .models import ValidationError, checked_body
+from .identity import text as text_id
+from .richtext import mention_ids
 
 KIND = 'mention'
 PAGE = 50
@@ -66,7 +68,6 @@ def channels(business, user_id, connection):
 
 def record(business, tx, author, model, record_id, entry_id, html):
     """Inbox rows for the users an entry mentions (not the author). Returns the ids that want an email."""
-    from .richtext import mention_ids
     wanted = []
     name = business.registry.name_for(model)
     now = int(time.time())
@@ -124,7 +125,6 @@ def _label(business, model):
 
 
 def _title(business, tx, user, model, record_id):
-    from .identity import text as text_id
     record = business.policy.record(tx, user, model, record_id)
     title = getattr(record, 'title', None) if 'title' in business.policy.fields(user, model) else None
     return {'model': business.registry.name_for(model), 'id': text_id(record_id), 'label': _label(business, model), 'title': title or text_id(record_id)}

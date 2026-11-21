@@ -12,6 +12,7 @@ import time
 from . import qb
 from .auth import AccessError, User
 from .models import ValidationError
+from .routing import PLANNED, RESERVED
 
 PAGE = 50
 PROXY_LATER = 'Proxy config and host checks arrive with sub-hosts. Until then, use evlet routes on the server.'
@@ -111,7 +112,6 @@ class System:
         return proxy
 
     def routing(self):
-        from .routing import PLANNED, RESERVED
         routes, proxy = self.controls.routes, self.proxy()
         subs = routes.sub_hosts()
         result = {

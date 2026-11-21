@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from .auth import AccessError
 from .models import ValidationError
+from .query import ChildGroup, SqlQuery, conditions
 
 KEY = re.compile(r'[a-z][a-z0-9_]{0,63}')
 ICON = re.compile(r'[a-z0-9][a-z0-9-]{0,39}')
@@ -261,7 +262,6 @@ class Workspaces:
 
     def filters(self, model, filters, where):
         """Filters checked as a list request checks them, in the list form a list address carries (?f=)."""
-        from .query import ChildGroup, SqlQuery, conditions
         try:
             items = conditions(filters)
             SqlQuery(self.business.registry, model, children=self.business.children.values()).where(filters)

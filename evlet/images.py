@@ -27,6 +27,7 @@ from .fields import Image, RichText, size_text
 from .models import ValidationError
 from . import qb
 from .adapter import Column
+from .auth import AccessError
 
 HOLDING = 0
 HOLD_SECONDS = 24 * 3600
@@ -222,7 +223,6 @@ def held(business, tx, user, model, image_id):
     row = tx.connection.run(qb.select('evlet_attachments').where(id=image_id, purpose='image', model=business.registry.name_for(model),
                                                                  record_id=HOLDING, owner=user.id)).one()
     if row is None:
-        from .auth import AccessError
         raise AccessError(404, 'Image not found')
     return row
 

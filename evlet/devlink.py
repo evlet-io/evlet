@@ -14,7 +14,7 @@ from urllib.parse import parse_qs
 
 from . import qb
 from .adapter import Column, TableDefinition
-from .auth import is_loopback
+from .auth import is_loopback, ADMINISTRATOR, AccessError
 
 PATH = '/_dev/signin'
 MINUTES = 10
@@ -35,7 +35,6 @@ def _digest(token):
 
 def _choose(connection, username):
     """The account a link signs in: username, else the built-in Administrator, else the only active admin or user."""
-    from .auth import ADMINISTRATOR
     rows = connection.run(qb.select(qb.table('evlet_users', 'u'), 'u.id', 'u.username', 'u.role', 'u.password')
                           .join(qb.table('evlet_roles', 'r'), qb.eq('r.id', qb.col('u.role')))
                           .where(qb.eq('u.active', 1), qb.eq('r.realm', 'desk')).order_by('u.id')).all()
@@ -96,7 +95,6 @@ def link(origin, token):
 
 def sign_in(business, scope):
     """GET /_dev/signin?token=...: use the token once and start a normal session. Returns (status, body, headers)."""
-    from .auth import AccessError
     from .controls import audit
     auth = business.auth
     peer = (scope.get('client') or (None,))[0]

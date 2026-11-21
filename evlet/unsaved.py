@@ -14,6 +14,7 @@ from .adapter import Column, TableDefinition
 from .auth import AccessError, allow
 from .identity import path_id
 from .models import ValidationError, checked_body
+from .database import Session
 
 TABLE = TableDefinition('evlet_unsaved', (
     Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
@@ -323,7 +324,6 @@ class Unsaved:
     def read_entry(self, user, model, name, record_id):
         """(answer, forget, etag) from one read snapshot. The answer is the response body, or the AccessError to raise
         when the person can't read the record any more. `forget` is True when the stored entry should go."""
-        from .database import Session
         business, policy = self.business, self.business.policy
         nothing = {'entry': None, 'dropped': []}
         with self.database._connection() as connection:

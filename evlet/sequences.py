@@ -11,11 +11,12 @@ import json
 import re
 from types import MappingProxyType
 
-from .fields import Boolean, Date, Integer, LongText, MISSING, Tags, Text
+from .fields import Boolean, Date, Integer, LongText, MISSING, Tags, Text, active_layer
 from .declarations import State
 from .models import ValidationError, build_step, identifier
 from . import qb
 from .adapter import Column, TableDefinition
+from .naming import check_name, has_name
 
 TOKEN = re.compile(r'\{([^{}]*)\}')
 PERIOD_TOKENS = ('year', 'yy', 'month')
@@ -549,7 +550,6 @@ class NamingRules:
 
 def compile_naming(model, naming, series=None):
     """Check Meta.naming against its model; `series` replaces the file series (a Controls override)."""
-    from .naming import has_name
     fields = model.__declared_fields__
     where = f'{model.__name__}.Meta.naming'
     target = fields.get(naming.field)
@@ -654,7 +654,6 @@ def preview_name(connection, resource, rules, parts, values, today):
 
 
 def naming_rules(registry, model):
-    from .fields import active_layer
     return active_layer().naming.get(model) or registry.naming.get(model)
 
 
@@ -670,7 +669,6 @@ def name_due(rules, values, *, created=False, move=None):
 
 def issue(connection, registry, model, rules, values, today, actor=None, *, record=None, context=None, record_id=None):
     """A name from the series or the model's autoname(self, context), checked to be free."""
-    from .naming import check_name
     table = registry.name_for(model)
     if rules.autoname:
         name = model.autoname(record, context)

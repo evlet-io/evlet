@@ -20,13 +20,20 @@ from .app import Application
 from .database import Database, POSTGRESQL_REMOVED
 from .events import EventStore
 from .jobs import JobQueue
-from .auth import LocalAuth
+from .auth import LocalAuth, OIDC, PORTAL, RESERVED_ROLES, ROLES, ROLE_ID, Security, proxy_networks
 from .storage import LocalFileStorage
 from .migrations import Migration
 from .permissions import Policy
 from .models import Registry
-from .routing import resolve_routes
+from .routing import resolve_routes, ApiScope, Frontend
 from .writes import read_file
+from .connectors import Connector
+from .eva import AI
+from .framework import state
+from .secrets import SecretKey
+from .services import Calendar, CalendarSchedule
+from .settings import AppSettings, UserPreferences
+from .workspaces import Workspace
 
 
 @dataclass(frozen=True)
@@ -47,7 +54,6 @@ class Instance:
 
     def __post_init__(self):
         from .cli.project import valid_name
-        from .auth import proxy_networks
         valid_name(self.name)
         object.__setattr__(self, 'trusted_proxies', proxy_networks(self.trusted_proxies))
         ZoneInfo(self.timezone)
@@ -108,7 +114,6 @@ class AppDefinition:
         for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'api_scopes', 'connectors', 'workspaces', 'extensions'):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         object.__setattr__(self, 'permissions', dict(self.permissions))
-        from .auth import PORTAL, RESERVED_ROLES, ROLE_ID, ROLES
         object.__setattr__(self, 'roles', dict(self.roles))
         for role, base in self.roles.items():
             if not isinstance(role, str) or not ROLE_ID.fullmatch(role) or role in ROLES or role in RESERVED_ROLES or base not in ('editor', 'viewer', PORTAL):
@@ -116,23 +121,18 @@ class AppDefinition:
         object.__setattr__(self, 'scopes', dict(self.scopes))
         if any(not isinstance(key, str) or not ROLE_ID.fullmatch(key) or not callable(scope) for key, scope in self.scopes.items()):
             raise ValueError('scopes maps lowercase names to callables returning query filters')
-        from .services import CalendarSchedule
         if any(not isinstance(schedule, (Schedule, CalendarSchedule)) for schedule in self.schedules):
             raise ValueError('Register Schedule definitions')
-        from .settings import AppSettings, UserPreferences
         for name, base in (('settings', AppSettings), ('preferences', UserPreferences)):
             value = getattr(self, name)
             if value is not None and not (isinstance(value, type) and issubclass(value, base) and value is not base):
                 raise ValueError(f'{name} takes a subclass of {base.__name__}')
-        from .routing import ApiScope, Frontend
         if any(not isinstance(frontend, Frontend) for frontend in self.frontends):
             raise ValueError('Register Frontend definitions')
         if any(not isinstance(scope, ApiScope) for scope in self.api_scopes):
             raise ValueError('Register ApiScope definitions')
-        from .connectors import Connector
         if any(not isinstance(connector, Connector) for connector in self.connectors):
             raise ValueError('Register Connector definitions')
-        from .workspaces import Workspace
         if any(not isinstance(workspace, Workspace) for workspace in self.workspaces):
             raise ValueError('Register Workspace definitions')
 
@@ -148,18 +148,15 @@ def read_instance(path):
     value = namespace.get('instance')
     if not isinstance(value, Instance) or value.name != path.name:
         raise ValueError('config.py must define instance = Instance(name=the_directory_name, ...)')
-    from .auth import Security
     security = namespace.get('security', Security())
     if not isinstance(security, Security):
         raise ValueError('config.py security must be security = Security(password_min=..., admin_two_step=..., two_step=..., admin_sign_in=..., session_hours=..., lockout=...)')
     object.__setattr__(value, 'security', security)
     oidc = namespace.get('oidc')
     if oidc is not None:
-        from .auth import OIDC
         if not isinstance(oidc, OIDC):
             raise ValueError('config.py oidc must be an OIDC(...) configuration or None')
     object.__setattr__(value, 'oidc', oidc)
-    from .eva import AI
     ai = namespace.get('ai')
     if ai is not None and not isinstance(ai, AI):
         raise ValueError('config.py ai must be ai = AI(enabled=..., models={...})')
@@ -406,7 +403,6 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     app.managed_framework = True
     app.business.timezone = config.timezone
     # One key for connector secrets, two-step secrets and backup codes (evlet.secrets).
-    from .secrets import SecretKey
     app.business.secret_key = SecretKey(path / 'secret.key')
     for name, definition in definitions:
         for connector in definition.connectors:
@@ -470,7 +466,6 @@ def declared(app, schedule):
 
 
 def register_schedules(app, schedules):
-    from .services import Calendar, CalendarSchedule
     import time
     calendar_names = {schedule.name for schedule in schedules if isinstance(schedule, CalendarSchedule)}
     app_names = {schedule.name for schedule in schedules if isinstance(schedule, AppSchedule)}
@@ -536,7 +531,6 @@ def load_runtime(root, name, *, port=8000, development=False, public=False):
     locked = require_consistent(path)
     if not locked['apps']:
         raise ValueError('Instance has no installed apps. Run evlet install APP --instance ' + name)
-    from .framework import state
     if locked.get('evlet') != state():
         recorded = locked.get('evlet', {}).get('version', 'a release before framework versioning')
         raise ValueError(f'Evlet {state()["version"]} is installed but instance {name} was migrated with Evlet {recorded}; '

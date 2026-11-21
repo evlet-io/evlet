@@ -17,6 +17,9 @@ from .documents import Draft, Record, handler_context, settle, source_values
 from .identity import RecordId, jsonable
 from .models import Model, ValidationError, checked_body, storage_name
 from .permissions import trusted
+from .declarations import Table
+from .fields import Field, script_method
+from .reactivity import plans, serialized as rule
 
 RESULT_LIMIT = 65536
 EXPIRES = 3600
@@ -57,13 +60,11 @@ class Prompt(Model):
             raise ValueError(f'{cls.__name__}.Meta supports {", ".join(META)}, not {", ".join(unknown)}')
         PROMPTS[f'{cls.__module__}.{cls.__qualname__}'] = cls
         # Its name, and its rows', in the schema and the finite plan the browser runs.
-        from .declarations import Table
         cls.__form_name__ = '_prompt.' + prompt_name(cls)
         for key, value in vars(cls).items():
             if isinstance(value, Table):
                 value.child.__form_name__ = f'{cls.__form_name__}.{key}'
         # A model script, as on a document (docs/model-scripts.md): its hooks on the prompt's fields and rows.
-        from .fields import Field, script_method
         rows = [value.child for value in vars(cls).values() if isinstance(value, Table)]
         hooked = [f'{owner.__name__}.{name}' for owner, fields in ((cls, vars(cls)), *((row, getattr(row, '__app_fields__', {})) for row in rows))
                   for name, field in fields.items() if isinstance(field, Field) and field.hooks]
@@ -389,7 +390,6 @@ def check(prompt):
 
 def schema(registry, prompt, name):
     """The prompt as the browser's record engine reads a model: fields, layout, Tables, rules and the finite plan."""
-    from .reactivity import plans, serialized as rule
     from .ui.metadata import field_schema
     title = option(prompt, 'title') or prompt.__name__
     blocks = check(prompt)

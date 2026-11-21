@@ -27,6 +27,8 @@ from .connector import ConnectorError
 from .database import ConflictError, NotFoundError
 from .identity import SCHEMA as ID_SCHEMA, RecordId, jsonable
 from .models import ValidationError, checked_body
+from .app import HTTPError
+from .prompts import opens_prompt
 
 SAFE_INTEGER = 2**53 - 1
 MODEL = {'type': 'string', 'pattern': '^[a-z][a-z0-9_]{0,127}$'}
@@ -242,7 +244,6 @@ class Dispatch:
         self.scope.setdefault('client', ('127.0.0.1', 0))
 
     def __call__(self, method, path, body=None, headers=()):
-        from .app import HTTPError
         route, _, query = path.partition('?')
         inner = {**self.scope, 'method': method, 'path': route, 'query_string': query.encode('ascii'),
                  'headers': [(b'host', self.host), (b'x-evlet-request', b'1'), *headers], 'evlet.assistant': self.user}
@@ -577,7 +578,6 @@ class Tools:
     def opens_prompt(self, model, action):
         """Whether running this action only opens a prompt: its body is `return SomePrompt` (prompts.opens_prompt), or
         it takes inputs=, which run_action leaves out, so its form opens."""
-        from .prompts import opens_prompt
         model = self.business.registry.models.get(model)
         method = getattr(model, action, None) if model is not None else None
         declaration = getattr(method, '__action__', None)

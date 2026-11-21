@@ -13,10 +13,11 @@ from . import qb
 from .adapter import Column, OperationalError, TableDefinition
 from .auth import AccessError, User
 from .identity import RecordId, text as text_id
-from .database import NotFoundError
+from .database import NotFoundError, using
 from .models import ValidationError
 from .permissions import Policy, trusted
 from .writes import WRITE_LABEL, job_writes
+from .documents import Context
 
 logger = logging.getLogger(__name__)
 # Seconds a claim lasts by default, and how far each committed step of a resumable task extends it.
@@ -91,7 +92,6 @@ class JobContext:
 
         Job handlers are trusted code, so the context may also make system moves (rules with by=()).
         Writes commit or roll back with the job's own transaction (or the step of a resumable task)."""
-        from .documents import Context
         business = self._business
         if business is None:
             raise ValueError('This job runs without an application, so it has no business context')
@@ -421,7 +421,6 @@ class JobQueue:
         """Run a claimed job. A job passes the business's gate like a request, so adding or removing an
         instance field waits for it."""
         from contextlib import nullcontext
-        from .database import using
         business = getattr(self, 'business', None)
         # A job's writes queue behind requests for each file, and never wait long (evlet/writes.py).
         with business.gate.shared() if business is not None else nullcontext(), using(self.database), job_writes(f'job #{claim[0]}'):

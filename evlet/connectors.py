@@ -26,6 +26,7 @@ from .auth import ROLE_ID, AccessError, is_loopback
 from .models import ValidationError, checked_body
 from . import secrets as vault
 from .secrets import SecretKeyError
+from .controls import audit
 
 logger = logging.getLogger(__name__)
 TIMEOUT = 10
@@ -522,7 +523,6 @@ class Connectors:
 
     def save(self, actor, row_id, body):
         connector, account = self.resolve(row_id)
-        from .controls import audit
         with self.database._connection() as connection:
             existing = self.row(connection, row_id)
         saved_settings = {} if existing is None else json.loads(existing['settings'])
@@ -558,7 +558,6 @@ class Connectors:
 
     def remove(self, actor, row_id):
         connector, account = self.resolve(row_id)
-        from .controls import audit
         with self.database.transaction() as tx:
             row = self.row(tx.connection, row_id)
             if row is None:
@@ -577,7 +576,6 @@ class Connectors:
         connector, account = self.resolve(row_id)
         if connector is not SMTP:
             raise AccessError(404, 'Only outgoing accounts can be the default')
-        from .controls import audit
         with self.database.transaction() as tx:
             if self.row(tx.connection, row_id) is None:
                 raise AccessError(404, 'This connector is not set up yet')

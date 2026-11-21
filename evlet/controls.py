@@ -9,19 +9,27 @@ import time
 from types import MappingProxyType
 from urllib.parse import parse_qs, quote
 
-from .auth import PORTAL, RESERVED_ROLES, ROLE_ID, ROLES, AccessError, LocalAuth, User, is_administrator
+from .auth import (
+    PORTAL, RESERVED_ROLES, ROLE_ID, ROLES, AccessError, LocalAuth, User, is_administrator, Security, password_hash,
+    trusted_proxies_line,
+)
 from .controls_system import System
 from .customization import Customization, activated, instance_fields
-from .fields import Layer
+from .fields import Layer, Email
 from .fields import Link
 from .adapter import Column, IntegrityError, TableDefinition
 from .database import NotFoundError
 from .identity import path_id
 from .models import ValidationError, checked_body
-from .periods import TABLE as PERIOD_LOCKS
+from .periods import TABLE as PERIOD_LOCKS, scope_key, set_lock
 from .unsaved import LIMITS as UNSAVED_LIMITS
 from . import qb, writes
 from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, scope_condition
+from .business import Download
+from .currencies import changed_codes, lowered, stored_excess, summary
+from .naming import has_title
+from .routing import host_name
+from .statemanager import check_overrides, load_overrides, override_target
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'activity', 'print', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting', 'state', 'rule')
@@ -192,7 +200,6 @@ def reset_two_step_from_shell(database_path, username):
 
 def set_email_from_shell(database_path, username, email):
     """Set a user's email address from the server shell, audited as cli. It is where notifications go."""
-    from .fields import Email
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
     try:
@@ -221,7 +228,6 @@ def set_password_from_shell(database_path, username, password, file_minimum=15):
     """Set a user's password from the server shell, audited as cli. Ends their sessions, assistants and API keys, like a takeover recovery.
 
     The minimum is config.py's security.password_min for admins, and the Controls setting, when there is one, for everyone else."""
-    from .auth import password_hash
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
     with writes.shell_transaction(database_path) as connection:
@@ -403,7 +409,6 @@ class Controls:
         self.database.layer = layer
         self.business.policy = policy
         # The instance's state and rule overrides (evlet/statemanager.py), compiled once per version.
-        from .statemanager import load_overrides
         load_overrides(self.business, [row for row in stored if row['kind'] in ('state', 'rule')], problems)
         if self.business.jobs is not None:
             self.business.jobs.policy = policy
@@ -462,7 +467,6 @@ class Controls:
     def admin_rules(self):
         security = getattr(self.business.auth, 'security', None)
         if security is None:
-            from .auth import Security
             security = Security()
         return {'password_min': security.password_min, 'two_step': security.admin_two_step, 'sign_in': security.admin_sign_in}
 
@@ -487,7 +491,6 @@ class Controls:
     def host_allowed(self, scope):
         """The primary host only. Without one (development, or a tenant whose factory leaves the route table
         default), every host the auth accepts that is not a sub-host counts, so each tenant's own host works."""
-        from .routing import host_name
         host = dict(scope.get('headers', [])).get(b'host', b'')
         if self.routes is None or host not in self.business.auth.hosts or self.routes.scopes(host) is not None:
             return False
@@ -516,7 +519,6 @@ class Controls:
 
     def page(self, scope, path):
         """GET /controls[/page]: anonymous users go to sign-in; True serves the page, False is a 404."""
-        from .business import Download
         rest = path.removeprefix('/controls').strip('/')
         if rest and rest not in PAGES:
             return False
@@ -722,7 +724,6 @@ class Controls:
         if kind == 'custom':
             raise ValueError('Add and remove instance fields with Add field and Remove field.')
         if kind in ('state', 'rule'):
-            from .statemanager import override_target
             override_target(self.registry, key)
             return value  # The whole batch is checked together in save().
         return self.custom.check(kind, key, value)
@@ -791,14 +792,12 @@ class Controls:
             if change[0] not in ('state', 'rule'):
                 continue
             if change[2] is None and change[:2] in resets:
-                from .statemanager import override_target
                 try:
                     override_target(self.registry, change[1])
                 except ValueError:
                     continue  # No surviving model has a rule set to check.
             rules.append(change)
         if rules and not errors:
-            from .statemanager import check_overrides
             try:
                 with self.database._connection() as connection:
                     check_overrides(self.business, connection, rules)
@@ -828,7 +827,6 @@ class Controls:
                 if schedule:
                     audit(connection, user.username, 'Jobs', schedule[1], 'Resumed' if value is None else 'Paused', before, value)
                 elif key == 'display.currencies':
-                    from .currencies import changed_codes, lowered, stored_excess, summary
                     for code, places in lowered(before, value):
                         count, first = stored_excess(connection, self.registry, code, places, self.business.settings.values.get
                                                      if getattr(self.business, 'settings', None) is not None else None)
@@ -875,7 +873,6 @@ class Controls:
 
     def periods(self):
         """The models with Meta.period, every saved lock and the latest changes (evlet/periods.py)."""
-        from .naming import has_title
         models = []
         for model, period in self.registry.periods.items():
             if model not in self.registry.exposed.values():
@@ -902,7 +899,6 @@ class Controls:
     def set_period(self, user, body):
         """Set or clear one lock: {"scope": null or {"model", "id"}, "date": "YYYY-MM-DD" or null}. Admin only."""
         from datetime import date
-        from .periods import scope_key, set_lock
         if user.role != 'admin':
             raise AccessError(403, 'Only an admin can change period locks.')
         checked_body(body, {'scope', 'date'}, 'Send scope and date.', exact=True)
@@ -1234,7 +1230,6 @@ class Controls:
 
     def state(self, user, scope):
         from importlib import metadata
-        from .routing import host_name
         try:
             version = metadata.version('evlet')
         except metadata.PackageNotFoundError:
@@ -1280,7 +1275,6 @@ class Controls:
     def proxy_attention(self):
         """One Needs attention item per peer on this machine or network that sends forwarded headers but is not a trusted
         proxy. Any device on the network can send such headers, so each address is shown on its own, never merged."""
-        from .auth import trusted_proxies_line
         auth = self.business.auth
         name = self.system.instance_name()
         where = f'Instance(...) in instances/{name}/config.py' if name else 'LocalAuth(...) where the application is built'

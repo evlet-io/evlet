@@ -41,6 +41,8 @@ from .declarations import Ref
 from .fields import Boolean, Link, RichText, Text
 from .identity import RecordId
 from .models import ValidationError
+from .documents import Context
+from .query import SqlQuery
 
 LIMIT, MAX_LIMIT = 8, 20
 # Records read and ranked in Python for one fuzzy search, at most.
@@ -67,7 +69,6 @@ def route(business, scope, user, model):
     if filters:
         policy.query_fields(user, model, filters, [], database=business.database, children=children)
     option = field.option if field is not None and field.option is not None else getattr(getattr(model, 'Meta', None), 'option', None)
-    from .query import SqlQuery
     from .ui.metadata import view_for
     view = view_for(model)
     readable = policy.fields(user, model)
@@ -300,7 +301,6 @@ def options(business, tx, user, model, title, option, found, values):
 
 def hooked(business, tx, user, model, hook, items, values):
     """Run Option(hook=): trusted app code that may change each option's title and subtext."""
-    from .documents import Context
     table = qb.table(business.registry.name_for(model), 'record')
     records = {row.id: row for row in (model._from_row(row) for row in tx.connection.run(
         qb.select(table).where(qb.in_('record.id', [int(item['id']) for item in items]))).all())}
@@ -397,7 +397,6 @@ class Parts:
                     raise Unavailable()
                 value = self.values[value.path]
             filters[key] = value
-        from .query import SqlQuery
         try:
             condition = SqlQuery(self.registry, related).where(filters)
         except ValueError as exc:
