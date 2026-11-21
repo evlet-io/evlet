@@ -6,6 +6,17 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Changed
+
+- **List tabs are pills with a dot in each state's colour.** Each tab shows a dot in its State step's or Select
+  choice's colour, its label and a count chip. The open tab is on a light accent fill. Tabs that don't fit the
+  card's width go in a **More N** menu at the end of the row ([docs/ui.md](docs/ui.md#list-tabs)).
+  `Tabs({ pills: true })` and `TabItem.tint` draw them on screens of your own
+  ([docs/ui-framework.md](docs/ui-framework.md)).
+- **On phones, a list's search row comes first**, above the tabs.
+- **The sidebar is a light grey**, its active child a white card with a border, marked on the children's guide line
+  in the parent's colour. Hover is a light grey.
+
 ### Upgrading
 
 - **The Workspace switcher moved from the top bar to the top of the sidebar**, in the same design. The top bar keeps
@@ -47,11 +58,6 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   open-externally icon. `Shortcut('task', badge={...})` shows a count beside a child. The count is bounded: it reads at most
   the newest 1,000 rows, applies the role's row scope and filters, and stops at 100 ("99+"), from
   `GET /api/_nav/badges` ([docs/ui.md](docs/ui.md#badges)).
-
-### Changed
-
-- **The sidebar is a light grey**, its active child a white card with a border, marked on the children's guide line
-  in the parent's colour. Hover is a light grey.
 
 ### Fixed
 

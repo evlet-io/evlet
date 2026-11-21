@@ -659,7 +659,11 @@ mount(document.querySelector('#app')!, () => DocFrame({
 ```
 
 - **Tabs** and **TabPanel** are for screens of your own (a list's tabs use Tabs); the record page has no
-  tabs since 0.4, and `sticky` and `keepTabPlace` went with them.
+  tabs since 0.4, and `sticky` and `keepTabPlace` went with them. `Tabs({ pills: true, ... })` draws pills,
+  as a list's tabs are: a tab's `tint` puts a dot in that colour before its label, the count is a chip, and
+  the tabs that don't fit the row go in a **More N** menu at its end (measured with ResizeObserver; without it
+  the first tab and `PILL_TABS_SHOWN` (5) more stay in the row). The chosen tab always stays in the row. With
+  `pills` the returned element is the row (`.pill-row`) around the tablist, and TabPanel takes it as before.
 - **InlineValue** reads first and edits in place: click or Enter opens the field's input,
   and for a Link, Select, date, date-time or time field its picker too, in one step (a `Control`'s
   `open()`; Tab onto the value opens nothing, and Esc in the picker closes it and keeps editing).

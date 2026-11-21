@@ -532,6 +532,12 @@ class Employee(Model):
   checked at definition. For a Link it is the linked record's title (or name), found when the page
   loads; if this person can't read such a record, the list opens on All. `list_tab` without tabs
   raises `ValueError`.
+- **How they look.** Each tab is a pill: a small dot in the value's colour (the State step's `color`, or the
+  Select's `colors`, as the list's badges show it; All and Link tabs have none), the label and a count chip.
+  The open tab sits on a light accent fill with a solid chip. Tabs that don't fit the card's width go in a
+  dashed **More N** button at the end of the row (N: how many are in it), whose menu lists them with their
+  dots and counts; the open tab always stays in the row. On phones (760 px and under) the search row comes
+  first, above the tabs. The title row (name, Filter, New and the app's buttons) is unchanged.
 - **Link tabs** show the most used values, at most 8, most used first, each labelled with the
   linked record's title. The filter finds the others. A record a link opened with `?tab=` keeps
   its own tab even when it is not among them.

@@ -107,6 +107,15 @@
 .ev-list-card > .tabs{flex:none;margin:0;padding:0 8px}
 .ev-list-card > .toolbar{flex:none;margin:0;padding:10px var(--ev-gut);border-bottom:1px solid var(--divider)}
 .ev-list-card > .tabs + .toolbar{border-top:0}
+.ev-list-card > .pill-row{flex:none}
+/* Phones: the search row comes first, above the tabs. */
+@media (max-width:760px){
+  .ev-list-card > .toolbar{order:-1}
+  .ev-list-card > .toolbar .search-field{flex:1}
+  .ev-list-card > .toolbar > .grow{display:none}
+  .ev-list-card > .toolbar .search-field .input{width:100%}
+  .ev-list-card > .pill-row{padding:8px 12px}
+}
 .ev-list-body{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:auto}
 .ev-list-body > *{flex:none}
 .ev-list-body > .table-wrap,.ev-list-body > .ev-compact{flex:1 1 auto;min-height:0;max-height:none;border:0;border-radius:0;overflow:auto}
