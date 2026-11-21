@@ -408,7 +408,7 @@ class Application:
             name = parts[2]
             if name in self.registry.exposed:
                 return '/api/' + name + ('/{record_or_operation}' if len(parts) > 3 else '')
-            if name in ('auth', '_controls', '_settings', '_events', '_eva', '_reports', '_services', '_unsaved'):
+            if name in ('auth', '_controls', '_settings', '_events', '_eva', '_reports', '_services', '_unsaved', '_nav'):
                 return '/api/' + name + '/*'
             return '/api/{unknown}'
         if path in PUBLIC_PATHS:

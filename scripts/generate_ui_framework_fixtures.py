@@ -148,10 +148,10 @@ class Invoice(Model):
         State.Step('paid', 'Paid', color='teal', lock=True, final=True),
         State.Step('void', 'Void', color='rose', lock=True, final=True),
         rules=(
-            State.Rule('draft', 'issued', 'Issue', key='issue', primary=True, when=F('total') > D('0')),
-            State.Rule('issued', 'paid', 'Mark paid', key='mark_paid', by=('admin',)),
-            State.Rule('issued', 'draft', 'Reopen', key='reopen', by=('admin',), remark='required'),
-            State.Rule('issued', 'void', 'Void', key='void', remark=State.Remark('required', label='Reason')),
+            State.Move('draft', 'issued', 'Issue', key='issue', primary=True, when=F('total') > D('0')),
+            State.Move('issued', 'paid', 'Mark paid', key='mark_paid', by=('admin',)),
+            State.Move('issued', 'draft', 'Reopen', key='reopen', by=('admin',), remark='required'),
+            State.Move('issued', 'void', 'Void', key='void', remark=State.Remark('required', label='Reason')),
         ), show='bar')
     lines = Table(InvoiceLine, max_rows=1000)
     total = Currency(compute=lines.sum('amount'))

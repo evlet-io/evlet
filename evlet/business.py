@@ -635,6 +635,10 @@ class Business:
         if path.startswith('/api/_services/'):
             from .services import dispatch
             return dispatch(self, scope, body, user)
+        if path == '/api/_nav/badges' and getattr(self, 'workspaces', None) is not None:
+            if method != 'GET':
+                raise AccessError(405, 'Method not allowed')
+            return self.workspaces.badges(scope, user)
         if path.startswith('/api/_prompts/'):
             from .prompts import dispatch
             return dispatch(self, scope, body, user)
