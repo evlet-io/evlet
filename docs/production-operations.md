@@ -42,9 +42,10 @@ address may be shared. Do not blindly trust arbitrary forwarded IP headers.
 Each password hash (sign-in, password change, new account) takes about 0.3 s of CPU and
 128 MiB of memory. A process hashes at most `EVLET_PASSWORD_SLOTS` passwords at once (1 to 8;
 default two, or one on a single-CPU host). A request that finds every slot busy waits its turn
-for up to 3 seconds behind at most eight others per slot; past that it gets 503 "Password
-service is busy". A burst of sign-ins at the start of a shift is therefore served in order at
-about three per second per slot instead of refused. On a 1 GB host with more than one Evlet
+for up to 3 seconds; past that, or when the line is full, it gets 503 "Password service is
+busy". A waiting sign-in holds a thread of the HTTP write lane, so the line is only as long as
+leaves one write thread free for saves (`EVLET_HTTP_WRITE` minus the slots minus one; none on a
+one- or two-CPU host by default). Raise `EVLET_HTTP_WRITE` to let more sign-ins wait their turn. On a 1 GB host with more than one Evlet
 process, set `EVLET_PASSWORD_SLOTS=1`: each process then needs at most 128 MiB for hashing.
 
 Every attempt is counted before any hashing, per 15 minutes:
@@ -57,7 +58,10 @@ Every attempt is counted before any hashing, per 15 minutes:
 - **Account from every network:** after 50 failures the account is slowed, not locked. Networks
   it has not signed in from in the last 30 days get one attempt every 10 seconds between them
   (429 otherwise), which keeps spread-out guessing slow. People signing in from a network
-  they used before are not held up, so an attacker cannot lock someone out this way.
+  they used before are not held up. An attacker who keeps the account above 50 failures and
+  takes each 10-second attempt can still keep it from signing in from a new network (a new
+  device, a mobile network whose address changes); watch for this in the sign-in log and
+  reset the person's failures in Controls if it happens.
 
 ## Restarting a service
 

@@ -52,11 +52,33 @@ def _password_slots():
     return max(1, min(2, os.cpu_count() or 1))
 
 
-PASSWORD_SLOTS = _password_slots()
+def _startup_password_slots():
+    # Read once at import: a bad value must not break every CLI command, so it falls back with a warning
+    # here, and serving refuses it (HTTPRuntime calls _password_slots() again).
+    try:
+        return _password_slots()
+    except ValueError as error:
+        import warnings
+        warnings.warn(f'{error}; using the default', RuntimeWarning, stacklevel=2)
+        return max(1, min(2, os.cpu_count() or 1))
+
+
+PASSWORD_SLOTS = _startup_password_slots()
 _HASH_SLOTS = BoundedSemaphore(PASSWORD_SLOTS)
 # A request waits up to HASH_WAIT seconds for a hashing slot, behind at most HASH_QUEUE others; past either it gets 503.
-# At about 0.3 s per hash, a slot serves its queue within the wait, so a burst of sign-ins is answered in turn.
-HASH_WAIT, HASH_QUEUE = 3.0, 8 * PASSWORD_SLOTS
+# A waiting sign-in holds a thread of the HTTP write lane, so the queue is kept small enough that hashing and
+# waiting together always leave one write slot free for saves (fit_hash_queue; HTTPRuntime calls it).
+HASH_WAIT = 3.0
+
+
+def fit_hash_queue(write_slots):
+    """Size HASH_QUEUE for a write lane of write_slots threads: at most write_slots - PASSWORD_SLOTS - 1 waiters."""
+    global HASH_QUEUE
+    HASH_QUEUE = max(0, min(8 * PASSWORD_SLOTS, write_slots - PASSWORD_SLOTS - 1))
+    return HASH_QUEUE
+
+
+HASH_QUEUE = fit_hash_queue(min(4, (os.cpu_count() or 1) + 1))
 _hash_waiting, _hash_lock = [0], Lock()
 # Sign-in limits, each per 15 minutes: failures per network (an office behind one address shares it) and failures per
 # account from every network together. Past ACCOUNT_FAILURES an account is slowed, not locked: networks it has not

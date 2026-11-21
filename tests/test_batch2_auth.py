@@ -177,3 +177,22 @@ def test_a_full_lane_queue_refuses_at_once(monkeypatch):
         monkeypatch.setenv('EVLET_HTTP_QUEUE', value)
         with pytest.raises(ValueError):
             module.HTTPRuntime()
+
+
+def test_the_hash_queue_always_leaves_a_write_slot_free(monkeypatch):
+    monkeypatch.setattr(auth_module, 'HASH_QUEUE', auth_module.HASH_QUEUE)
+    for slots, write in ((1, 2), (2, 3), (2, 4), (1, 4), (2, 40)):
+        monkeypatch.setattr(auth_module, 'PASSWORD_SLOTS', slots)
+        queue = auth_module.fit_hash_queue(write)
+        assert queue >= 0 and slots + queue <= write - 1 or queue == 0
+        assert queue <= 8 * slots
+    from evlet.runtime import HTTPRuntime
+    monkeypatch.setattr(auth_module, 'PASSWORD_SLOTS', 1)
+    HTTPRuntime({'write': 3})
+    assert auth_module.HASH_QUEUE == 1
+
+
+def test_a_bad_password_slots_setting_does_not_break_importing(monkeypatch):
+    monkeypatch.setenv('EVLET_PASSWORD_SLOTS', 'two')
+    with pytest.warns(RuntimeWarning):
+        assert 1 <= auth_module._startup_password_slots() <= 2
