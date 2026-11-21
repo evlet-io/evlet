@@ -166,6 +166,8 @@ class DevSignIn:
             warnings.warn('DevSignIn(create_admin=...) is ignored and will be removed in 0.5: every instance has the built-in '
                           'Administrator, and the link signs it in by default.', DeprecationWarning, stacklevel=2)
         self.app, self.announce, self.user = app, announce, user
+        # evlet dev serves an error page when the instance fails to start; the link waits until it starts.
+        self.waiting = False
 
     def application(self):
         target = self.app
@@ -191,10 +193,15 @@ class DevSignIn:
                     application = self.application()
                     if application is not None:
                         await asyncio.to_thread(announce, application, self.user)
+                    else:
+                        self.waiting = True
                 await send(message)
             await self.app(scope, receive, started)
             return
         await self.app(scope, receive, send)
+        if self.waiting and scope['type'] == 'http' and (application := self.application()) is not None:
+            self.waiting = False
+            await asyncio.to_thread(announce, application, self.user)
 
 
 # ---------- finding a running `evlet playground` ----------

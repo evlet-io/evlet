@@ -39,7 +39,7 @@ export function McpPage(ctx: ControlsContext): HTMLElement {
   const set = (key: string, value: unknown) => drafts.set(id(key), value);
   const on = () => get<boolean>('enabled'), writes = () => get<boolean>('allow_writes');
   const overview = cell<McpOverview | null>(null);
-  const load = async () => { try { overview.set(await ctx.api.mcp()); } catch (failure) { toast(message(failure), { icon: 'info' }); } };
+  const load = async () => { try { overview.set(await ctx.api.mcp()); } catch (failure) { toast(message(failure), { tone: 'error' }); } };
   void load();
 
   const mark = (key: string) => () => drafts.overridden(id(key)) ? html`<span class="ctl-tag">Changed</span>${IconButton({ icon: 'rotate-ccw', size: 'small',
@@ -61,21 +61,21 @@ export function McpPage(ctx: ControlsContext): HTMLElement {
     const input = event.target as HTMLInputElement;
     let value = Number.parseInt(input.value, 10);
     if (Number.isNaN(value) || value < 1) value = 1;
-    if (value > 60) { value = 60; toast('The framework allows at most 60 tool calls a minute', { icon: 'info' }); }
+    if (value > 60) { value = 60; toast('The framework allows at most 60 tool calls a minute', { tone: 'info' }); }
     input.value = String(value);
     set('rate', value);
   };
   const signOut = (client: McpOverview['clients'][number]) => ask(`Sign out ${client.client_name}?`,
     `${client.username}'s ${client.client_name} loses access straight away. They can connect again by signing in.`, 'Sign out', async () => {
       try { overview.set(await ctx.api.signOutAssistant(client.id)); toast('Client signed out'); }
-      catch (failure) { toast(message(failure), { icon: 'info' }); }
+      catch (failure) { toast(message(failure), { tone: 'error' }); }
     }, true);
   const totals = () => overview.get()?.totals ?? { reads: 0, writes: 0, denied: 0 };
   // Reachability is checked only when an admin asks; the server keeps the answer for half a minute.
   const reach = cell<McpReach | null>(null), checking = cell(false);
   const check = async () => {
     checking.set(true);
-    try { reach.set(await ctx.api.mcpReach()); } catch (failure) { toast(message(failure), { icon: 'info' }); } finally { checking.set(false); }
+    try { reach.set(await ctx.api.mcpReach()); } catch (failure) { toast(message(failure), { tone: 'error' }); } finally { checking.set(false); }
   };
   const reachPill = () => {
     const value = reach.get();

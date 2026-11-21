@@ -50,6 +50,21 @@ class ShowVersion(argparse.Action):
         parser.exit()
 
 
+def check_framework_source(framework):
+    """Refuse, in one line, to set up a project from an Evlet source checkout whose browser UI is not built yet;
+    pip would fail with a long build traceback that ends in the same advice."""
+    if framework is None:
+        source = Path(__file__).resolve().parents[2]
+    elif Path(framework).is_dir():
+        source = Path(framework)
+    else:
+        return  # A wheel, an archive or a requirement: pip reports its own problems.
+    if (source / 'pyproject.toml').is_file() and (source / 'frontend/package.json').is_file() \
+            and not (source / 'evlet/ui/static/index.html').is_file():
+        raise ValueError(f'The Evlet source checkout at {source} has no built browser UI, so it cannot be installed into a project. '
+                         f'Build it first: npm --prefix {source / "frontend"} ci && npm --prefix {source / "frontend"} run build')
+
+
 def parser():
     result = argparse.ArgumentParser(prog='evlet', description=__doc__)
     result.add_argument('--project', help='Project path; also accepted after the command')
@@ -70,7 +85,7 @@ def parser():
     setup.add_argument('--apply', action='store_true', help='With --host: run the printed sudo steps; each is shown first')
     app = commands.add_parser('app', help='Create, fetch or list reusable apps')
     app.add_argument('name', nargs='?')
-    app.add_argument('--legacy', action='store_true', help='Create the supported nested AppDefinition scaffold')
+    app.add_argument('--legacy', action='store_true', help='Create the older nested AppDefinition layout (kept for existing apps)')
     app.add_argument('--trust', action='store_true', help='Trust acquired application and dependency build code')
     group = app.add_mutually_exclusive_group()
     group.add_argument('--get', metavar='GIT_URL', help='Statically fetch, then prepare and build after explicit trust')
@@ -114,6 +129,9 @@ def parser():
             add_link_options(command)
         command.add_argument('--debug', action='store_true', help='Show tracebacks for expected startup errors')
         command.add_argument('--host', default='127.0.0.1')
+        if name == 'serve':
+            command.add_argument('--ssl-certfile', help='Serve HTTPS directly with this certificate (PEM); needs --ssl-keyfile')
+            command.add_argument('--ssl-keyfile', help='The private key for --ssl-certfile')
         command.add_argument('--port', type=int, default=8000)
     restart = commands.add_parser('restart', help="Check an instance, then restart its systemd service and wait until it answers")
     restart.add_argument('instance')
@@ -212,6 +230,7 @@ def parser():
     backup = commands.add_parser('backup', help="Copy an instance's four database files into data/backups as one set")
     backup.add_argument('--instance', help='Required when the project has several instances')
     backup.add_argument('--to', help='Write the set into this directory instead of data/backups')
+    backup.add_argument('--with-files', action='store_true', help="Also archive the instance's files/ folder (uploaded attachments)")
     restore = commands.add_parser('restore', help="Replace an instance's database files with a backup set, with the server stopped")
     restore.add_argument('backup', help='The main file of the set, such as data/backups/20261112T101500000000Z.sqlite3')
     restore.add_argument('--instance', help='Required when the project has several instances')
@@ -260,8 +279,12 @@ def main(argv=None):
             from .setup import setup
             from . import site
             directory = Path(args.project) / args.directory if args.project else args.directory
+            check_framework_source(args.framework)
             if not site.wanted(args):
-                print(f'Project created: {setup(directory, framework=args.framework)}')
+                created = setup(directory, framework=args.framework)
+                print(f'Project created: {created}')
+                print(f'Next: cd {created} && evlet app notes && evlet instance acme && evlet install notes --instance acme '
+                      '&& evlet dev --instance acme')
                 return
             site.check(args)
             root = site.project(directory, framework=args.framework)
@@ -534,9 +557,15 @@ def main(argv=None):
             print(table(list_instance(root, args.instance or choose_instance(root, 'ledger list'))))
         elif args.command == 'backup':
             from .backup import backup
-            written = backup(root, args.instance or choose_instance(root, 'backup'), args.to)
+            name = args.instance or choose_instance(root, 'backup')
+            written = backup(root, name, args.to, with_files=args.with_files)
             print('Backup: ' + str(written[0]))
             print('With: ' + ', '.join(item.name for item in written[1:]))
+            instance_path = root / 'instances' / name
+            if not args.with_files:
+                print(f'Not included: {instance_path / "files"} (uploaded attachments); add --with-files to archive it.')
+            print(f'Not included: {instance_path / "secret.key"}. Without it a restored database cannot open saved connector, '
+                  'mailbox and two-step secrets. Keep a copy stored apart from these backups.')
         elif args.command == 'restore':
             from .backup import restore
             name = args.instance or choose_instance(root, 'restore')
@@ -562,7 +591,8 @@ def main(argv=None):
             if getattr(args, 'watch', False):
                 print('evlet dev always reloads app source; --watch is no longer needed.', file=sys.stderr)
             serve(root, name, host=args.host, port=args.port, development=development, jobs=getattr(args, 'jobs', False), debug=args.debug,
-                  link=development and not args.no_link, user=args.user if development else None)
+                  link=development and not args.no_link, user=args.user if development else None,
+                  ssl_certfile=getattr(args, 'ssl_certfile', None), ssl_keyfile=getattr(args, 'ssl_keyfile', None))
     except (KeyboardInterrupt, BrokenPipeError):
         return
     except EOFError:

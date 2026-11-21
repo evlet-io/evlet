@@ -114,7 +114,7 @@ function openRule(ctx: ControlsContext, role: string, model: ModelInfo) {
       if (read.includes(name)) { read = read.filter(item => item !== name); write = write.filter(item => item !== name); }
       else read = [...read, name];
     } else write = write.includes(name) ? write.filter(item => item !== name) : [...write, name];
-    if (!read.length) { toast('Keep at least one readable field, or turn off read instead', { icon: 'info' }); return; }
+    if (!read.length) { toast('Keep at least one readable field, or turn off read instead', { tone: 'info' }); return; }
     drafts.set(id, normalize({ ...value(), read: ordered(read), write: ordered(write.filter(item => read.includes(item))) }, file));
   };
   const scopes = file.scope ? [file.scope] : model.scopes;
@@ -172,8 +172,8 @@ export function SecurityPage(ctx: ControlsContext): HTMLElement {
     const input = event.target as HTMLInputElement;
     let value = Number.parseInt(input.value, 10);
     if (Number.isNaN(value)) value = file<number>('security.password_min');
-    if (value < 1) { value = 1; toast("Minimum password length can't go below 1", { icon: 'info' }); }
-    if (value > 64) { value = 64; toast("Minimum password length can't go above 64", { icon: 'info' }); }
+    if (value < 1) { value = 1; toast("Minimum password length can't go below 1", { tone: 'info' }); }
+    if (value > 64) { value = 64; toast("Minimum password length can't go above 64", { tone: 'info' }); }
     input.value = String(value);
     drafts.set(id('security.password_min'), value);
   };

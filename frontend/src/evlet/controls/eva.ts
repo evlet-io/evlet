@@ -21,7 +21,7 @@ const GROUPS: Array<[string, string, string]> = [
 export function EvaSettingsPage(ctx: ControlsContext): HTMLElement {
   const { drafts } = ctx;
   const config = cell<EvaConfig | null>(null);
-  void ctx.api.evaConfig().then(value => config.set(value), failure => toast(message(failure), { icon: 'info' }));
+  void ctx.api.evaConfig().then(value => config.set(value), failure => toast(message(failure), { tone: 'error' }));
   const id = (key: string) => idOf('setting', `eva.${key}`);
   const get = <T>(key: string) => drafts.value<T>(id(key));
   const set = (key: string, value: unknown) => drafts.set(id(key), value);

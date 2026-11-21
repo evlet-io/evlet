@@ -46,12 +46,28 @@ def module_names(package):
     return sorted(set(names), key=lambda name: (name.count('.'), name))
 
 
+def unfinished_migrations(package):
+    """Refuse a migration file that still has a line evlet makemigration could not finish, before importing it."""
+    from .migrations import UNFINISHED
+    for path in package.source_files():
+        if path.suffix != '.py' or not path.is_relative_to(package.source_root):
+            continue
+        relative = path.relative_to(package.source_root)
+        if relative.parts[0] not in ('migrations', 'migrations.py'):
+            continue
+        for number, line in enumerate(path.read_text(encoding='utf-8').splitlines(), 1):
+            if UNFINISHED in line:
+                raise ValueError(f'apps/{package.name}/{path.relative_to(package.path)}:{number}: finish this line before migrating; replace ... with '
+                                 f'what the field has in models.py and delete the "{UNFINISHED[2:]}" comment')
+
+
 def discover(package, modules=None):
     from .instances import AppDefinition
     from .migrations import Migration
     from .forms import Report
     from .workspaces import Workspace
     from .declarations import Extend
+    unfinished_migrations(package)
     models, migrations, seen, reports, endpoints, tasks, schedules, workspaces, extensions = [], [], set(), [], [], [], [], [], []
     collected_ids = set()
     for name in modules if modules is not None else module_names(package):
@@ -293,7 +309,7 @@ def prepare(root, packages):
                     output = destination / source.relative_to(package.path)
                     output.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copyfile(source, output)
-                copied.append({'path': str(destination), 'name': package.name, 'version': package.version,
+                copied.append({'path': str(destination), 'origin': str(package.path), 'name': package.name, 'version': package.version,
                                'title': package.title, 'layout': package.layout,
                                'dependencies': [str(item) for item in package.dependencies]})
             request = stage / 'request.json'
@@ -325,8 +341,46 @@ def prepare(root, packages):
         if not file.resolve().is_relative_to(target) or file.is_symlink() or not file.is_file() or hashlib.sha256(file.read_bytes()).hexdigest() != digest:
             raise ValueError('Build generation content differs from its manifest: ' + name)
     pinned = tuple(replace(package, path=target / 'sources' / package.name) for package in packages)
+    SOURCES.update({str(copy.path): str(package.path) for copy, package in zip(pinned, packages)})
     atomic_json(base / 'current.json', {'fingerprint': fingerprint})
     return pinned, manifest
+
+
+# Build copy folder -> the app folder it was copied from, for every generation this process prepared. evlet dev uses it
+# to show tracebacks with the app's own paths (evlet.cli.serve.show_source_paths).
+SOURCES = {}
+
+
+def source_path_text(text, origins=None):
+    """`text` (a traceback, say) with build copy paths replaced by the app paths they were copied from."""
+    for copy, origin in sorted((origins if origins is not None else SOURCES).items(), key=lambda item: -len(item[0])):
+        text = text.replace(copy, origin)
+    return text
+
+
+def source_path(filename, origins):
+    """An app file's own path for a path in a build copy (`origins` maps copy folders to app folders)."""
+    for copy, origin in origins.items():
+        if filename == copy or filename.startswith(copy.rstrip(os.sep) + os.sep):
+            return origin + filename[len(copy.rstrip(os.sep)):]
+    return filename
+
+
+def build_error(exc, origins):
+    """An app's import or definition error as `file:line: Type: message`, naming the app's own file rather than the
+    build copy, and only the app's frames. EVLET_DEBUG=1 adds the full traceback with the same paths."""
+    import traceback
+    frames = [frame for frame in traceback.extract_tb(exc.__traceback__)
+              if source_path(frame.filename, origins) != frame.filename]
+    if isinstance(exc, SyntaxError) and exc.filename:
+        where = f'{source_path(exc.filename, origins)}:{exc.lineno}: '
+    else:
+        where = f'{source_path(frames[-1].filename, origins)}:{frames[-1].lineno}: ' if frames else ''
+    message = source_path_text(exc.msg if isinstance(exc, SyntaxError) and exc.filename else str(exc), origins)
+    text = f'{where}{type(exc).__name__}: {message}'
+    if os.environ.get('EVLET_DEBUG') == '1':
+        text = source_path_text(''.join(traceback.format_exception(exc)), origins) + text
+    return text
 
 
 def dependency_fingerprint(packages):
@@ -357,7 +411,13 @@ if __name__ == '__main__':
     from packaging.requirements import Requirement
     from .packages import Package
     request, output = map(Path, sys.argv[1:])
+    items = json.loads(request.read_text())
+    origins = {item['path']: item.pop('origin', item['path']) for item in items}
     packages = tuple(Package(**{**item, 'path': Path(item['path']),
                                'dependencies': tuple(Requirement(value) for value in item['dependencies'])})
-                     for item in json.loads(request.read_text()))
-    output.write_text(json.dumps(describe(packages), sort_keys=True))
+                     for item in items)
+    try:
+        output.write_text(json.dumps(describe(packages), sort_keys=True))
+    except Exception as exc:
+        print(build_error(exc, origins), file=sys.stderr)
+        raise SystemExit(1) from None

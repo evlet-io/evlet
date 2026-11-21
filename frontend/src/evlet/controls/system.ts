@@ -15,7 +15,7 @@ import { UnsavedSection } from './unsaved';
 /** How many recent runs GET /api/_controls/jobs sends (PAGE in evlet/controls_system.py). */
 const RECENT = 50;
 
-const copy = (text: string) => void navigator.clipboard?.writeText(text).then(() => toast('Copied'), () => toast('Copy it by hand', { icon: 'info' }));
+const copy = (text: string) => void navigator.clipboard?.writeText(text).then(() => toast('Copied'), () => toast('Copy it by hand', { tone: 'info' }));
 const CodeBlock = (file: string, code: string) => html`<div class="ctl-codefile"><div class="ctl-line"><span class="mono muted ctl-small grow">${file}</span>
   ${Button({ label: 'Copy', icon: 'copy', size: 'small', onClick: () => copy(code) })}</div><pre class="ctl-code">${code}</pre></div>`;
 const Command = (text: string) => CodeBlock('On the server', text);
@@ -87,7 +87,7 @@ const source = (value: string) => (SOURCES[value] ?? (() => html`<span class="ct
 
 export function RoutingPage(ctx: ControlsContext): HTMLElement {
   const routing = cell<Routing | null>(null), checks = cell<Map<string, HostCheck>>(new Map()), notes = cell<string[]>([]), checking = cell(false);
-  void ctx.api.routing().then(value => routing.set(value), failure => toast(message(failure), { icon: 'info' }));
+  void ctx.api.routing().then(value => routing.set(value), failure => toast(message(failure), { tone: 'error' }));
   const check = async () => {
     checking.set(true);
     try {
@@ -96,7 +96,7 @@ export function RoutingPage(ctx: ControlsContext): HTMLElement {
       notes.set(result.notes);
       const clear = result.ok && !result.notes.length;
       toast(clear ? 'Every host points here' : 'Some hosts need attention', { icon: clear ? 'check' : 'info' });
-    } catch (failure) { toast(message(failure), { icon: 'info' }); } finally { checking.set(false); }
+    } catch (failure) { toast(message(failure), { tone: 'error' }); } finally { checking.set(false); }
   };
   const proxy = () => {
     const value = routing.peek()!.proxy!;
@@ -177,9 +177,9 @@ export function jobNames(value: Jobs): string[] {
 export function JobsPage(ctx: ControlsContext): HTMLElement {
   const jobs = cell<Jobs | null>(null);
   const act = async (run: () => Promise<Jobs>, done: string) => {
-    try { jobs.set(await run()); toast(done); ctx.state.set(await ctx.api.state()); } catch (failure) { toast(message(failure), { icon: 'info' }); }
+    try { jobs.set(await run()); toast(done); ctx.state.set(await ctx.api.state()); } catch (failure) { toast(message(failure), { tone: 'error' }); }
   };
-  void ctx.api.jobs().then(value => jobs.set(value), failure => toast(message(failure), { icon: 'info' }));
+  void ctx.api.jobs().then(value => jobs.set(value), failure => toast(message(failure), { tone: 'error' }));
   // Refresh quietly while any run is running; a failed refresh waits for the next one.
   const live = setInterval(() => {
     if (jobs.peek()?.jobs.some(job => job.state === 'running')) void ctx.api.jobs().then(value => jobs.set(value), () => undefined);
@@ -268,11 +268,11 @@ export function OverridesPage(ctx: ControlsContext): HTMLElement {
   const shown = derive(() => rows.get().filter(item => tab.get() === 'all' || item.kind === tab.get()));
   const exportAll = async () => {
     try { openCode('Export overrides as code', 'Every saved override, grouped by the file it belongs in. Paste each block into the app, deploy it, then reset the overrides here.', await ctx.api.exportCode()); }
-    catch (failure) { toast(message(failure), { icon: 'info' }); }
+    catch (failure) { toast(message(failure), { tone: 'error' }); }
   };
   const showCode = async (item: OverrideItem) => {
     try { openCode('Move into code', 'Paste this into the app, deploy it, then reset the override here.', await ctx.api.exportCode({ kind: item.kind, key: item.key })); }
-    catch (failure) { toast(message(failure), { icon: 'info' }); }
+    catch (failure) { toast(message(failure), { tone: 'error' }); }
   };
   const tabs: Array<[string, string]> = [['all', 'All'], ...KINDS];
   return html`<div>
@@ -314,7 +314,7 @@ export function AuditPage(ctx: ControlsContext): HTMLElement {
       rows.set(more ? [...rows.peek(), ...page.items] : page.items);
       next.set(page.next);
       areas.set(page.areas);
-    } catch (failure) { toast(message(failure), { icon: 'info' }); }
+    } catch (failure) { toast(message(failure), { tone: 'error' }); }
     loaded.set(true);
   };
   void load();

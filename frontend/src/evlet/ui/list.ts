@@ -95,14 +95,14 @@ export function Board<T>(props: BoardProps<T>): HTMLElement {
     const from = props.group(card);
     if (from === to) return;
     const reason = props.canMove?.(card, to) || props.onMove(card, to);
-    if (reason) { toast(reason, { icon: 'info' }); return; }
+    if (reason) { toast(reason, { tone: 'info' }); return; }
     const label = props.columns.find(column => column.value === to)?.label ?? to;
     // Undo is a move back, offered only when the card may make it.
     const now = latest(card);
     const back = !props.canMove?.(now, from);
     toast(`Moved to ${label}`, back ? { undo: () => {
       const card = latest(now), why = props.canMove?.(card, from) || props.onMove(card, from);
-      if (why) toast(why, { icon: 'info' });
+      if (why) toast(why, { tone: 'info' });
     } } : {});
   };
   const column = (item: BoardColumn) => {

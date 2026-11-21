@@ -251,7 +251,8 @@ await record.save();                       // the server's answer replaces the d
   shows `Invalid amount`. `formatDate('2026-11-01')` is `01-11-2026`; impossible dates show
   `Invalid date`. `formatDateTime` shows GST (Asia/Dubai, UTC+4) whatever the browser's
   zone: a timestamp with `Z` or an offset is converted, one without a zone is taken as GST
-  already. `todayGst()` is the date `today()` uses.
+  already. `todayDate()` is the date `today()` uses: today in the person's time zone from
+  Settings (`todayIn(zone)` for another zone; `todayGst()` is `todayIn('Asia/Dubai')`).
 
 ## Components
 

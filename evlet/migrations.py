@@ -210,6 +210,22 @@ def _same(saved, registry):
     return saved == _definition(registry) or _comparable(json.loads(saved)) == _comparable(registry.schema())
 
 
+def changed_message(saved, registry, limit=12):
+    """Why startup stops when the models differ from the stored schema: what differs, and the commands to run."""
+    try:
+        found = [text for _, _, text in differences(saved, registry.schema())]
+    except Exception:  # Naming the differences is a courtesy; the refusal itself must not fail.
+        found = []
+    lines = ['Model definitions changed; run explicit migrations before startup.']
+    lines += ['  ' + text.replace('after the migrations', 'in the database').replace('in the migrations', 'in the database')
+              for text in found[:limit]]
+    if len(found) > limit:
+        lines.append(f'  ... and {len(found) - limit} more (evlet migrate INSTANCE --plan lists them all)')
+    lines.append('Write the migration with: evlet makemigration APP --instance INSTANCE, review it, then apply it with: '
+                 'evlet migrate INSTANCE (under evlet dev it can run while the dev server shows this error).')
+    return '\n'.join(lines)
+
+
 def _tables(connection):
     """The app's tables: every table but the framework's own."""
     return {name for name in connection.tables() if not name.startswith('evlet_')}
@@ -357,13 +373,16 @@ def initialize(database):
         if saved:
             ledger_switch(saved[0], database.registry)
         if saved and not _same(saved[0], database.registry):
-            raise SchemaError('Model definitions changed; run explicit migrations before startup')
+            raise SchemaError(changed_message(json.loads(saved[0]), database.registry))
         baseline = False
         if plan is not None:
             migrations, checksums = plan
             history = _history(connection, migrations, checksums)
             if history and len(history) != len(migrations):
-                raise SchemaError('Unapplied migration history; run explicit migrations before startup')
+                waiting = ', '.join(item.name for item in migrations[len(history):]) or 'none'
+                raise SchemaError(f'Unapplied migration history; run explicit migrations before startup. Pending: {waiting}. '
+                                  'Apply them with: evlet migrate INSTANCE (under evlet dev it can run while the dev server '
+                                  'shows this error).')
             baseline = not history
         if not tables:
             for name, model in database.registry.models.items():
@@ -1673,10 +1692,22 @@ def describe(operation):
 SHAPE = ('required', 'unique', 'index', 'max_length', 'minimum', 'maximum', 'scale', 'currency', 'default', 'choices')
 
 
+# The comment makemigration writes on a line it could not finish; evlet refuses to load a migration that still has it.
+UNFINISHED = '# copy what ... stands for from models.py'
+
+
 def field_code(field):
     """(Python for a frozen copy of a field, class names it uses). A frozen copy keeps only what is stored."""
     from . import __all__ as exported
     from .controls_export import UNKNOWN, call
+    from .declarations import State
+    if isinstance(field, State):
+        # Steps and the default are what a State stores; its rules, labels and colours are behaviour, not schema.
+        steps = ', '.join(f'State.Step({step.key!r}' + (', final=True' if step.final else '') + ')' for step in field.steps.values())
+        options = {key: value for key, value in field.arguments[1].items() if key in ('index', 'max_length')}
+        if field.default != next(iter(field.steps)):
+            options['default'] = field.default
+        return call('State', (), options).replace('State(', f'State({steps}' + (', ' if options else ''), 1), {'State'}
     args, kwargs = field.arguments
     if isinstance(field, Link):
         args = (link_target(field), *args[1:]) if args else args
@@ -1691,7 +1722,7 @@ def field_code(field):
     code = call(type(field).__name__, args, small if same else kwargs)
     names = {type(field).__name__}
     if UNKNOWN in code or type(field).__name__ not in exported:
-        code += '  # copy what ... stands for from models.py'
+        code += '  ' + UNFINISHED
     return code, names
 
 

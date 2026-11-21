@@ -310,7 +310,8 @@ describe('side boxes', () => {
     await store.create({ code: 'AED', own: '10.00', fetched: '20.00', fixed: '30.00', rate: '5.0000' });
     const host = render(() => ['code', 'own', 'fetched', 'fixed', 'rate'].map(name => BaseField({ field: store.field(name) })));
     expect(boxes(host, 'own')).toEqual(['AED']);
-    expect(boxes(host, 'fetched')).toEqual(['AED']);
+    // No company chosen yet: the amount's currency is not known, so there is no box (not a guessed AED).
+    expect(boxes(host, 'fetched')).toEqual([]);
     expect(boxes(host, 'fixed')).toEqual(['SAR']);
     expect(boxes(host, 'rate')).toEqual(['%']);
     pick(host.querySelector<HTMLElement>('[data-field="code"] .in-select')!, 'SAR');

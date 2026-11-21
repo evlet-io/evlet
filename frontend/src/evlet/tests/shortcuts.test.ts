@@ -148,7 +148,7 @@ describe('record form shortcuts', () => {
     days.value = 'soon';
     days.dispatchEvent(new Event('input', { bubbles: true }));
     key(days, 's', mod(false));
-    await until(() => expect(lastToast()).toBe('Not saved. Check the highlighted values.'));
+    await until(() => expect(lastToast()).toBe('Not saved. Credit days needs attention.'));
     expect(days.getAttribute('aria-invalid')).toBe('true');
     expect(document.activeElement).toBe(days);
     await new Promise(resolve => setTimeout(resolve, 20));

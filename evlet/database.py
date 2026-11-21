@@ -145,8 +145,10 @@ class Database:
             raise
         return connection
 
-    # Reuse a small pool independent of thread identities; writes.IDLE also bounds all tenants together.
-    _IDLE = 2
+    # Reuse a pool independent of thread identities, as large as the default HTTP read lane (at most 8 workers,
+    # evlet/runtime.py), so concurrent requests reuse open connections and their page cache instead of opening
+    # four files each time. writes.IDLE_LIMIT bounds all tenants of the process together.
+    _IDLE = 8
 
     def _identity(self):
         try:
@@ -324,6 +326,26 @@ class Database:
         finally:
             turns.release()
         run_after_commit(session)
+
+    @contextmanager
+    def read_transaction(self):
+        """A read transaction over every file, for read-only work such as reports, exports, previews and prints.
+
+        It takes no write turn and no write lock, so a long read never holds up a save: SQLite's WAL readers see
+        one consistent snapshot from the first read while writers commit alongside. Writes are refused."""
+        with self._connection() as connection:
+            connection.execute('PRAGMA query_only = ON')
+            try:
+                connection.snapshot()
+                session = Session(connection, self.registry, self.timezone)
+                session._business = self.business
+                yield session
+            finally:
+                try:
+                    if connection.in_transaction:
+                        connection.rollback()
+                finally:
+                    connection.execute('PRAGMA query_only = OFF')
 
     def create(self, model, /, **values):
         with self.transaction() as session:

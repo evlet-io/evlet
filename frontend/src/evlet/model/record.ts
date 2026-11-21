@@ -20,7 +20,7 @@ import { batch, cell, derive, getOwner, runWithOwner, scope, untrack, type Cell,
 import { buildChanges, findField } from './changes';
 import { prepareCreate, type CreateAttempt } from './create-attempt';
 import { dependentsOf, fitsRecord, linkScope } from './links';
-import { currencyDecimalsTable, todayGst } from './format';
+import { currencyDecimalsTable, todayDate } from './format';
 import { Session } from './session';
 import { isCalculated, isSectionRow, SchemaIndex, type AppSchema, type ChildSchema, type FieldSchema, type ModelSchema } from './schema';
 
@@ -592,7 +592,7 @@ export class RecordStore {
     this.index = options.schema instanceof SchemaIndex ? options.schema : new SchemaIndex(options.schema);
     this.meta = this.index.model(options.model);
     const plan = this.meta.calculation?.plan;
-    this.session = plan ? new Session(this.api, plan, options.today ?? (() => todayGst()), () => currencyInput(plan, this.index)) : null;
+    this.session = plan ? new Session(this.api, plan, options.today ?? (() => todayDate()), () => currencyInput(plan, this.index)) : null;
     let dirty!: Derive<boolean>;
     this.stop = scope(() => {
       this.owner = getOwner();

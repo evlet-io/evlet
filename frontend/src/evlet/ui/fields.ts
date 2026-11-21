@@ -591,8 +591,10 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
   let before: Child = prefix ? html`<span class="in-box">${prefix}</span>` : null, after: Child = suffix ? html`<span class="in-box">${suffix}</span>` : null;
   if (meta.type === 'currency') {
     // A Currency field's side box shows the site's symbol on its side, and follows its currency source (a field of the record, say).
-    const code = currencyFor(field, options.links);
-    const box = (side: 'prefix' | 'suffix') => () => currencyDisplay(code()).position === side ? html`<span class="in-box">${CurrencySymbol(code())}</span>` : null;
+    // While that source is empty (no customer chosen yet) there is no box: the amount's currency is not known.
+    const fallback = currencyFor(field, options.links), known = currencyCodeFor(field, options.links);
+    const code = () => meta.currency_source && field instanceof Field ? known() : fallback();
+    const box = (side: 'prefix' | 'suffix') => () => { const current = code(); return current && currencyDisplay(current).position === side ? html`<span class="in-box">${CurrencySymbol(current)}</span>` : null; };
     before = box('prefix');
     after = box('suffix');
   }
@@ -955,7 +957,8 @@ export interface FieldProps {
 /**
  * The reactive core every field type wraps: label, value, required, locked and applies rules,
  * error and hint. Hidden while its applies_when or visible_when rule is false. help_text reads under the input
- * (an error takes its place) and tooltip behind a ? icon at the input's right end.
+ * (still shown under an error) and tooltip behind a ? icon at the input's right end. The error is not a live
+ * region: the input names it (aria-describedby) and the form announces one summary when a save fails.
  */
 export function BaseField(props: FieldProps): HTMLElement {
   const { field } = props, meta = field.meta, id = uid('f'), errorId = `${id}-err`, helpId = `${id}-help`, noteId = `${id}-note`;
@@ -972,9 +975,9 @@ export function BaseField(props: FieldProps): HTMLElement {
   return html`<div class="fld" class:full=${Boolean(props.full) || meta.type === 'longtext' || meta.type === 'richtext'} class:invalid=${() => Boolean(field.error.get())}
     hidden=${() => !field.rules.get().visible} data-field=${meta.name} data-look=${look}>
     <label for=${labelled ? id : null} id=${`${id}-label`}>${label}${when(() => field.rules.get().required && !field.calculated, () => star)}${FieldHints(field)}${props.hint ?? null}</label>
-    ${meta.tooltip || tip ? withTip(control.element, tip ? () => tip() || meta.tooltip || '' : meta.tooltip!, meta.label) : control.element}<span class="err" id=${errorId} role="alert">${() => field.error.get() ?? ''}</span>${field.note
+    ${meta.tooltip || tip ? withTip(control.element, tip ? () => tip() || meta.tooltip || '' : meta.tooltip!, meta.label) : control.element}<span class="err" id=${errorId}>${() => field.error.get() ?? ''}</span>${field.note
       ? html`<span class="fld-note" id=${noteId} role="status" hidden=${() => !note()}>${note}</span>` : null}${help
-      ? html`<span class="fld-help" id=${helpId} hidden=${() => Boolean(field.error.get()) || !help()}>${help}</span>` : null}</div>` as HTMLElement;
+      ? html`<span class="fld-help" id=${helpId} hidden=${() => !help()}>${help}</span>` : null}</div>` as HTMLElement;
 }
 
 // The ? icon at the right end of a control: inside an input's box, before a select's or link's

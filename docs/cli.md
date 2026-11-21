@@ -141,7 +141,19 @@ Python, TS/JS and configuration changes, including file additions/deletions, and
 runs the existing queue. It watches `apps/` and the instance folder; when Evlet itself
 runs from a source checkout or an editable install (`pip install -e`), it watches the
 Evlet package too, so framework edits reload the same way. It never applies model migrations
-implicitly. Stop the server and run `migrate` after adding a migration.
+implicitly. When the instance cannot start, for example after a model error or a schema edit
+that has no migration yet, `evlet dev` keeps listening: every page answers 503 with the error
+(for a schema edit, each changed model and field, and the commands to run), the terminal shows
+the same, and the browser page checks again every two seconds. A failed start holds no instance
+lock, so run `evlet makemigration <app> --instance <instance>` and `evlet migrate <instance>` in
+another terminal while `evlet dev` keeps running; it starts the instance as soon as the migration
+changed the database, and a source fix reloads it as usual. While the instance runs normally,
+`migrate` still refuses with "Instance is in use": stop the server first.
+Under `evlet dev`, logged tracebacks name your own files under `apps/` rather than the
+build copies in `.evlet/builds/` the server imports. When an app fails to import while
+building (`build`, `install`, `migrate`, `makemigration`), the error is one line,
+`apps/<app>/<file>.py:<line>: <Type>: <message>`; set `EVLET_DEBUG=1` for the full traceback
+with the same paths.
 `migrate --plan` writes nothing and says `Planned with Evlet X`, the version that made the plan. It builds the apps against a temporary copy of the
 instance database and prints the pending migrations, the pending Evlet framework migrations
 ([app-upgrades.md](app-upgrades.md#upgrade-evlet)), each model, field and property that
@@ -149,8 +161,10 @@ differs from the migrations, and for each app a suggested migration to review
 ([model-engine.md](model-engine.md#planning-a-migration)). `evlet makemigration <app>
 --instance <instance>` writes that suggestion into a flat app's `migrations/` folder as
 `m<number>_<name>.py` (`--name` sets the name, default `changes`). It refuses when nothing
-changed and never overwrites a file. Review the file, fill in any `...` or `#` note, then run
-`migrate`. Like `migrate`, both import the apps, so changed sources need `--trust`.
+changed and never overwrites a file. State fields are written with their steps (rules and labels
+are behaviour, not schema). Review the file, fill in any `...` or `#` note, then run
+`migrate`; a line still marked `# copy what ... stands for from models.py` is refused with its
+file and line before anything is imported. Like `migrate`, both import the apps, so changed sources need `--trust`.
 `migrate --allow-destructive` lets `DropField` delete the columns and values of retired
 fields; without it such a migration is refused. The backup `migrate` writes before every change
 holds the deleted values. `migrate --allow-maintenance` lets `RunData` steps declared with
@@ -279,7 +293,7 @@ apps/notes/
 
 Models, reports, nested services and workspaces are discovered automatically. Permissions are
 declared on resources, with default denial. See the
-[declarative guide](amendment-v2.md) for the complete contract and optional
+[app layout guide](app-layout.md) for the complete contract and optional
 `reports/`, `services/` and `migrations/` directories. An optional `workspaces.py`
 declares the app's sidebars ([ui.md](ui.md#workspaces)).
 
@@ -682,7 +696,11 @@ and a system user `evlet` that owns the project. Create the administrator while
 `domain` is still `None`, then set `domain="app.example.com"` in
 `instances/acme/config.py`.
 
-Keep the server on loopback. Caddy is the only public listener. Save this as
+Keep the server on loopback. Caddy is the only public listener. `evlet serve` bound beyond
+loopback (`--host 0.0.0.0`) speaks plain HTTP and prints a warning at startup: passwords,
+cookies and two-step secrets would cross the network unencrypted. Use it only when an HTTPS proxy
+in front is the only way in, or pass `--ssl-certfile` and `--ssl-keyfile` to serve HTTPS
+directly. `::1` counts as loopback like `127.0.0.1`. Save this as
 `/etc/systemd/system/evlet-acme.service`:
 
 ```ini
@@ -830,7 +848,13 @@ A single-file backup from before 0.4.3, such as one `evlet migrate` wrote, resto
 sessions, logs and Eva are still inside it, so restore clears the other three files and says to
 run `evlet migrate acme`, which moves them out again before you serve.
 
-Backups hold only the database. Keep `secret.key`, `files/` and the app sources with them.
+Backups hold only the database unless you add `--with-files`, which also writes
+`<time>-files.tar.gz`: the instance's `files/` folder (uploaded attachments), readable by its
+owner only (mode 0600), symbolic links left out. Restore it by extracting it into
+`instances/<name>/` with the server stopped. `evlet backup` never copies `secret.key`; it prints
+a reminder after every backup. Without that key a restored database cannot open its saved
+connector, mailbox and two-step secrets, so keep a copy of it, and of the app sources, stored
+apart from the database backups (whoever holds both can read those secrets).
 Tools that remove or reset an instance can list the set with `evlet.writes.data_files(path)`.
 Do not remove app source used by an instance. Calendar `@cron` schedules reconcile
 changes while preserving operator-disabled state and history. Changing a legacy
@@ -866,7 +890,8 @@ requires stopping its server before retrying. Missing dependencies must be
 resolved in the current Python environment or fetched into this project.
 
 Framework contributors still need Node.js to build browser assets before creating
-a wheel. Run the frontend tests/build, Python tests, `python -m build`, and the
+a wheel. `evlet setup` from a source checkout without them refuses with the two `npm`
+commands to run instead of a pip build log. Run the frontend tests/build, Python tests, `python -m build`, and the
 installed-package checks. Packaging copies the maintained source examples and
 guides into the wheel; generated projects contain no framework copies.
 

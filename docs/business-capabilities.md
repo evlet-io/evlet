@@ -67,7 +67,7 @@ do not apply HTTP permissions.
 ### HTTP access
 
 - `GET /api/auth/session` returns the signed-in user and CSRF token, or `user: null`.
-- `POST /api/auth/setup` creates the first local administrator when explicitly enabled.
+- `POST /api/auth/setup` creates the first local administrator when explicitly enabled. Instances enable it only under `evlet dev` on loopback; under `evlet serve` use `evlet users set-password`.
 - `POST /api/auth/login` accepts username/password and issues a new session cookie.
 - `POST /api/auth/logout` revokes the current session.
 - Admin-only `GET/POST /api/auth/users` lists or creates accounts. Lists return

@@ -69,11 +69,11 @@ export function MyEmailPage(options: { api?: ApiClient; go?: (url: string) => vo
   const data = cell<MyEmail | null>(null), form = cell(false), busy = cell(false), error = cell('');
   const draft = { address: cell(''), imap: cell(''), smtp: cell(''), password: cell('') };
   const run = async (step: () => Promise<MyEmail>, done?: string) => {
-    try { data.set(await step()); if (done) toast(done); } catch (failure) { toast(message(failure), { icon: 'info' }); }
+    try { data.set(await step()); if (done) toast(done); } catch (failure) { toast(message(failure), { tone: 'error' }); }
   };
   const returned = new URLSearchParams(window.location.search).get('mail');
   if (returned && RETURNED[returned]) {
-    toast(RETURNED[returned], returned === 'connected' ? {} : { icon: 'info' });
+    toast(RETURNED[returned], returned === 'connected' ? {} : { tone: 'info' });
     window.history.replaceState(null, '', window.location.pathname);
   }
   void run(() => api.load());
@@ -83,7 +83,7 @@ export function MyEmailPage(options: { api?: ApiClient; go?: (url: string) => vo
 
   const choose = async (provider: 'microsoft' | 'google' | 'imap') => {
     if (provider === 'imap') { form.set(true); error.set(''); return; }
-    try { go((await api.signIn(provider)).url); } catch (failure) { toast(message(failure), { icon: 'info' }); }
+    try { go((await api.signIn(provider)).url); } catch (failure) { toast(message(failure), { tone: 'error' }); }
   };
   const connect = async () => {
     const address = draft.address.peek().trim(), imap = server(draft.imap.peek()), smtp = server(draft.smtp.peek());

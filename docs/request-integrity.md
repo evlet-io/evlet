@@ -44,6 +44,11 @@ Password verification and session admission use the sessions database, so an
 ordinary sign-in can finish while a business writer holds the main database.
 The account, role, realm and credential generation are rechecked after password
 hashing. A revocation racing with admission leaves any stale session unusable.
+The attempt is counted (per account and network, per network and per account) before
+the hash, and the hashing slot is held for the hash only, never across a database write.
+A busy slot is waited for briefly; a refusal still counts against the network. A finished
+sign-in, including its two-step code, gives the network and the account their attempt back.
+See [production operations](production-operations.md#sign-in-limits-and-password-hashing).
 
 Account-wide revocation advances a generation in the main database. A cookie
 session or pending two-step ticket must match it. Recovering older sessions-file

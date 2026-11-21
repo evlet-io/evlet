@@ -42,8 +42,8 @@ The package includes the browser UI, Playground and offline guides. Node is not
 needed to create, build or serve apps: browser behaviour an app adds is a
 [model script](docs/model-scripts.md), one plain JavaScript file served as it is.
 
-The [declarative app guide](docs/amendment-v2.md) covers flat app packages,
-owned child tables, reactive fields, prompts, reports, services and native additions.
+[The app layout](docs/app-layout.md) explains the app package `evlet app` creates:
+where models, reports, services and migrations go and how Evlet finds them.
 [Finite calculations](docs/finite-calculations.md) describe the finite-v1 formula
 language, nested owned tables and the shared Python/browser calculation engine.
 [States, moves and model actions](docs/states-actions.md) describe document states,
@@ -62,6 +62,7 @@ For virtual environment setup and each step explained, read
 
 - [What you can customize](docs/customizing.md): models, lists, pages, actions,
   permissions and migrations, with examples from the Notes starter.
+- [The app layout](docs/app-layout.md): the folders of an app and what Evlet discovers in them.
 - [CLI guide](docs/cli.md): projects, app sources, instances, trust and deployment
   boundaries.
 - [Upgrade or retire an app](docs/app-upgrades.md): the supported workflow today,
@@ -77,8 +78,9 @@ For virtual environment setup and each step explained, read
 - [UI framework](docs/ui-framework.md): Evlet's own browser framework and components.
 
 `evlet dev --instance acme` reloads Python changes while you work. At startup it
-prints a one-time sign-in link, so you can skip the sign-in form. Stop the server
-and run `evlet migrate acme` when a model change needs a migration.
+prints a one-time sign-in link, so you can skip the sign-in form. When a model change
+needs a migration, stop the server, run `evlet makemigration notes --instance acme`, review
+the file it writes and run `evlet migrate acme`.
 
 ## Explore without a project
 

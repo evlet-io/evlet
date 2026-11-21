@@ -1286,6 +1286,11 @@ Startup creates a fresh database or verifies an existing schema. It does not
 silently alter existing tables. A model change raises `SchemaError` until its
 explicit migration has been applied.
 
+In an app, `evlet makemigration <app> --instance <name>` writes the next step to
+`apps/<app>/migrations/` and `evlet migrate <name>` applies it ([the app layout](app-layout.md#changing-an-installed-app)).
+Each file holds one `migration = Migration(...)` with the operations below. An application
+assembled in Python declares its history on `Database` itself:
+
 ```python
 from evlet import AddField, AddIndex, Boolean, Database, Migration, RenameField
 

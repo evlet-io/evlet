@@ -208,7 +208,7 @@ function sampleMoves(model: ScreenModel, value: string, blocked: Record<string, 
     ...(rule.primary ? { primary: true } : {}), ...(blocked[rule.key] ? { reason: blocked[rule.key] } : {}), ...(rule.asks ? { asks: rule.asks } : {}),
     ...(rule.remark ? { remark: { ...rule.remark, required: rule.remark.mode === 'required' } } : {}), ...extra[rule.key] }) as DetailMove);
 }
-const notSaved = () => toast('An example: nothing is saved', { icon: 'info' });
+const notSaved = () => toast('An example: nothing is saved', { tone: 'info' });
 /** The header's moves for `_moves`, as the record page builds them. `onMove` runs an allowed one. */
 const sampleEntries = (model: ScreenModel, moves: DetailMove[], onMove: (move: DetailMove) => void = notSaved): MoveEntry[] => moves.map(move => ({ label: move.label,
   icon: moveIcon(model, move.to), allowed: move.allowed, primary: move.primary, blocked: () => move.allowed ? null : move.reason ?? `${move.label} is not available now`, run: () => onMove(move) }));

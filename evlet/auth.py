@@ -9,6 +9,7 @@ from http.cookies import SimpleCookie, CookieError
 import ipaddress
 import json
 import logging
+import os
 import re
 import secrets
 import time
@@ -39,7 +40,52 @@ ADMINISTRATOR_NAME = 'System Administrator'
 PROTECTED = ('The Administrator account is built in. Its username, name and role cannot be changed, '
              'and it cannot be deactivated or deleted.')
 NO_PASSWORD = 'This account has no password yet.'
-_HASH_SLOTS = BoundedSemaphore(2)
+
+
+def _password_slots():
+    """Concurrent password hashes per process: EVLET_PASSWORD_SLOTS (1 to 8), else min(2, CPUs). Each takes 128 MiB."""
+    value = os.environ.get('EVLET_PASSWORD_SLOTS', '').strip()
+    if value:
+        if not value.isdigit() or not 1 <= int(value) <= 8:
+            raise ValueError('EVLET_PASSWORD_SLOTS takes a whole number from 1 to 8')
+        return int(value)
+    return max(1, min(2, os.cpu_count() or 1))
+
+
+def _startup_password_slots():
+    # Read once at import: a bad value must not break every CLI command, so it falls back with a warning
+    # here, and serving refuses it (HTTPRuntime calls _password_slots() again).
+    try:
+        return _password_slots()
+    except ValueError as error:
+        import warnings
+        warnings.warn(f'{error}; using the default', RuntimeWarning, stacklevel=2)
+        return max(1, min(2, os.cpu_count() or 1))
+
+
+PASSWORD_SLOTS = _startup_password_slots()
+_HASH_SLOTS = BoundedSemaphore(PASSWORD_SLOTS)
+# A request waits up to HASH_WAIT seconds for a hashing slot, behind at most HASH_QUEUE others; past either it gets 503.
+# A waiting sign-in holds a thread of the HTTP write lane, so the queue is kept small enough that hashing and
+# waiting together always leave one write slot free for saves (fit_hash_queue; HTTPRuntime calls it).
+HASH_WAIT = 3.0
+
+
+def fit_hash_queue(write_slots):
+    """Size HASH_QUEUE for a write lane of write_slots threads: at most write_slots - PASSWORD_SLOTS - 1 waiters."""
+    global HASH_QUEUE
+    HASH_QUEUE = max(0, min(8 * PASSWORD_SLOTS, write_slots - PASSWORD_SLOTS - 1))
+    return HASH_QUEUE
+
+
+HASH_QUEUE = fit_hash_queue(min(4, (os.cpu_count() or 1) + 1))
+_hash_waiting, _hash_lock = [0], Lock()
+# Sign-in limits, each per 15 minutes: failures per network (an office behind one address shares it) and failures per
+# account from every network together. Past ACCOUNT_FAILURES an account is slowed, not locked: networks it has not
+# signed in from get one attempt per ACCOUNT_SPACING seconds between them, so spread-out guessing stays slow while
+# people who signed in from their network within KNOWN_SECONDS are not held up.
+NETWORK_FAILURES, ACCOUNT_FAILURES, ACCOUNT_SPACING, KNOWN_SECONDS = 100, 50, 10, 30 * 86400
+LIMIT_WINDOW = 900
 # API keys: evk_<8-character prefix>_<secret>. Only the SHA-256 of the whole key is stored.
 API_KEY = re.compile(r'(evk_[a-z0-9]{8})_[A-Za-z0-9_-]{43}')
 KEY_RATE, KEY_FAILURES = 300, 20  # requests per key and failed keys per network, each per minute and process
@@ -178,9 +224,20 @@ class User:
 
 @contextmanager
 def hashing_slot():
-    """Hold one bounded password-hashing slot, or fail fast with 503 instead of queueing."""
+    """Hold one bounded password-hashing slot. A request waits its turn for up to HASH_WAIT seconds behind at most
+    HASH_QUEUE others, then gets 503: memory stays bounded and a burst is served in order instead of refused."""
     if not _HASH_SLOTS.acquire(blocking=False):
-        raise AccessError(503, 'Password service is busy. Try again shortly.')
+        with _hash_lock:
+            if _hash_waiting[0] >= HASH_QUEUE:
+                raise AccessError(503, 'Password service is busy. Try again shortly.')
+            _hash_waiting[0] += 1
+        try:
+            taken = _HASH_SLOTS.acquire(timeout=HASH_WAIT)
+        finally:
+            with _hash_lock:
+                _hash_waiting[0] -= 1
+        if not taken:
+            raise AccessError(503, 'Password service is busy. Try again shortly.')
     try:
         yield
     finally:
@@ -816,31 +873,47 @@ class LocalAuth:
         if not re.fullmatch(r'[a-z0-9_.-]{3,64}', username):
             raise AccessError(401, 'Invalid username or password')
         address = client_network(self.client_address(scope))
-        client = hashlib.sha256(('network:' + address).encode()).hexdigest()
-        pair = hashlib.sha256(('account:' + address + ':' + username).encode()).hexdigest()
-        # Take the hashing slot first: a busy 503 is answered before any attempt is recorded.
-        with hashing_slot():
-            # Attempts and sessions share their own file, so a sign-in never waits on a long write to records.
+        client, pair, account_key, known, gate = self._limit_keys(address, username)
+        refused = None
+        # Check and count the attempt before any CPU is spent: a request that waits for a hashing slot, or is
+        # refused one, has already cost its network an attempt, so holding the slots is never free.
+        # Attempts and sessions share their own file, so a sign-in never waits on a long write to records.
+        with self.database.transaction(store='sessions') as tx:
+            tx.connection.run(qb.delete('evlet_login_limits').where(qb.le('resets', now)))
+            tx.connection.run(qb.delete('evlet_sessions').where(qb.le('expires', now)))
+            for key, limit in ((pair, self.lockout), (client, NETWORK_FAILURES)):
+                if self._attempts(tx.connection, key) >= limit:
+                    raise AccessError(429, 'Too many sign-in attempts. Try again in 15 minutes.')
+            # Many failures for this account from everywhere: slow it down for networks it has not signed in from.
+            if self._attempts(tx.connection, account_key) >= ACCOUNT_FAILURES and not self._attempts(tx.connection, known):
+                if self._attempts(tx.connection, gate):
+                    refused = 'slow'
+                else:
+                    tx.connection.run(qb.insert('evlet_login_limits', client=gate, attempts=1, resets=now + ACCOUNT_SPACING)
+                                      .on_conflict('client').do_update(resets=now + ACCOUNT_SPACING))
+            for key in ((client,) if refused else (pair, client, account_key)):
+                tx.connection.run(qb.insert('evlet_login_limits', client=key, attempts=1, resets=now + LIMIT_WINDOW)
+                                  .on_conflict('client').do_update(attempts=qb.col('evlet_login_limits.attempts') + 1))
+            account = None if refused else tx.connection.run(
+                qb.select(qb.table('evlet_users', 'u'), qb.all_columns('u'), qb.named('r.realm', 'role_realm'))
+                .join(qb.table('evlet_roles', 'r'), qb.eq('r.id', qb.col('u.role')), left=True)
+                .where(qb.eq('u.username', username))).one()
+        if refused:
+            raise AccessError(429, 'This account has had many failed sign-ins. Wait a few seconds and try again.')
+        # An account without a password (the Administrator before it is set) never signs in with one.
+        usable = account is not None and account['password'].startswith('scrypt:')
+        stored = account['password'] if usable else 'scrypt:' + '00' * 16 + ':' + '00' * 64
+        try:
+            with hashing_slot():
+                try:
+                    candidate = _scrypt(_encode(body['password'], 1), stored.split(':')[1])
+                except (ValueError, UnicodeError):
+                    candidate = ''
+        except AccessError:
+            # Busy: the network keeps the attempt, while the person and the account get theirs back.
             with self.database.transaction(store='sessions') as tx:
-                tx.connection.run(qb.delete('evlet_login_limits').where(qb.le('resets', now)))
-                tx.connection.run(qb.delete('evlet_sessions').where(qb.le('expires', now)))
-                for key, limit in ((pair, self.lockout), (client, 100)):
-                    row = tx.connection.run(qb.select('evlet_login_limits', 'attempts').where(client=key)).one()
-                    if row and row['attempts'] >= limit:
-                        raise AccessError(429, 'Too many sign-in attempts. Try again in 15 minutes.')
-                for key in (pair, client):
-                    tx.connection.run(qb.insert('evlet_login_limits', client=key, attempts=1, resets=now + 900)
-                                      .on_conflict('client').do_update(attempts=qb.col('evlet_login_limits.attempts') + 1))
-                account = tx.connection.run(qb.select(qb.table('evlet_users', 'u'), qb.all_columns('u'), qb.named('r.realm', 'role_realm'))
-                                            .join(qb.table('evlet_roles', 'r'), qb.eq('r.id', qb.col('u.role')), left=True)
-                                            .where(qb.eq('u.username', username))).one()
-            # An account without a password (the Administrator before it is set) never signs in with one.
-            usable = account is not None and account['password'].startswith('scrypt:')
-            stored = account['password'] if usable else 'scrypt:' + '00' * 16 + ':' + '00' * 64
-            try:
-                candidate = _scrypt(_encode(body['password'], 1), stored.split(':')[1])
-            except (ValueError, UnicodeError):
-                candidate = ''
+                self._give_back(tx.connection, pair, account_key)
+            raise
         # A portal user on a desk host, or a desk user on a portal host, gets the same answer as a wrong password.
         realm = self.realm(scope)
         if not hmac.compare_digest(candidate, stored) or not usable or not account['active'] or account['role_realm'] != realm:
@@ -853,16 +926,41 @@ class LocalAuth:
             if not current or not current['active'] or current['password'] != stored or current['role'] != account['role'] \
                     or current['role_realm'] != realm or current['session_generation'] != account['session_generation']:
                 raise AccessError(401, 'Invalid username or password')
-            # With two-step sign-in the failed-attempt count stays until the code is right too.
+            # With two-step sign-in the attempts stay counted until the code is right too (settings finish).
             challenge = self.second_step.challenge(tx, current, realm) if self.second_step is not None else None
             if challenge is not None:
                 return challenge, []
-            tx.connection.run(qb.delete('evlet_login_limits').where(client=pair))
-            # A correct password is not an attack: give the network its attempt back, so a shared address
-            # (an office behind one NAT) is limited by failures only.
-            tx.connection.run(qb.update('evlet_login_limits', attempts=qb.col('attempts') - 1)
-                              .where(qb.eq('client', client), qb.gt('attempts', 0)))
+            self.signed_in(tx.connection, scope, username)
             return self.start_session(tx, scope, current, realm)
+
+    @staticmethod
+    def _limit_keys(address, username):
+        """evlet_login_limits keys: the network, this account from it, the account from everywhere, whether the account
+        signed in from this network recently, and the account's slow-down gate."""
+        return tuple(hashlib.sha256(text.encode()).hexdigest() for text in (
+            'network:' + address, 'account:' + address + ':' + username, 'account:*:' + username,
+            'known:' + address + ':' + username, 'account-gate:' + username))
+
+    @staticmethod
+    def _attempts(connection, key):
+        row = connection.run(qb.select('evlet_login_limits', 'attempts').where(client=key)).one()
+        return row['attempts'] if row else 0
+
+    @staticmethod
+    def _give_back(connection, *keys):
+        connection.run(qb.update('evlet_login_limits', attempts=qb.col('attempts') - 1)
+                       .where(qb.in_('client', keys), qb.gt('attempts', 0)))
+
+    def signed_in(self, connection, scope, username):
+        """A sign-in finished (with its two-step code, when it needs one): clear this account's failures from the
+        network, give the network and the account their attempts back, and remember the network for the account,
+        so a shared address and a busy account are limited by failures only."""
+        now = int(time.time())
+        client, pair, account_key, known, _ = self._limit_keys(client_network(self.client_address(scope)), username)
+        connection.run(qb.delete('evlet_login_limits').where(client=pair))
+        self._give_back(connection, client, account_key)
+        connection.run(qb.insert('evlet_login_limits', client=known, attempts=1, resets=now + KNOWN_SECONDS)
+                       .on_conflict('client').do_update(resets=now + KNOWN_SECONDS))
 
     def start_session(self, tx, scope, account, realm, verified=False):
         """Create a session for a checked account in an open transaction; verified marks a finished two-step sign-in.

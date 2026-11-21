@@ -17,7 +17,7 @@ from examples.playground.migrate import configured_database
 from examples.playground.models import Project
 from test_business import PASSWORD, client, hashed, http, secured  # noqa: F401
 
-PNG = b'\x89PNG\r\n\x1a\n' + b'\0' * 64
+PNG = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01' + b'\x00' * 48
 
 
 @pytest.fixture
@@ -225,12 +225,14 @@ def test_photo_type_size_and_private_storage(secured):
     assert send(b'GIF89a' + b'\0' * 10, 'image/gif')[1]['fields'] == {'photo': 'Use a PNG, JPG or WebP image.'}
     assert send(b'not really a png', 'image/png')[1]['fields'] == {'photo': 'Use a PNG, JPG or WebP image.'}
     assert send(PNG + b'\0' * (2 * 1024 * 1024))[1]['fields'] == {'photo': 'That photo is over 2 MB. Choose a smaller one.'}
+    bomb = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x4e\x20\x00\x00\x4e\x20' + b'\x00' * 48
+    assert 'megapixels' in send(bomb)[1]['fields']['photo']
     assert send(PNG)[1] == {'photo': True}
     status, content, headers = c('GET', '/api/_settings/me/photo')
     assert status == 200 and content == PNG and headers[b'content-type'] == b'image/png'
     assert http(secured, 'GET', '/api/_settings/me/photo')[0] == 401
     assert client(secured, 'viewer')('GET', '/api/_settings/me/photo')[0] == 404
-    webp = b'RIFF\0\0\0\0WEBPVP8 ' + b'\0' * 32
+    webp = b'RIFF\x24\x00\x00\x00WEBPVP8 \x18\x00\x00\x00\x00\x00\x00\x9d\x01\x2a\x01\x00\x01\x00' + b'\x00' * 10
     assert send(webp, 'image/webp')[1] == {'photo': True}
     with secured.database._connection() as db:
         assert db.execute("SELECT count(*) FROM evlet_attachments WHERE model='evlet_user_photo'").fetchone()[0] == 1
@@ -426,3 +428,4 @@ def test_settings_declarations_are_checked():
     with pytest.raises(ValueError, match='preferences takes'):
         AppDefinition(preferences=AppSettings)
     assert AppDefinition(settings=type('Fine', (AppSettings,), {'x': Integer(default=1)})).settings.__sections__ == {'General': ('x',)}
+
