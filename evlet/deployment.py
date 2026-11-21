@@ -19,7 +19,11 @@ def render_deployment(catalog):
 
 
 def deployment_files(hosts):
-    """Return a Caddyfile and systemd units for the example tenant app; review before use."""
+    """Return a Caddyfile and systemd units for the example tenant app; review before use.
+
+    The worker unit is a second process writing the same SQLite files, outside the API's in-process write
+    queue, so long job steps slow people's saves (docs/tenancy-deployment.md). A single instance's unit runs
+    evlet serve --jobs in one process instead (evlet.cli.proxy.systemd_unit)."""
     from .tenancy import hostname
     from .ui.serving import CSP
     hosts = sorted({hostname(host) for host in hosts})

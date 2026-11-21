@@ -146,6 +146,7 @@ def parser():
     setup.add_argument('--port', type=int, default=8000, help='Port evlet dev or the service listens on (default: 8000)')
     setup.add_argument('--ip', action='append', help="With --host: this server's public address, for an exact DNS match; optional, kept in deploy/server.json")
     setup.add_argument('--apply', action='store_true', help='With --host: run the printed sudo steps; each is shown first')
+    setup.add_argument('--service-user', metavar='USER', help='With --host: run the service as this unprivileged account instead of you (also EVLET_SERVICE_USER)')
     app = commands.add_parser('app', help='Create, fetch or list reusable apps')
     app.add_argument('name', nargs='?')
     app.add_argument('--legacy', action='store_true', help='Create the older nested AppDefinition layout (kept for existing apps)')

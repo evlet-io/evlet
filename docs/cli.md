@@ -737,6 +737,7 @@ WorkingDirectory=/srv/evlet
 ExecStart=/srv/evlet/.venv/bin/python -P -m evlet serve acme --jobs --project /srv/evlet --host 127.0.0.1 --port 8000
 Restart=on-failure
 UMask=0077
+EnvironmentFile=-/etc/evlet/acme.env
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full

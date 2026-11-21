@@ -37,6 +37,71 @@ load. Rate-limit sign-in at the trusted proxy and monitor rejected requests. Evl
 uses the direct client address for its own sign-in throttle; behind a proxy that
 address may be shared. Do not blindly trust arbitrary forwarded IP headers.
 
+### Service account
+
+`evlet setup --host` and `evlet host add` write `User=` into the unit. By default that is the
+login account running the command, as in every earlier release, and it keeps the account an
+earlier `--apply` installed. When that account is root or in the `sudo`, `wheel` or `admin`
+group, the command prints a note: a code-execution bug in an app then runs as an account that
+can become root and that owns the code Evlet runs.
+
+To run the service as a dedicated account instead, set `EVLET_SERVICE_USER` for the command.
+It refuses root and members of those groups. The account must exist, read the project
+(`.venv/`, `apps/`, `instances/<name>/config.py` and `routes.py`) and own only what the server
+writes. For an instance `acme` kept in `/srv/evlet`:
+
+```bash
+sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin evlet-acme
+sudo systemctl stop evlet-acme
+sudo chown -R evlet-acme: /srv/evlet/instances/acme/data /srv/evlet/instances/acme/files \
+    /srv/evlet/instances/acme/secret.key /srv/evlet/instances/acme/.evlet.lock
+EVLET_SERVICE_USER=evlet-acme evlet setup /srv/evlet --instance acme --app ... --host erp.acme.com --apply
+```
+
+The code, `.venv/` and `config.py` stay owned by the deploy account and read-only to the
+service. A project in a home directory is usually not readable by another account; keep it in
+`/srv` or similar. Commands that open the instance's data then run as the service account,
+such as `sudo -u evlet-acme .venv/bin/evlet backup acme`. `evlet secrets rotate` writes a new
+`secret.key` next to `config.py`, so stop the service and run it as the deploy account, then
+chown the key again; or keep the key in `EVLET_SECRET_KEY` (below). Evlet does not yet create
+the account or change ownership for you.
+
+`--apply` installs the unit and Caddy files from the text it has just rendered, piped to
+`sudo install`; it never copies the files in `deploy/`, which the service account might be able
+to change. The copies in `deploy/` are for review, and the printed steps install them by hand.
+
+### Secrets in the environment
+
+The generated unit reads `/etc/evlet/<instance>.env` when it exists (`EnvironmentFile=-...`).
+Put `EVLET_SECRET_KEY`, OIDC client secrets and similar values there, never in an
+`Environment=` line: unit files are world-readable and `systemctl show` prints them.
+
+```bash
+sudo install -d -m 700 /etc/evlet
+sudo install -m 600 /dev/null /etc/evlet/acme.env   # root-owned; systemd reads it before starting the service
+sudoedit /etc/evlet/acme.env                         # EVLET_SECRET_KEY=...
+sudo systemctl restart evlet-acme
+```
+
+### Application dependencies
+
+`evlet app --get` and `evlet install` resolve an app's declared dependency ranges when they
+install, from the indexes pip is configured with, and `apps.lock` pins app source digests but not
+the third-party packages. Two servers can therefore end up with different versions. For a
+reproducible, reviewable install, install the dependencies yourself from a hashed requirements
+file before installing the app (`.venv/bin/python -m pip install --require-hashes -r requirements.lock`,
+made with a tool such as `pip-compile --generate-hashes`); pip then finds them satisfied. Evlet does
+not yet read such a file itself.
+
+### Audit log integrity
+
+`evlet_audit` is append-only through SQLite triggers that refuse UPDATE and DELETE. That stops
+framework and app code from changing history by mistake. It is not tamper evidence: anyone who
+can write the database file (the service account, trusted app code, or `sqlite3` on the file)
+can drop the triggers, edit rows and recreate them, and backups copy the edited table. Where
+the audit must survive a compromised server, ship it off the host as it is written (journald or
+syslog forwarding, or regular exports to storage the server cannot rewrite) and compare.
+
 ### Sign-in limits and password hashing
 
 Each password hash (sign-in, password change, new account) takes about 0.3 s of CPU and

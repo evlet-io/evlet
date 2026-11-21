@@ -170,6 +170,15 @@ installed Evlet as a package, these modules are not there. Change each
 paths. For a project made with `evlet setup`, see
 [Serve an instance behind Caddy](cli.md#serve-an-instance-behind-caddy) instead.
 
+The tenant worker is a second process writing the same SQLite files. Evlet's fair write queue
+(people's saves before job steps, jobs resting while people write) lives inside one process, so
+between the API and the worker only SQLite's busy wait applies. It is not fair: a job whose steps
+hold a transaction for more than a few hundred milliseconds can slow saves to seconds and turn some
+into "Server busy" while people are working. Keep job steps short (checkpoint often), or run the
+worker outside working hours. A single instance has no such second process: the unit that
+`evlet setup --host` writes runs `evlet serve <name> --jobs`, which takes job steps through the same
+queue as requests. Do not run Uvicorn with more than one worker against SQLite for the same reason.
+
 Caddy serves only the built frontend and proxies `/api`, `/api/*`, and `/health`
 to loopback Uvicorn. The attachment directory is never a static root. The service
 uses one worker, a private umask, restricted filesystem writes, and restart on

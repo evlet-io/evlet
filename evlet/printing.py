@@ -808,13 +808,150 @@ def numeric(field):
 
 # ---- compiling and rendering -----------------------------------------------------------------
 
-def environment():
+# Bounds for one document, so a print design cannot hold the process's CPU or memory for everyone.
+# Templates share RENDER_SECONDS and TEMPLATE_OUTPUT across all their blocks; a value made by * or a width-taking
+# filter holds at most SEQUENCE items; the finished HTML handed to WeasyPrint is at most MAX_HTML characters.
+RENDER_SECONDS = 30.0
+TEMPLATE_OUTPUT = 8_000_000
+SEQUENCE = 1_000_000
+MAX_HTML = 16_000_000
+# At most this many documents lay out at once in this process (HTTP print routes also wait in the heavy lane).
+CONCURRENT_RENDERS = 2
+RENDER_WAIT = 30.0
+_renders = None
+TOO_LONG = 'This print design takes too long to fill. Simplify its templates or loops.'
+TOO_LARGE = 'This print design makes too much text. Simplify its templates, or print fewer rows.'
+WIDTH = re.compile(r'[0-9]{7,}')
+
+
+class Budget:
+    """The time and output one document's templates may still use."""
+
+    def __init__(self, seconds=None, output=None, clock=None):
+        import time
+        self.clock = clock or time.monotonic
+        self.deadline = self.clock() + (RENDER_SECONDS if seconds is None else seconds)
+        self.left = TEMPLATE_OUTPUT if output is None else output
+
+    def tick(self):
+        if self.clock() > self.deadline:
+            raise ValidationError({'design': TOO_LONG})
+
+    def charge(self, size):
+        self.tick()
+        self.left -= size
+        if self.left < 0:
+            raise ValidationError({'design': TOO_LARGE})
+
+
+def _sized(value):
+    if isinstance(value, (str, bytes, list, tuple)) and len(value) > SEQUENCE:
+        raise ValidationError({'design': TOO_LARGE})
+    return value
+
+
+def _estimate(name, args, kwargs):
+    """A cheap upper bound on the size a filter would make, checked before it runs; 0 when it cannot grow much."""
+    if name in ('center', 'indent', 'wordwrap', 'truncate'):
+        # These take a width: an int argument above SEQUENCE is a request for a huge value.
+        return max([value for value in (*args, *kwargs.values()) if isinstance(value, int) and not isinstance(value, bool)] or [0])
+    if name == 'replace':
+        text, old, new = (list(args[-3:]) if len(args) >= 3 else [None, None, None])
+        if isinstance(text, str) and isinstance(old, str) and isinstance(new, str):
+            return len(text) + (len(text) + 1 if not old else text.count(old)) * len(new)
+    if name == 'join' and args:
+        items = next((value for value in args if isinstance(value, (list, tuple))), ())
+        return sum(len(item) if isinstance(item, str) else 32 for item in items)
+    if name == 'format' and args and isinstance(args[0], str) and WIDTH.search(args[0]):
+        return SEQUENCE + 1
+    return 0
+
+
+def _bounded_filter(name, function, budget):
+    """A filter that checks the time left and refuses to make a huge value."""
+    import functools
+
+    @functools.wraps(function)
+    def bounded(*args, **kwargs):
+        budget.tick()
+        if _estimate(name, args, kwargs) > SEQUENCE:
+            raise ValidationError({'design': TOO_LARGE})
+        return _sized(function(*args, **kwargs))
+    return bounded
+
+
+def environment(budget=None):
+    """The sandbox print templates run in: autoescaped, immutable, and bounded by budget (a fresh Budget by default)."""
     from jinja2 import ChainableUndefined
     from jinja2.sandbox import ImmutableSandboxedEnvironment
-    env = ImmutableSandboxedEnvironment(autoescape=True, undefined=ChainableUndefined)
+    budget = budget or Budget()
+
+    class BoundedEnvironment(ImmutableSandboxedEnvironment):
+        # The sandbox stops escapes, not work: these hooks also stop runaway loops and huge values.
+        intercepted_binops = frozenset({'*', '**', '%'})
+
+        def call_binop(self, context, operator, left, right):
+            budget.tick()
+            if operator == '**':
+                if isinstance(right, int) and abs(right) > 64:
+                    raise ValidationError({'design': TOO_LARGE})
+            elif operator == '*':
+                for sequence, count in ((left, right), (right, left)):
+                    if isinstance(sequence, (str, bytes, list, tuple)) and isinstance(count, int) and len(sequence) * count > SEQUENCE:
+                        raise ValidationError({'design': TOO_LARGE})
+            elif operator == '%' and isinstance(left, str) and WIDTH.search(left):
+                raise ValidationError({'design': TOO_LARGE})
+            return _sized(super().call_binop(context, operator, left, right))
+
+        def call(__self, __context, __obj, *args, **kwargs):  # noqa: N805 - Jinja's own signature
+            budget.tick()
+            return _sized(super().call(__context, __obj, *args, **kwargs))
+
+        def format_string(self, s, args, kwargs, format_func=None):
+            if WIDTH.search(s):
+                raise ValidationError({'design': TOO_LARGE})
+            return _sized(super().format_string(s, args, kwargs, format_func))
+
+        def getattr(self, obj, attribute):
+            budget.tick()
+            return super().getattr(obj, attribute)
+
+        def getitem(self, obj, argument):
+            budget.tick()
+            return super().getitem(obj, argument)
+
+    env = BoundedEnvironment(autoescape=True, undefined=ChainableUndefined)
+    env.budget = budget
     # Values stay escaped: a template cannot turn record data back into markup.
     env.filters.pop('safe', None)
+    for name in ('center', 'indent', 'wordwrap', 'truncate', 'replace', 'join', 'format'):
+        env.filters[name] = _bounded_filter(name, env.filters[name], budget)
+    unbounded_range = env.globals['range']
+
+    def bounded_range(*args):
+        # Each step checks the time left, so nested loops over range() stop at the budget.
+        for value in unbounded_range(*args):
+            budget.tick()
+            yield value
+    env.globals['range'] = bounded_range
     return env
+
+
+def fill(env, template, variables):
+    """Render template in env, counting its output against env's budget as it is produced."""
+    parts = []
+    for part in env.from_string(template).generate(variables):
+        env.budget.charge(len(part))
+        parts.append(part)
+    return ''.join(parts)
+
+
+def _render_slots():
+    global _renders
+    if _renders is None:
+        import threading
+        _renders = threading.BoundedSemaphore(CONCURRENT_RENDERS)
+    return _renders
 
 
 class Compiler:
@@ -836,7 +973,7 @@ class Compiler:
         self.report = report
 
     def fill(self, template):
-        return self.markup(self.env.from_string(template).render(self.variables))
+        return self.markup(fill(self.env, template, self.variables))
 
     def shows(self, block):
         if not block.show_if:
@@ -1176,15 +1313,31 @@ def document(design, context, business):
     from weasyprint import CSS, HTML
     from weasyprint.text.fonts import FontConfiguration
     logging.getLogger('weasyprint').setLevel(logging.ERROR)
-    compiler = Compiler(design, context, business)
     url_fetcher, fonts = fetcher(design), FontConfiguration()
+    html, css = markup(design, context, business)
     # The bundled @font-face rules register in this configuration; both the stylesheet and the render take it.
-    return HTML(string=compiler.html(), base_url=BASE, url_fetcher=url_fetcher).render(
-        stylesheets=[CSS(string=compiler.css(), base_url=BASE, url_fetcher=url_fetcher, font_config=fonts)], font_config=fonts)
+    return HTML(string=html, base_url=BASE, url_fetcher=url_fetcher).render(
+        stylesheets=[CSS(string=css, base_url=BASE, url_fetcher=url_fetcher, font_config=fonts)], font_config=fonts)
+
+
+def markup(design, context, business):
+    """The document's HTML and CSS, within the template budget and at most MAX_HTML characters."""
+    compiler = Compiler(design, context, business)
+    html = compiler.html()
+    if len(html) > MAX_HTML:
+        raise ValidationError({'design': TOO_LARGE})
+    return html, compiler.css()
 
 
 def render(design, context, business):
-    return document(design, context, business).write_pdf()
+    """The PDF bytes. At most CONCURRENT_RENDERS documents lay out at once; others wait up to RENDER_WAIT seconds."""
+    slots = _render_slots()
+    if not slots.acquire(timeout=RENDER_WAIT):
+        raise AccessError(503, 'The server is busy printing. Try again in a moment.')
+    try:
+        return document(design, context, business).write_pdf()
+    finally:
+        slots.release()
 
 
 # ---- stored designs (Controls) ---------------------------------------------------------------

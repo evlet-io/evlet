@@ -229,7 +229,10 @@ def write(path, text):
 
 
 def systemd_unit(root, instance, port=8000, user='evlet'):
-    """A systemd unit that runs evlet serve on loopback, so the proxy is the only public listener. Review before installing it."""
+    """A systemd unit that runs evlet serve on loopback, so the proxy is the only public listener. Review before installing it.
+
+    It runs the web requests and the job queue in one process (--jobs), so job steps take their turn in the same
+    write queue as people's saves. Secrets go in /etc/evlet/<instance>.env, which the unit reads when it exists."""
     import re
     from .setup import python_in
     root = Path(root)
@@ -249,6 +252,8 @@ WorkingDirectory={root}
 ExecStart={python_in(root)} -P -m evlet serve {instance} --jobs --project {root} --host 127.0.0.1 --port {port}
 Restart=on-failure
 UMask=0077
+# Optional secrets such as EVLET_SECRET_KEY: a root-owned 0600 file, never Environment= in this world-readable unit.
+EnvironmentFile=-/etc/evlet/{instance}.env
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full

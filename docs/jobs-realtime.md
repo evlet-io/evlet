@@ -333,6 +333,9 @@ optionally read `/etc/evlet/server.env`. Review and apply them through the exist
 deployment process; rendering does not start them. Stop both API and worker before
 backups, database upgrades, or restoring state. See the
 [tenant deployment guide](tenancy-deployment.md) for the server boundary.
+The worker writes from a second process, outside the API's write queue, so long job steps
+can make API writes wait; keep job steps short. A single instance avoids this with
+`evlet serve NAME --jobs`.
 
 ## Background work in a flat app
 
