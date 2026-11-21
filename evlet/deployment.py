@@ -1,11 +1,11 @@
 """Render a single-server Caddy/systemd reference configuration for review."""
 
 
-def render_deployment(catalog):
+def render_deployment(catalog, *, separate_worker=False):
     """Render reference files for the catalog's verified active hosts.
 
-    The units start the example tenant app (`examples.playground.tenants` and
-    `examples.playground.worker`) from a source checkout in /opt/evlet. An
+    The units start the example tenant app (`examples.playground.tenants`, and with
+    separate_worker=True `examples.playground.worker`) from a source checkout in /opt/evlet. An
     installed project must adapt the ExecStart commands and paths before use.
     """
     if catalog.development:
@@ -15,15 +15,17 @@ def render_deployment(catalog):
     hosts = [row['hostname'] for row in inventory['domains'] if row['tenant'] in active and row['active'] and row['verified_at'] is not None]
     if not hosts:
         raise ValueError('There are no verified active tenant hosts')
-    return deployment_files(hosts)
+    return deployment_files(hosts, separate_worker=separate_worker)
 
 
-def deployment_files(hosts):
+def deployment_files(hosts, *, separate_worker=False):
     """Return a Caddyfile and systemd units for the example tenant app; review before use.
 
-    The worker unit is a second process writing the same SQLite files, outside the API's in-process write
-    queue, so long job steps slow people's saves (docs/tenancy-deployment.md). A single instance's unit runs
-    evlet serve --jobs in one process instead (evlet.cli.proxy.systemd_unit)."""
+    The API unit runs the tenants' jobs in its own process (EVLET_TENANT_JOBS=1, TenantApplication(jobs=...)),
+    so job steps take the same write queue as requests, as evlet serve --jobs does for one instance.
+    separate_worker=True renders the older layout instead: the API without jobs plus evlet-worker.service, a
+    second process writing the same SQLite files outside that queue, so long job steps slow people's saves
+    (docs/tenancy-deployment.md)."""
     from .tenancy import hostname
     from .ui.serving import CSP
     hosts = sorted({hostname(host) for host in hosts})
@@ -57,6 +59,7 @@ User=evlet
 Group=evlet
 WorkingDirectory=/opt/evlet
 Environment=EVLET_TENANT_ROOT=/var/lib/evlet
+Environment=EVLET_TENANT_JOBS=JOBS
 EnvironmentFile=-/etc/evlet/server.env
 ExecStart=/opt/evlet/.venv/bin/python -m uvicorn examples.playground.tenants:create_app --factory --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=on-failure
@@ -73,5 +76,8 @@ ReadWritePaths=/var/lib/evlet
 [Install]
 WantedBy=multi-user.target
 '''
-    worker = service.replace('Description=Evlet tenant application', 'Description=Evlet tenant job worker').replace(' -m uvicorn examples.playground.tenants:create_app --factory --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1', ' -m examples.playground.worker')
-    return {'Caddyfile': '\n'.join(sites), 'evlet.service': service, 'evlet-worker.service': worker}
+    files = {'Caddyfile': '\n'.join(sites), 'evlet.service': service.replace('EVLET_TENANT_JOBS=JOBS', 'EVLET_TENANT_JOBS=' + ('0' if separate_worker else '1'))}
+    if not separate_worker:
+        return files
+    worker = files['evlet.service'].replace('Description=Evlet tenant application', 'Description=Evlet tenant job worker').replace(' -m uvicorn examples.playground.tenants:create_app --factory --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1', ' -m examples.playground.worker')
+    return {**files, 'evlet-worker.service': worker}

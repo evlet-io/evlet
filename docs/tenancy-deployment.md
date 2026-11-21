@@ -156,6 +156,8 @@ caddy adapt --config /tmp/evlet-release-config/Caddyfile --adapter caddyfile
 systemd-analyze verify /tmp/evlet-release-config/evlet.service
 ```
 
+Add `--separate-worker` to render the older two-process layout with `evlet-worker.service`.
+
 Rendering includes only enabled tenants and verified enabled hostnames. It never
 runs systemctl, reloads Caddy, or changes DNS. The files always target the fixed
 server paths above, even when rendered from a local staging catalog. Review the
@@ -163,21 +165,33 @@ paths, host list, release contents, DNS, firewall, backup, and restore procedure
 before applying them through the server's deployment process.
 
 The renderer (`evlet.deployment`) is written for the example tenant app in this
-repository. Its units run `examples.playground.tenants:create_app` and
-`examples.playground.worker` from a source checkout in `/opt/evlet`. If you
-installed Evlet as a package, these modules are not there. Change each
-`ExecStart` command to start your own tenant factory and worker, and adjust the
+repository. Its API unit runs `examples.playground.tenants:create_app` from a source
+checkout in `/opt/evlet`. If you installed Evlet as a package, this module is not there.
+Change the `ExecStart` command to start your own tenant factory, and adjust the
 paths. For a project made with `evlet setup`, see
 [Serve an instance behind Caddy](cli.md#serve-an-instance-behind-caddy) instead.
 
-The tenant worker is a second process writing the same SQLite files. Evlet's fair write queue
-(people's saves before job steps, jobs resting while people write) lives inside one process, so
-between the API and the worker only SQLite's busy wait applies. It is not fair: a job whose steps
-hold a transaction for more than a few hundred milliseconds can slow saves to seconds and turn some
-into "Server busy" while people are working. Keep job steps short (checkpoint often), or run the
-worker outside working hours. A single instance has no such second process: the unit that
-`evlet setup --host` writes runs `evlet serve <name> --jobs`, which takes job steps through the same
-queue as requests. Do not run Uvicorn with more than one worker against SQLite for the same reason.
+The API unit runs the tenants' background jobs in its own process. It sets
+`EVLET_TENANT_JOBS=1`, and `TenantApplication(catalog, factory, jobs=None)` reads that variable
+(`jobs=True` or `jobs=False` decides in code instead). While the ASGI lifespan runs, the router
+goes over the active tenants with a host, one job step per tenant per pass, as `evlet serve <name>
+--jobs` does for one instance; it rests half a second when no tenant had work. Each step runs in a
+worker thread through the tenant database's own write queue, so people's saves go before job steps
+and a job rests while people write. Stopping the service lets the current step finish before the
+databases close. A tenant that is disabled, or whose host is removed, stops taking job steps at its
+next step, and the job stays queued. The runner opens every active tenant's application, as the
+separate worker does.
+
+`render_deployment(catalog, separate_worker=True)` (or `deployment_files(hosts,
+separate_worker=True)`) renders the older two-process layout instead: the API unit with
+`EVLET_TENANT_JOBS=0` and `evlet-worker.service`, which runs `examples.playground.worker`.
+That worker is a second process writing the same SQLite files. Evlet's fair write queue lives
+inside one process, so between the API and the worker only SQLite's busy wait applies. It is not
+fair: a job whose steps hold a transaction for more than a few hundred milliseconds can slow saves
+to seconds and turn some into "Server busy" while people are working. With that layout, keep job
+steps short (checkpoint often), or run the worker outside working hours. Do not run Uvicorn with
+more than one worker against SQLite for the same reason, and do not run the separate worker beside
+an API that already runs jobs.
 
 Caddy serves only the built frontend and proxies `/api`, `/api/*`, and `/health`
 to loopback Uvicorn. The attachment directory is never a static root. The service
@@ -232,7 +246,7 @@ that have no metadata reference. It cannot collect a file awaiting upload commit
 It is an operator action, not a scheduled background job. Do not run it on backups
 or a file directory paired with the wrong database.
 
-For a consistent backup, stop the application and job-worker services, prevent management writes,
+For a consistent backup, stop the application service (and the job-worker service, if you use one), prevent management writes,
 and copy the complete private state directory, including the catalog, SQLite
 files and sidecars, file directories, and `.evlet-store` markers. Keep that backup
 private. Restart the service only after the copy completes. Back up Caddy's TLS
