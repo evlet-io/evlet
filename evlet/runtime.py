@@ -137,6 +137,9 @@ class HTTPRuntime:
         if not queue.isdigit() or not 0 <= int(queue) <= 64:
             raise ValueError('EVLET_HTTP_QUEUE must be an integer from 0 to 64')
         queue = int(queue)
+        from . import auth
+        auth._password_slots()  # refuse a bad EVLET_PASSWORD_SLOTS when serving
+        auth.fit_hash_queue(values['write'])
         self.lanes = {name: _Lane(name, limit, read_workers if name == 'read' else None, queue * limit) for name, limit in values.items()}
         self.queue_seconds = float(os.environ.get('EVLET_HTTP_QUEUE_SECONDS', '5'))
         if not 0 < self.queue_seconds <= 60:
