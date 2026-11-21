@@ -608,3 +608,25 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .doc-panel .ev-cmp-grid .fs-g{grid-template-columns:repeat(2,minmax(0,1fr))}
 .doc-panel.doc-xs .ev-cmp-grid .fs-g{grid-template-columns:1fr}
 .doc-panel .ev-cmp-card+.ev-rec-foot,.doc-panel .ev-cmp-card~.ev-panel-more{border-top:1px solid var(--border);margin:0 -18px;padding:10px 18px}
+/* Phones (max-width 640px, app/list-page.ts PHONE_LIST): a list is stacked cards, not the desktop table; each card adds
+   two key fields on a third line. A record reads in one column, whatever its main column's width step. */
+.ev-cards-list .ev-crow{padding-block:11px}
+.ev-crow .l3{display:flex;flex-wrap:wrap;gap:2px 14px;min-width:0;font-size:13px}
+.ev-card-kv{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+@media (max-width:640px){
+  .doc[class] .ev-cmp-grid .fs-g,.doc[class] .ev-more-body .fs-g,.doc[class] .fs-g{grid-template-columns:minmax(0,1fr)}
+  .doc[class] .ev-more-row{grid-template-columns:minmax(0,1fr)}
+}
+/* The shell's outline while a signed-in cold load connects (app/login.ts Connecting(true)). */
+.ev-connecting.ev-boot{display:grid;grid-template-columns:240px minmax(0,1fr);place-content:stretch;justify-items:stretch;gap:0;height:100%}
+.ev-boot-side{display:flex;flex-direction:column;gap:12px;padding:16px;border-right:1px solid var(--border);background:var(--surface)}
+.ev-boot-main{display:flex;flex-direction:column;min-width:0}
+.ev-boot-top{height:52px;display:flex;align-items:center;padding:0 16px;border-bottom:1px solid var(--border)}
+.ev-boot-top .ev-sk{width:240px;max-width:60%}
+.ev-boot-page{display:flex;flex-direction:column;gap:12px;padding:24px var(--page-gutter,16px)}
+.ev-boot-title{height:22px;width:220px;max-width:70%}
+@media (max-width:760px){.ev-connecting.ev-boot{grid-template-columns:minmax(0,1fr)}.ev-boot-side{display:none}}
+/* Docs, Help (app/docs.ts): the workspace's lists, each with what it is for. */
+.ev-help-models{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.ev-help-models li{display:grid;gap:2px}
+.ev-help-models a{display:inline-flex;align-items:center;gap:8px}

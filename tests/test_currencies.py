@@ -210,8 +210,7 @@ def test_trusted_code_sets_the_display_and_the_playground_shows_aed_as_an_image(
     assert set_currency_display(secured, None) == {}
     from evlet.cli.playground import playground_app
     app = playground_app(tmp_path)
-    shown = app.business.controls.settings['display.currencies']['AED']
-    assert shown['image'].startswith('data:image/png;base64,') and shown['tint'] and shown['position'] == 'prefix'
+    assert 'AED' not in app.business.controls.settings['display.currencies']
     # The demo's client credit unit has 5 places; its KWD customers keep ISO's 3.
     from evlet import currency_decimals
     displays = app.business.controls.settings['display.currencies']

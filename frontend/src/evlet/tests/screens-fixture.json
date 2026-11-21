@@ -899,6 +899,7 @@
      "title_field": "place"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -2702,6 +2703,7 @@
      "title_field": "note"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -3568,6 +3570,7 @@
      "title_field": "title"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -4281,6 +4284,7 @@
      "sources": {}
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -6677,6 +6681,7 @@
      "title_field": "id"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -9165,6 +9170,7 @@
      "title_field": "item"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -11432,6 +11438,7 @@
      "title_field": "id"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [
@@ -12707,6 +12714,7 @@
      "title_field": "tool"
     }
    ],
+   "timezone": "UTC",
    "ui_version": 1,
    "version": 1,
    "workspaces": [

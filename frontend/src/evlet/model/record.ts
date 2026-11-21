@@ -20,7 +20,7 @@ import { batch, cell, derive, getOwner, runWithOwner, scope, untrack, type Cell,
 import { buildChanges, findField } from './changes';
 import { prepareCreate, type CreateAttempt } from './create-attempt';
 import { dependentsOf, fitsRecord, linkScope } from './links';
-import { currencyDecimalsTable, todayDate } from './format';
+import { currencyDecimalsTable, todayDate, todayIn } from './format';
 import { Session } from './session';
 import { isCalculated, isSectionRow, SchemaIndex, type AppSchema, type ChildSchema, type FieldSchema, type ModelSchema } from './schema';
 
@@ -498,11 +498,20 @@ export class Table {
 
 // ---------- the record ----------
 
+/** today() for calculations: the day in the server's zone, so a preview matches what the server saves; the
+ * person's day when the server names no zone, or one this browser does not know. */
+export function calculationToday(zone: string | undefined): () => string {
+  if (!zone) return () => todayDate();
+  try { new Intl.DateTimeFormat('en-US', { timeZone: zone }); } catch { return () => todayDate(); }
+  return () => todayIn(zone);
+}
+
 export interface RecordOptions {
   api: ApiClient;
   schema: AppSchema | SchemaIndex;
   model: string;
-  /** Today's date for today() in calculations; defaults to the date in GST. */
+  /** Today's date for today() in calculations; defaults to today in the server's zone (schema timezone), or in
+   * the person's zone (Settings, region) when an older server sends none. */
   today?: () => string;
   /** The signed-in user: fills `default=CurrentUser` fields (default_kind "user") on a new record. */
   user?: User | null;
@@ -592,7 +601,7 @@ export class RecordStore {
     this.index = options.schema instanceof SchemaIndex ? options.schema : new SchemaIndex(options.schema);
     this.meta = this.index.model(options.model);
     const plan = this.meta.calculation?.plan;
-    this.session = plan ? new Session(this.api, plan, options.today ?? (() => todayDate()), () => currencyInput(plan, this.index)) : null;
+    this.session = plan ? new Session(this.api, plan, options.today ?? calculationToday(this.index.schema.timezone), () => currencyInput(plan, this.index)) : null;
     let dirty!: Derive<boolean>;
     this.stop = scope(() => {
       this.owner = getOwner();

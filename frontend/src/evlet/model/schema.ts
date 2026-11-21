@@ -213,7 +213,9 @@ export interface AppSchema { version: number; ui_version: number; models: ModelS
   currency_display?: Record<string, CurrencyDisplay>;
   /** Decimal places of every currency code that does not have 2 (ISO 4217 with the site's changes); others have 2. */
   currency_decimals?: Record<string, number>;
-  /** Named sidebars (evlet.Workspace), with only what this role can open; docs/ui.md#workspaces. */ workspaces?: WorkspaceSchema[] }
+  /** Named sidebars (evlet.Workspace), with only what this role can open; docs/ui.md#workspaces. */ workspaces?: WorkspaceSchema[];
+  /** The IANA zone the server dates today() in (Instance.timezone, UTC by default). Absent from older servers. */
+  timezone?: string }
 
 /** A workspace: declared by an app, or the automatic one of an app that declares none. */
 export interface WorkspaceSchema {
@@ -240,7 +242,9 @@ export type WorkspaceItem =
 
 /** A report column: its type, and for a link column the model its values open. */
 export interface ReportColumn { name: string; type: 'text' | 'integer' | 'decimal' | 'currency' | 'date' | 'boolean' | 'link'; label: string | null;
-  link: string | null; total: boolean; unit: string | null }
+  link: string | null; total: boolean; unit: string | null;
+  /** 'model.field' the column reads: hidden from people who cannot read that field; a Select there gives the cell its labels. */
+  source?: string | null }
 
 /** A report (GET /api/_reports or the schema's reports): its filters are the fields of a transient form. */
 export interface ReportSchema {
@@ -299,3 +303,12 @@ export class SchemaIndex {
 
 /** Whether the value of this field is calculated (compute=), so it is never edited. */
 export const isCalculated = (field: FieldSchema) => field.compute !== null && field.compute !== undefined;
+
+/** A write a person may be offered on a model's screens. */
+export type Verb = 'create' | 'update' | 'delete';
+
+/** Whether screens offer this write on the model: never for Meta.api = "read", and only when the server's
+ * permissions for the signed-in person grant it. The server always sends permissions, so absent means no.
+ * Display only: the backend checks every write again. */
+export const can = (model: Pick<ModelSchema, 'api' | 'permissions'> | null | undefined, verb: Verb): boolean =>
+  Boolean(model && model.api !== 'read' && model.permissions?.[verb] === true);

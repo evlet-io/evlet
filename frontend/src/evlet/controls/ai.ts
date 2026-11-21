@@ -9,6 +9,7 @@ import { copyText, DialogFooter, openModal, toast } from '../ui/layers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
 import type { McpOverview, McpReach } from './client';
 import { idOf } from './drafts';
+import { settingKit } from '../ui/settings-helpers';
 import { ask, message } from './people';
 
 export const TOOLS: Array<[string, string, boolean]> = [
@@ -42,11 +43,7 @@ export function McpPage(ctx: ControlsContext): HTMLElement {
   const load = async () => { try { overview.set(await ctx.api.mcp()); } catch (failure) { toast(message(failure), { tone: 'error' }); } };
   void load();
 
-  const mark = (key: string) => () => drafts.overridden(id(key)) ? html`<span class="ctl-tag">Changed</span>${IconButton({ icon: 'rotate-ccw', size: 'small',
-    tip: 'Reset to the file value', onClick: () => drafts.reset(id(key)) })}` : null;
-  const error = (key: string) => when(() => drafts.errors.get().has(id(key)), () => html`<span class="ctl-err">${() => drafts.errors.get().get(id(key))}</span>`);
-  const row = (key: string | null, title: string, text: Child, control: Child) => html`<div class="ctl-setrow"><div class="grow">
-    <strong>${title} ${key ? mark(key) : null}</strong><p>${text}</p>${key ? error(key) : null}</div><div class="ctl-setctl">${control}</div></div>`;
+  const { row, mark, error } = settingKit(drafts, id);
   const toggle = (list: 'disabled_tools' | 'hidden_models', name: string) => {
     const now = get<string[]>(list);
     set(list, now.includes(name) ? now.filter(item => item !== name) : [...now, name]);

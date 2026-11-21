@@ -206,7 +206,7 @@ def test_playground_invoice_shows_a_calculated_payment_status(tmp_path):
     invoice = entry(c, 'invoice')
     assert invoice['status'] == 'payment_status'
     field = next(item for item in invoice['fields'] if item['name'] == 'payment_status')
-    assert field['read_only'] and field['colors'] == {'unpaid': 'rose', 'partly_paid': 'amber', 'paid': 'green'}
+    assert field['read_only'] and field['colors'] == {'unpaid': 'slate', 'partly_paid': 'amber', 'paid': 'green'}
     customer = c('POST', '/api/customer', {'customer_name': 'Al Sahra'})[1]
     status, created, _ = c('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-1', 'total': '100.00'})
     assert status == 201 and created['payment_status'] == 'unpaid'

@@ -95,12 +95,14 @@ class Invoice(Model):
     status = Select(["draft", "sent"], required=True, default="draft")
     # suffix='%' puts a % box after the input, as Percent fields have.
     # panel=False: the list's side panel leaves the tax rate out; the full page shows it.
-    tax_rate = Decimal(scale=4, minimum="0", maximum="100", default="0.0000", label="Tax rate", suffix="%", help_text="Recorded separately; this does not calculate the total.",
-                       panel=False)
+    # display_scale=2: stored with 4 places, read as 5% or 7.25% (at most 2 places, no trailing zeros).
+    tax_rate = Decimal(scale=4, display_scale=2, minimum="0", maximum="100", default="0.0000", label="Tax rate", suffix="%",
+                       help_text="Recorded separately; this does not calculate the total.", panel=False)
     amount_paid = Currency(minimum="0", default="0.00", currency='customer.currency', label='Amount paid')
-    # Calculated from the amount paid against the total, never set by hand. colors picks each badge colour.
+    # Calculated from the amount paid against the total, never set by hand. colors picks each badge colour:
+    # unpaid is neutral, since every new draft starts unpaid and is not overdue yet.
     payment_status = Select(['unpaid', 'partly_paid', 'paid'], label='Payment status',
-                            colors={'unpaid': 'rose', 'partly_paid': 'amber', 'paid': 'green'},
+                            colors={'unpaid': 'slate', 'partly_paid': 'amber', 'paid': 'green'},
                             compute="'paid' if amount_paid >= total else ('partly_paid' if amount_paid > 0 else 'unpaid')")
 
     @action('Post to ledger')

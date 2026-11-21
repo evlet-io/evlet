@@ -3,12 +3,12 @@
 //
 //   MyEmailPage({ api: ctx.api });
 
-import { html } from '../dom';
+import { html, type Child } from '../dom';
 import { ApiClient, ValidationError, type ClientOptions } from '../api';
 import { cell } from '../reactive';
 import { Button, StatusPill, Switch } from '../ui/base';
 import { mountToasts, toast } from '../ui/layers';
-import { Callout, Head, stamp } from '../ui/settings-helpers';
+import { Callout, Head, SettingRow, stamp } from '../ui/settings-helpers';
 import { ask, field, message, Select } from '../ui/settings-helpers';
 import '../controls/controls.css';
 
@@ -112,8 +112,7 @@ export function MyEmailPage(options: { api?: ApiClient; go?: (url: string) => vo
       : "Your workspace doesn't let people connect their own mailbox. Ask an admin to turn it on in Controls, under Email.");
   const pill = () => mailbox().status === 'connected' ? StatusPill({ label: 'Working', tint: 'green' })
     : mailbox().status === 'error' ? StatusPill({ label: 'Not syncing', tint: 'rose' }) : StatusPill({ label: 'Connect again', tint: 'amber' });
-  const row = (title: string, text: string | (() => string), control: unknown) => html`<div class="ctl-setrow"><div class="grow"><strong>${title}</strong>
-    ${text ? html`<p>${text}</p>` : null}</div><div class="ctl-setctl">${control}</div></div>`;
+  const row = (title: string, text: string | (() => string), control: Child) => SettingRow({ title, text, control });
 
   const connected = () => html`<section class="ctl-card"><div class="ctl-card-head"><div><h2>Connected mailbox</h2></div></div>
       ${row(mailbox().address, () => `${mailbox().title} · connected ${stamp(mailbox().connected_at)} · ${mailbox().synced_at ? `last synced ${stamp(mailbox().synced_at)}` : 'not synced yet'}`,
