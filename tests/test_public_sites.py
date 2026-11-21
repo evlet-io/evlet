@@ -107,8 +107,10 @@ def test_visitors_from_other_sites_reach_a_public_host(site):
     away = {b'host': SITE, b'sec-fetch-site': b'cross-site', b'sec-fetch-mode': b'navigate'}
     assert http(site, 'GET', '/pricing', headers=away)[0] == 200
     assert http(site, 'GET', '/robots.txt', headers=away)[0] == 200
-    # The primary host keeps refusing cross-site requests.
-    assert http(site, 'GET', '/', headers={**away, b'host': PRIMARY})[0] == 403
+    # The primary host opens its pages from a link, and keeps refusing every other cross-site request.
+    assert http(site, 'GET', '/login', headers={**away, b'host': PRIMARY})[0] == 200
+    assert http(site, 'GET', '/login', headers={**away, b'host': PRIMARY, b'sec-fetch-dest': b'iframe'})[0] == 403
+    assert http(site, 'GET', '/api/auth/session', headers={**away, b'host': PRIMARY})[0] == 403
 
 
 def test_head_requests_get_headers_without_a_body(site):

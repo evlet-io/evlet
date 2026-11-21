@@ -99,9 +99,9 @@ from .currencies import (currency_decimals, currency_unit, round_money, round_st
 __all__ += ["currency_decimals", "currency_unit", "round_money", "round_stored_money", "set_currency_decimals",
             "set_currency_display"]
 
-from .workspaces import NavGroup, Shortcut, Workspace
+from .workspaces import NavGroup, NavSection, Shortcut, Workspace
 
-__all__ += ["NavGroup", "Shortcut", "Workspace"]
+__all__ += ["NavGroup", "NavSection", "Shortcut", "Workspace"]
 
 
 # Optional subsystems have no model-build registration side effects. Mandatory build steps above

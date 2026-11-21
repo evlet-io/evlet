@@ -1,6 +1,8 @@
-"""Workspaces: an app's named sidebars, Workspace > NavGroup > items (docs/ui.md#workspaces).
+"""Workspaces: an app's named sidebars, Workspace > NavSection > NavGroup > items (docs/ui.md#workspaces).
 
-An app declares them in workspaces.py (or passes Application(workspaces=...)). They are checked when the
+A NavSection is a bold title that never collapses; under it a NavGroup is a parent with a coloured icon and its
+child items, and a Shortcut placed directly in a section is a parent that is a link. An optional Home sits above
+every section. An app declares them in workspaces.py (or passes Application(workspaces=...)). They are checked when the
 application is built, and /api/schema gives each role only what it can open. An app that declares none
 gets one automatic workspace, grouped as the sidebar groups models: Documents, Records and Reports."""
 
@@ -9,6 +11,7 @@ import json
 import re
 from urllib.parse import urlsplit
 
+from . import qb
 from .auth import AccessError
 from .models import ValidationError
 from .query import ChildGroup, SqlQuery, conditions
@@ -18,12 +21,24 @@ ICON = re.compile(r'[a-z0-9][a-z0-9-]{0,39}')
 VIEWS = ('list', 'board')
 MAX_LABEL = 80
 MAX_URL = 2000
+# The colours a parent may take: the browser's seven tints. Its children take the parent's colour.
+COLORS = ('blue', 'green', 'amber', 'rose', 'violet', 'teal', 'slate')
+# A badge reads at most the newest BADGE_WINDOW rows of its model and stops at BADGE_CAP matches, which the
+# browser shows as "99+": never an unbounded count over a large table.
+BADGE_WINDOW = 1000
+BADGE_CAP = 100
+# Home's key: no workspace, section, group or item may take it, and no model may be named so (Registry).
+HOME = 'home'
 
 
 @dataclass(frozen=True, repr=False)
 class Shortcut:
     """One sidebar entry. Name exactly one target: a model (with an optional view and filters), a report, an @api
-    endpoint whose Prompt opens (api='app.quick_expense', with a label) or a URL."""
+    endpoint whose Prompt opens (api='app.quick_expense', with a label) or a URL.
+
+    icon replaces the kind's icon. color is for a parent link only (a Shortcut placed directly in a NavSection):
+    a NavGroup's children take its colour. badge is a filter whose bounded count shows beside a model child.
+    new_tab opens a URL in a new tab, with the open-externally icon; it defaults to True for an http(s) address."""
     model: object = None
     view: str | None = None
     filters: object = None
@@ -31,18 +46,37 @@ class Shortcut:
     report: object = field(default=None, kw_only=True)
     api: str | None = field(default=None, kw_only=True)
     url: str | None = field(default=None, kw_only=True)
+    icon: str | None = field(default=None, kw_only=True)
+    color: str | None = field(default=None, kw_only=True)
+    badge: object = field(default=None, kw_only=True)
+    new_tab: bool | None = field(default=None, kw_only=True)
 
     def __repr__(self):
-        shown = [f'{name}={_shown(getattr(self, name))}' for name in ('model', 'view', 'filters', 'label', 'report', 'api', 'url')
+        shown = [f'{name}={_shown(getattr(self, name))}' for name in ('model', 'view', 'filters', 'label', 'report', 'api', 'url',
+                                                                     'icon', 'color', 'badge', 'new_tab')
                  if getattr(self, name) is not None]
         return f'Shortcut({", ".join(shown)})'
 
 
 @dataclass(frozen=True)
 class NavGroup:
-    """A titled group of sidebar items: model names (text) and Shortcuts."""
+    """A parent in the sidebar: its icon on a tile in its colour, then its child items (model names and Shortcuts),
+    which take the same colour. Without a colour, the browser picks a stable one from the key."""
     label: str
     icon: str | None = field(default=None, kw_only=True)
+    color: str | None = field(default=None, kw_only=True)
+    items: tuple = field(default=(), kw_only=True)
+
+    def __post_init__(self):
+        if isinstance(self.items, (list, tuple)):
+            object.__setattr__(self, 'items', tuple(self.items))
+
+
+@dataclass(frozen=True)
+class NavSection:
+    """A level-one sidebar title, bold and in capitals, that never collapses and has no icon. Its items are
+    NavGroups (parents with children) and parent links: model names or Shortcuts."""
+    label: str
     items: tuple = field(default=(), kw_only=True)
 
     def __post_init__(self):
@@ -52,11 +86,14 @@ class NavGroup:
 
 @dataclass(frozen=True)
 class Workspace:
-    """A named sidebar: NavGroups of items. key defaults to the label in lowercase with underscores."""
+    """A named sidebar: NavSections, NavGroups and parent links. key defaults to the label in lowercase with
+    underscores. home=True puts Home directly under the switcher, opening the start page; a model name or a
+    Shortcut makes it open that instead."""
     label: str
     key: str | None = field(default=None, kw_only=True)
     icon: str | None = field(default=None, kw_only=True)
     groups: tuple = field(default=(), kw_only=True)
+    home: object = field(default=None, kw_only=True)
 
     def __post_init__(self):
         if isinstance(self.groups, (list, tuple)):
@@ -67,24 +104,56 @@ class Workspace:
         if not isinstance(key, str) or not KEY.fullmatch(key):
             raise ValueError(f'{name}: key must be 1 to 64 lowercase letters, digits or underscores, starting with a letter'
                              + (', so give it key=' if self.key is None else f', not {self.key!r}'))
+        if key == HOME:
+            raise ValueError(f'{name}: the key "home" is reserved for Home; give it another key')
         object.__setattr__(self, 'key', key)
         _icon(self.icon, name)
         if not isinstance(self.groups, tuple) or not self.groups:
-            raise ValueError(f'{name}: groups takes one or more NavGroup')
-        seen = set()
-        for group in self.groups:
-            if not isinstance(group, NavGroup):
-                raise ValueError(f'{name}: groups takes NavGroup, not {_shown(group)}')
-            where = f'{name}, group {group.label!r}'
-            _label(group.label, where)
-            if slug(group.label) in seen:
-                raise ValueError(f'{where}: two groups share the key {slug(group.label)!r}; give them different labels')
-            seen.add(slug(group.label))
-            _icon(group.icon, where)
-            if not isinstance(group.items, tuple) or not group.items:
-                raise ValueError(f'{where}: items takes one or more model names or Shortcuts')
-            for item in group.items:
-                check_item(item, f'{where}, item {_shown(item)}')
+            raise ValueError(f'{name}: groups takes one or more NavSection or NavGroup')
+        if self.home is not None and self.home is not True:
+            if isinstance(self.home, Shortcut) and (self.home.icon, self.home.color, self.home.badge) != (None, None, None):
+                raise ValueError(f'{name}, home: Home has its own icon, and takes no colour or badge')
+            if self.home is False or not isinstance(self.home, (str, Shortcut)):
+                raise ValueError(f'{name}, home: use True, a model name or a Shortcut')
+            check_item(self.home, f'{name}, home')
+        seen, sections = set(), set()
+        for entry in self.groups:
+            if isinstance(entry, NavSection):
+                where = f'{name}, section {entry.label!r}'
+                _label(entry.label, where)
+                _not_home(entry.label, where)
+                if slug(entry.label) in sections:
+                    raise ValueError(f'{where}: two sections share the key {slug(entry.label)!r}; give them different labels')
+                sections.add(slug(entry.label))
+                if not isinstance(entry.items, tuple) or not entry.items:
+                    raise ValueError(f'{where}: items takes one or more NavGroups, model names or Shortcuts')
+                for item in entry.items:
+                    self._parent(item, where, seen)
+            elif isinstance(entry, NavGroup):
+                self._parent(entry, name, seen)
+            else:
+                raise ValueError(f'{name}: groups takes NavSection and NavGroup, not {_shown(entry)}')
+
+    def _parent(self, entry, where, seen):
+        """A NavGroup with its children, or a parent link (a model name or a Shortcut)."""
+        if not isinstance(entry, NavGroup):
+            if isinstance(entry, NavSection):
+                raise ValueError(f'{where}: a NavSection holds NavGroups and links, not another NavSection')
+            check_item(entry, f'{where}, item {_shown(entry)}', parent=True)
+            return
+        group = entry
+        where = f'{where}, group {group.label!r}'
+        _label(group.label, where)
+        _not_home(group.label, where)
+        if slug(group.label) in seen:
+            raise ValueError(f'{where}: two groups share the key {slug(group.label)!r}; give them different labels')
+        seen.add(slug(group.label))
+        _icon(group.icon, where)
+        _color(group.color, where)
+        if not isinstance(group.items, tuple) or not group.items:
+            raise ValueError(f'{where}: items takes one or more model names or Shortcuts')
+        for item in group.items:
+            check_item(item, f'{where}, item {_shown(item)}', child=True)
 
 
 def slug(text):
@@ -99,6 +168,16 @@ def _shown(value):
 def _label(value, where, *, name='label'):
     if not isinstance(value, str) or not value.strip() or len(value) > MAX_LABEL:
         raise ValueError(f'{where}: {name} must be text of 1 to {MAX_LABEL} characters')
+
+
+def _not_home(label, where):
+    if slug(label) == HOME:
+        raise ValueError(f'{where}: "Home" is reserved for the workspace\'s Home (Workspace(home=...))')
+
+
+def _color(value, where):
+    if value is not None and value not in COLORS:
+        raise ValueError(f'{where}: color is one of {", ".join(COLORS)}')
 
 
 def _icon(value, where):
@@ -119,8 +198,18 @@ def check_url(url):
     return parts.scheme.lower() in ('http', 'https') and bool(parts.netloc)
 
 
-def check_item(item, where):
-    """Checks that need no registry: one target, a known view, JSON filters, labels and URLs."""
+def _filter_value(value, where, name):
+    if not isinstance(value, (dict, list, tuple)) or not value:
+        raise ValueError(f'{where}: {name} is a filter object such as {{"done": False}} or a list of conditions')
+    try:
+        json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError):
+        raise ValueError(f'{where}: {"filter" if name == "filters" else "badge filter"} values are JSON values: text, numbers, true, false, null or lists') from None
+
+
+def check_item(item, where, *, parent=False, child=False):
+    """Checks that need no registry: one target, a known view, JSON filters, labels and URLs. A parent link
+    (parent=True) may take a colour but no badge; a NavGroup's child (child=True) a badge but no colour."""
     if isinstance(item, str):
         if not item:
             raise ValueError(f'{where}: name a model')
@@ -132,19 +221,34 @@ def check_item(item, where):
         raise ValueError(f'{where}: name exactly one of model, report, api or url')
     if item.label is not None:
         _label(item.label, where)
+        if parent or child:
+            _not_home(item.label, where)
     if targets[0] != 'model' and (item.view is not None or item.filters is not None):
         raise ValueError(f'{where}: view and filters go with a model')
     if item.view is not None and item.view not in VIEWS:
         raise ValueError(f'{where}: view is "list" or "board", not {item.view!r}')
     if item.filters is not None:
-        if not isinstance(item.filters, (dict, list, tuple)) or not item.filters:
-            raise ValueError(f'{where}: filters is a filter object such as {{"done": False}} or a list of conditions')
-        try:
-            json.dumps(item.filters, allow_nan=False)
-        except (TypeError, ValueError):
-            raise ValueError(f'{where}: filter values are JSON values: text, numbers, true, false, null or lists') from None
+        _filter_value(item.filters, where, 'filters')
         if item.label is None:
             raise ValueError(f'{where}: a shortcut with filters needs a label')
+    _icon(item.icon, where)
+    if item.color is not None:
+        if child:
+            raise ValueError(f'{where}: a child takes its parent\'s colour; set color on the NavGroup')
+        if not parent:
+            raise ValueError(f'{where}: color goes on a parent: a NavGroup, or a Shortcut placed directly in a NavSection')
+        _color(item.color, where)
+    if item.badge is not None:
+        if targets[0] != 'model':
+            raise ValueError(f'{where}: a badge counts a model\'s records; it goes with a model')
+        if not child:
+            raise ValueError(f'{where}: parents show no badge; put the badge on a child in a NavGroup')
+        _filter_value(item.badge, where, 'badge')
+    if item.new_tab is not None:
+        if targets[0] != 'url':
+            raise ValueError(f'{where}: new_tab goes with a url')
+        if type(item.new_tab) is not bool:
+            raise ValueError(f'{where}: new_tab is True or False')
     if item.url is not None:
         if not check_url(item.url):
             raise ValueError(f'{where}: a URL is an app path starting with / or an http(s) address')
@@ -158,11 +262,12 @@ def check_item(item, where):
             raise ValueError(f'{where}: {name} takes a name or the class')
 
 
-def model_item(name, label=None, view=None, filters=None):
-    """A model item's plain form; its key is model:<name>, plus :<label or view> when it is more than the list."""
+def model_item(name, label=None, view=None, filters=None, *, icon=None, badge=None):
+    """A model item's plain form; its key is model:<name>, plus :<label or view> when it is more than the list.
+    badge is the checked badge filter, kept on the server: the schema says only whether there is one."""
     plain = label is None and filters is None and view in (None, 'list')
     return {'key': f'model:{name}' if plain else f'model:{name}:{slug(label) if label else view}', 'kind': 'model',
-            'label': label, 'model': name, 'view': view or 'list', 'filters': filters}
+            'label': label, 'model': name, 'view': view or 'list', 'filters': filters, 'icon': icon, 'badge': badge}
 
 
 class Workspaces:
@@ -206,25 +311,52 @@ class Workspaces:
                     raise ValueError(f'Workspace {workspace.label!r} in {app["source"]}: the key {workspace.key!r} is taken by {other}')
                 keys[workspace.key] = (workspace, app)
                 plans.append({'key': workspace.key, 'label': workspace.label.strip(), 'icon': workspace.icon, 'app': app['id'],
-                              'source': 'declared', 'groups': self.groups(workspace)})
+                              'source': 'declared', 'home': self.home(workspace), 'groups': self.groups(workspace)})
             if not app['workspaces']:
                 plans.append({'key': app['id'], 'label': app['title'], 'icon': 'layers', 'app': app['id'], 'source': 'automatic',
-                              'models': app['models'], 'reports': app['reports']})
+                              'home': None, 'models': app['models'], 'reports': app['reports']})
         return plans
 
+    def home(self, workspace):
+        """Home's item: the start page (home=True), or the model, report, endpoint or URL it names, keyed "home"."""
+        if workspace.home is None:
+            return None
+        if workspace.home is True:
+            return {'key': HOME, 'kind': HOME, 'label': 'Home', 'icon': None}
+        plan = self.item(workspace.home, f'Workspace {workspace.label!r}, home')
+        return {**plan, 'key': HOME, 'label': plan['label'] or 'Home', 'badge': None} if plan['kind'] == 'model' else {**plan, 'key': HOME,
+                                                                                                                     'label': plan['label'] or 'Home'}
+
     def groups(self, workspace):
-        groups, seen = [], {}
-        for group in workspace.groups:
-            items = []
-            for item in group.items:
-                where = f'Workspace {workspace.label!r}, group {group.label!r}, item {_shown(item)}'
-                plan = self.item(item, where)
-                if plan['key'] in seen:
-                    raise ValueError(f'{where}: the key {plan["key"]!r} is used by {seen[plan["key"]]}; give one a different label')
-                seen[plan['key']] = _shown(item)
-                items.append(plan)
-            groups.append({'key': slug(group.label), 'label': group.label.strip(), 'icon': group.icon, 'items': items})
+        """The workspace's parents in order: each NavGroup, and each parent link as a group of its one item
+        ("link": true). Each says the section above it ({key, label}, or None outside a section)."""
+        groups, seen, keys = [], {}, set()
+        for entry in workspace.groups:
+            section = {'key': slug(entry.label), 'label': entry.label.strip()} if isinstance(entry, NavSection) else None
+            for parent in (entry.items if section else (entry,)):
+                if isinstance(parent, NavGroup):
+                    items = [self.planned(item, f'Workspace {workspace.label!r}, group {parent.label!r}, item {_shown(item)}', seen)
+                             for item in parent.items]
+                    group = {'key': slug(parent.label), 'label': parent.label.strip(), 'icon': parent.icon, 'color': parent.color,
+                             'section': section, 'link': False, 'items': items}
+                else:
+                    where = f'Workspace {workspace.label!r}' + (f', section {section["label"]!r}' if section else '') + f', item {_shown(parent)}'
+                    item = self.planned(parent, where, seen)
+                    color = parent.color if isinstance(parent, Shortcut) else None
+                    group = {'key': slug(item['key']), 'label': item['label'], 'icon': item['icon'], 'color': color,
+                             'section': section, 'link': True, 'items': [item]}
+                    if group['key'] in keys:
+                        raise ValueError(f'{where}: the key {group["key"]!r} is used by another group; give one a different label')
+                keys.add(group['key'])
+                groups.append(group)
         return groups
+
+    def planned(self, item, where, seen):
+        plan = self.item(item, where)
+        if plan['key'] in seen:
+            raise ValueError(f'{where}: the key {plan["key"]!r} is used by {seen[plan["key"]]}; give one a different label')
+        seen[plan['key']] = _shown(item)
+        return plan
 
     def item(self, item, where):
         """An item in its plain form, checked against the models, reports and endpoints of this application."""
@@ -235,18 +367,20 @@ class Workspaces:
             model = self.business.registry.models[name]
             if item.view == 'board' and not getattr(getattr(model, 'Meta', None), 'board', None):
                 raise ValueError(f'{where}: {model.__name__} has no board; set Meta.board to its State, or use view="list"')
-            return model_item(name, item.label, item.view, None if item.filters is None else self.filters(model, item.filters, where))
+            return model_item(name, item.label, item.view, None if item.filters is None else self.filters(model, item.filters, where),
+                              icon=item.icon, badge=None if item.badge is None else self.filters(model, item.badge, where, 'badge'))
         if item.report is not None:
             reports = self.business.forms.reports if self.business.forms else {}
             name = getattr(item.report, '__resource_id__', item.report.__name__) if isinstance(item.report, type) else item.report
             if name not in reports:
                 raise ValueError(f'{where}: unknown report {name!r}; register it with the application')
-            return {'key': f'report:{name}', 'kind': 'report', 'label': item.label, 'report': name}
+            return {'key': f'report:{name}', 'kind': 'report', 'label': item.label, 'report': name, 'icon': item.icon}
         if item.api is not None:
             if not any(endpoint.name == item.api for endpoint in self.business.apis):
                 raise ValueError(f'{where}: unknown endpoint {item.api!r}; register it with the application')
-            return {'key': f'api:{item.api}', 'kind': 'api', 'label': item.label.strip(), 'api': item.api}
-        return {'key': f'url:{slug(item.label)}', 'kind': 'url', 'label': item.label.strip(), 'url': item.url}
+            return {'key': f'api:{item.api}', 'kind': 'api', 'label': item.label.strip(), 'api': item.api, 'icon': item.icon}
+        new_tab = item.new_tab if item.new_tab is not None else not item.url.startswith('/')
+        return {'key': f'url:{slug(item.label)}', 'kind': 'url', 'label': item.label.strip(), 'url': item.url, 'icon': item.icon, 'new_tab': new_tab}
 
     def model(self, value, where):
         registry, business = self.business.registry, self.business
@@ -260,18 +394,18 @@ class Workspaces:
             raise ValueError(f'{where}: {model.__name__} holds child rows, which open from their parent record')
         return registry.name_for(model)
 
-    def filters(self, model, filters, where):
+    def filters(self, model, filters, where, name='filters'):
         """Filters checked as a list request checks them, in the list form a list address carries (?f=)."""
         try:
             items = conditions(filters)
             SqlQuery(self.business.registry, model, children=self.business.children.values()).where(filters)
         except ValidationError as exc:
-            raise ValueError(f'{where}: filters {"; ".join(f"{key}: {value}" for key, value in exc.errors.items())}') from None
+            raise ValueError(f'{where}: {name} {"; ".join(f"{key}: {value}" for key, value in exc.errors.items())}') from None
         result = []
         for item in items:
             paths = [inner.path for inner in item.where] if isinstance(item, ChildGroup) else [item.path]
             if any('__' in path for path in paths):
-                raise ValueError(f'{where}: filters name fields of {model.__name__} itself, not of linked records')
+                raise ValueError(f'{where}: {name} name fields of {model.__name__} itself, not of linked records')
             if isinstance(item, ChildGroup):
                 result.append({'child': item.child, 'match': item.match, 'where': [[inner.path, inner.operator, inner.value] for inner in item.where]})
             else:
@@ -293,19 +427,66 @@ class Workspaces:
             groups = context.automatic(plan) if plan['source'] == 'automatic' else plan['groups']
             if override is not None:
                 groups = apply_override(groups, override)
-            groups = [{'key': group['key'], 'label': group['label'], 'icon': group['icon'],
-                       'items': [shown for shown in (context.item(item) for item in group['items']) if shown is not None]}
-                      for group in groups]
-            groups = [group for group in groups if group['items']]
+            groups = [shown for shown in (context.group(group) for group in groups) if shown is not None]
             if groups:
+                home = None if plan.get('home') is None else context.item(plan['home'])
                 workspaces.append({'key': plan['key'], 'label': (override or {}).get('label') or plan['label'],
                                    'icon': (override or {}).get('icon') or plan['icon'], 'app': plan['app'],
-                                   'source': plan['source'], 'groups': groups})
+                                   'source': plan['source'], 'home': home, 'groups': groups})
         return workspaces
+
+    # ---------- badges ----------
+
+    def badges(self, scope, user):
+        """GET /api/_nav/badges?workspace=<key>: the bounded counts of the badges this role sees in that workspace.
+        Reads only, in one snapshot. An item the role can't open, or whose badge it can't filter by, has none."""
+        from urllib.parse import parse_qs
+        try:
+            raw = scope.get('query_string', b'')
+            query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=2) if len(raw) <= 200 else None
+            if query is None or set(query) != {'workspace'} or len(query['workspace']) != 1:
+                raise ValueError()
+        except (ValueError, UnicodeError):
+            raise ValidationError({'query': 'Send the workspace key: ?workspace=<key>'}) from None
+        key = query['workspace'][0]
+        shown = next((workspace for workspace in self.business.schema(user).get('workspaces', ()) if workspace['key'] == key), None)
+        if shown is None:
+            raise AccessError(404, 'Workspace not found')
+        plan = next((plan for plan in self.plans if plan['key'] == key and plan['source'] == 'declared'), None)
+        declared = {item['key']: item for group in (plan or {}).get('groups', ()) for item in group['items']}
+        wanted = [declared[item['key']] for group in shown['groups'] for item in group['items']
+                  if item.get('badge') and declared.get(item['key'], {}).get('badge') is not None]
+        counts = {}
+        if wanted:
+            database = self.business.database
+            with database._connection() as connection:
+                connection.snapshot()
+                for item in wanted:
+                    counts[item['key']] = self.bounded(connection, user, item)
+        return 200, {'badges': counts}, []
+
+    def bounded(self, connection, user, item):
+        """{count, more, partial} for one badge: the rows among the newest BADGE_WINDOW of the model that this role
+        reads (its row scope) and that meet the shortcut's filters and the badge filter, counted up to BADGE_CAP.
+        more: BADGE_CAP or more matched. partial: fewer did, and the model holds more rows than the window."""
+        business = self.business
+        model = business.registry.models[item['model']]
+        compiler = SqlQuery(business.registry, model, children=business.children.values())
+        where = [condition for condition in (compiler.where(item['filters']), compiler.where(item['badge']), business.policy.scope(user, model))
+                 if not qb.always(condition)]
+        name = business.registry.name_for(model)
+        window = qb.from_query(qb.select(qb.table(name)).order_by(qb.desc('id')).limit(BADGE_WINDOW), 'record')
+        hits = qb.select(window, qb.col('record.id')).where(*where).limit(BADGE_CAP)
+        count = int(connection.run(qb.select(qb.from_query(hits, 'hits'), qb.count())).value() or 0)
+        partial = False
+        if count < BADGE_CAP:
+            rows = qb.select(qb.table(name), qb.col('id')).limit(BADGE_WINDOW + 1)
+            partial = int(connection.run(qb.select(qb.from_query(rows, 'rows'), qb.count())).value() or 0) > BADGE_WINDOW
+        return {'count': count, 'more': count >= BADGE_CAP, 'partial': partial}
 
     def effective(self):
         """The declared and automatic workspaces, then the site's custom ones by key."""
-        return [*self.plans, *({'key': key, 'label': value['label'], 'icon': value['icon'], 'app': None, 'source': 'custom', 'groups': []}
+        return [*self.plans, *({'key': key, 'label': value['label'], 'icon': value['icon'], 'app': None, 'source': 'custom', 'home': None, 'groups': []}
                                for key, value in sorted(self.overridden.items()) if value['custom'])]
 
     # ---------- site overrides (Controls) ----------
@@ -346,6 +527,8 @@ class Workspaces:
         if custom:
             if not isinstance(key, str) or not KEY.fullmatch(key):
                 raise ValidationError({'key': 'Use 1 to 64 lowercase letters, digits or underscores, starting with a letter'})
+            if key == HOME:
+                raise ValidationError({'key': 'The key home is reserved for Home'})
             if plan is not None:
                 raise ValidationError({'key': f'The workspace {plan["label"]} has this key. Choose another key for a new workspace'})
             if 'label' not in value or not value.get('groups'):
@@ -380,6 +563,8 @@ class Workspaces:
             if gkey not in groups_known:
                 if not re.fullmatch(r'\w{1,64}', gkey):
                     errors[path + '.key'] = 'A new group key is 1 to 64 letters, digits or underscores'
+                elif gkey == HOME:
+                    errors[path + '.key'] = 'The key home is reserved for Home'
                 if 'label' not in group:
                     errors[path + '.label'] = 'A new group needs a label'
             entry = {'key': gkey, 'label': None, 'icon': None, 'hidden': False, 'items': []}
@@ -470,7 +655,8 @@ def apply_override(groups, override):
         if base is not None:
             items += [item for item in base['items'] if item['key'] not in placed]
         result.append({'key': entry['key'], 'label': entry['label'] or (base['label'] if base else entry['key']),
-                       'icon': entry['icon'] or (base['icon'] if base else None), 'items': items})
+                       'icon': entry['icon'] or (base['icon'] if base else None), 'color': base.get('color') if base else None,
+                       'section': base.get('section') if base else None, 'link': bool(base and base.get('link')), 'items': items})
     listed = {entry['key'] for entry in override['groups']}
     result += [{**group, 'items': [item for item in group['items'] if item['key'] not in placed]} for group in groups if group['key'] not in listed]
     return result
@@ -486,20 +672,37 @@ class Context:
         self.reports = {entry['name']: entry for entry in result.get('reports', ())}
         self.apis = {endpoint.name: endpoint for endpoint in getattr(business, 'apis', ())}
 
+    def group(self, group):
+        """A group as this role sees it, or None when it is left with no items. A parent link takes its item's
+        label (the role's plural for a model), and stays a link only while it holds just that item."""
+        items = [shown for shown in (self.item(item) for item in group['items']) if shown is not None]
+        if not items:
+            return None
+        link = group.get('link', False) and len(items) == 1
+        return {'key': group['key'], 'label': group['label'] or items[0]['label'],
+                'icon': group['icon'], 'color': group.get('color'), 'section': group.get('section'), 'link': link, 'items': items}
+
+    def readable(self, model, filters):
+        """Whether this role may filter the model by these filters (a list request's check)."""
+        try:
+            self.business.policy.query_fields(self.user, model, filters, (), database=self.business.database,
+                                              children=self.business.children.values())
+        except (AccessError, ValidationError):
+            return False
+        return True
+
     def item(self, item):
         kind = item['kind']
         if kind == 'model':
             entry = self.models.get(item['model'])
             if entry is None or item['view'] == 'board' and not (entry.get('state') and entry.get('board') == entry['state']['field']):
                 return None
-            if item['filters'] is not None:
-                model = self.business.registry.models[item['model']]
-                try:
-                    self.business.policy.query_fields(self.user, model, item['filters'], (), database=self.business.database,
-                                                      children=self.business.children.values())
-                except (AccessError, ValidationError):
-                    return None
-            return {**item, 'label': item['label'] or entry['plural']}
+            model = self.business.registry.models[item['model']]
+            if item['filters'] is not None and not self.readable(model, item['filters']):
+                return None
+            # The badge filter stays on the server; a role that can't filter by it sees the item without a badge.
+            badge = item.get('badge') is not None and self.readable(model, item['badge'])
+            return {**item, 'label': item['label'] or entry['plural'], 'icon': item.get('icon'), 'badge': badge}
         if kind == 'report':
             entry = self.reports.get(item['report'])
             return None if entry is None else {**item, 'label': item['label'] or entry['label']}
@@ -521,7 +724,9 @@ class Context:
             first.setdefault(entry['group'], index)
         reports.sort(key=lambda entry: (1 if entry['group'] else 0, first[entry['group']]))
         model = lambda name: {**model_item(name), 'label': self.models[name]['plural']}
-        return [{'key': 'documents', 'label': 'Documents', 'icon': None, 'items': [model(name) for name in documents]},
-                {'key': 'records', 'label': 'Records', 'icon': None, 'items': [model(name) for name in records]},
-                {'key': 'reports', 'label': 'Reports', 'icon': None,
-                 'items': [{'key': f'report:{entry["name"]}', 'kind': 'report', 'label': entry['label'], 'report': entry['name']} for entry in reports]}]
+        plain = {'color': None, 'section': None, 'link': False}
+        return [{'key': 'documents', 'label': 'Documents', 'icon': None, **plain, 'items': [model(name) for name in documents]},
+                {'key': 'records', 'label': 'Records', 'icon': None, **plain, 'items': [model(name) for name in records]},
+                {'key': 'reports', 'label': 'Reports', 'icon': None, **plain,
+                 'items': [{'key': f'report:{entry["name"]}', 'kind': 'report', 'label': entry['label'], 'report': entry['name'], 'icon': None}
+                           for entry in reports]}]

@@ -21,7 +21,9 @@ def dispatch(application, scope):
     if not path.startswith('/api/') and method == 'GET':
         # A public host's pages are opened from search results and other sites' links (Sec-Fetch-Site:
         # cross-site); they hold no session or data, so only the Host check applies (RouteTable.public).
-        if application.business and not application.routes.public(host): application.business.auth.guard(scope)
+        # Other hosts' pages may be opened from a link too: a top-level navigation loads the page shell, whose
+        # data comes from /api, where every cross-site request stays rejected.
+        if application.business and not application.routes.public(host): application.business.auth.guard(scope, navigation=True)
         from .serving import static_response
         target = application.routes.redirect(host, path)
         if target:

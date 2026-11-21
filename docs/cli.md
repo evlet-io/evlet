@@ -750,7 +750,10 @@ WantedBy=multi-user.target
 
 The unit that `evlet setup --host` and `evlet proxy` write carries the same sandboxing
 (`ProtectHome` only when the project is outside `/home`), and their Caddy and nginx sites
-send `Strict-Transport-Security: max-age=31536000`.
+send `Strict-Transport-Security: max-age=31536000`. Create the instance before you enable the unit:
+systemd refuses to start it when a `ReadWritePaths` directory does not exist. With `ProtectHome`, the
+service account's home is read-only, so a cache an app writes there (such as WeasyPrint's font cache in
+`~/.cache`) only logs warnings.
 
 `--jobs` runs the short-task queue inside this one process. Run
 only one process per instance. Add this site to `/etc/caddy/Caddyfile`:

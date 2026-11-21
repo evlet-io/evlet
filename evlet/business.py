@@ -606,6 +606,7 @@ class Business:
         (None, ('/api/_unsaved',), ('/api/_unsaved/',), '_unsaved_route'),
         (None, (), ('/api/_settings/',), '_settings_route'),
         (None, (), ('/api/_services/',), '_service_route'),
+        (None, ('/api/_nav/badges',), (), '_badges_route'),
         (None, (), ('/api/_prompts/',), '_prompts_route'),
         (None, ('/api/_prints',), (), '_prints_route'),
         (None, (), ('/api/_reports/',), '_report_print_route'),
@@ -735,6 +736,14 @@ class Business:
     def _service_route(self, scope, body, user):
         from .services import dispatch
         return dispatch(self, scope, body, user)
+
+    def _badges_route(self, scope, body, user):
+        """GET /api/_nav/badges: the sidebar counts, when workspaces are configured."""
+        if self.workspaces is None:
+            return PASS
+        if scope['method'] != 'GET':
+            raise AccessError(405, 'Method not allowed')
+        return self.workspaces.badges(scope, user)
 
     def _prompts_route(self, scope, body, user):
         from .prompts import dispatch

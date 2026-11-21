@@ -228,16 +228,30 @@ export function flowFromState(state: StateSchema): { steps: FlowStep[]; good: st
     good: ends.filter(step => step.color !== 'rose').map(step => step.key), bad: ends.filter(step => step.color === 'rose').map(step => step.key) };
 }
 
-export interface TabItem { id: string; label: Prop<string>; count?: Prop<number | null> }
+export interface TabItem { id: string; label: Prop<string>; count?: Prop<number | null>;
+  /** Pill tabs: a small dot in this tint before the label, such as a State step's colour. */ tint?: Tint }
 
-/** Row of tabs with an underline in the record accent. Arrow keys move between tabs. */
-export function Tabs(props: { tabs: TabItem[]; active: Cell<string>; label: string; idPrefix?: string; doc?: boolean }): HTMLElement {
+/** Pill tabs without ResizeObserver (or before layout) show the first tab and this many after it; the rest go in More. */
+export const PILL_TABS_SHOWN = 5;
+
+/**
+ * Row of tabs with an underline in the record accent. Arrow keys move between tabs.
+ *
+ * `pills` draws each tab as a pill: an optional coloured dot (`tint`), the label and a count chip, the chosen one on
+ * a light accent fill. Tabs that don't fit the row's width go in a **More N** menu at its end (N: how many are in it),
+ * measured with ResizeObserver; the chosen tab always stays in the row.
+ */
+export function Tabs(props: { tabs: TabItem[]; active: Cell<string>; label: string; idPrefix?: string; doc?: boolean; pills?: boolean }): HTMLElement {
   const prefix = props.idPrefix ?? uid('tab');
+  const chip = (tab: TabItem) => tab.count === undefined ? null : when(() => read(tab.count!) !== null && read(tab.count!) !== undefined,
+    () => html`<span class="n num">${() => String(read(tab.count!))}</span>`);
+  const dot = (tab: TabItem) => props.pills && tab.tint ? html`<span class=${`tab-dot dot-${tint(tab.tint)}`} aria-hidden="true"></span>` : null;
   const buttons = props.tabs.map(tab => html`<button type="button" role="tab" id=${`${prefix}-${tab.id}`} aria-controls=${`${prefix}-${tab.id}-panel`}
     class:on=${() => props.active.get() === tab.id} aria-selected=${() => String(props.active.get() === tab.id)} tabindex=${() => props.active.get() === tab.id ? '0' : '-1'}
-    on:click=${() => props.active.set(tab.id)}>${tab.label}${tab.count === undefined ? null : when(() => read(tab.count!) !== null && read(tab.count!) !== undefined,
-      () => html`<span class="n num">${() => String(read(tab.count!))}</span>`)}</button>` as HTMLButtonElement);
-  const list = html`<div class=${`tabs${props.doc ? ' doc-tabs' : ''}`} role="tablist" aria-label=${props.label}>${buttons}</div>` as HTMLElement;
+    on:click=${() => props.active.set(tab.id)}>${dot(tab)}<span class="tab-l">${tab.label}</span>${chip(tab)}</button>` as HTMLButtonElement);
+  const list = html`<div class=${`tabs${props.doc ? ' doc-tabs' : ''}${props.pills ? ' pill-tabs' : ''}`} role="tablist" aria-label=${props.label}>${buttons}</div>` as HTMLElement;
+  // Pill tabs: the ones that don't fit wait in More.
+  const hidden = props.pills ? pillOverflow(props, list, buttons, dot, chip) : null;
   list.addEventListener('keydown', event => {
     const at = props.tabs.findIndex(tab => tab.id === props.active.peek());
     const next = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: props.tabs.length - 1 }[event.key];
@@ -245,10 +259,70 @@ export function Tabs(props: { tabs: TabItem[]; active: Cell<string>; label: stri
     event.preventDefault();
     const index = (next + props.tabs.length) % props.tabs.length;
     props.active.set(props.tabs[index].id);
+    hidden?.();
     buttons[index].focus();
   });
-  list.dataset.prefix = prefix;
-  return list;
+  if (!hidden) { list.dataset.prefix = prefix; return list; }
+  const row = list.parentElement as HTMLElement;
+  row.dataset.prefix = prefix;
+  return row;
+}
+
+/** Wraps pill tabs in a row with their More button, and keeps the row fitted; returns the function that fits it. */
+function pillOverflow(props: { tabs: TabItem[]; active: Cell<string>; label: string }, list: HTMLElement, buttons: HTMLButtonElement[],
+  dot: (tab: TabItem) => Child, chip: (tab: TabItem) => Child): () => void {
+  let away: number[] = [];
+  const more = html`<button type="button" class="tab-more" aria-haspopup="menu" aria-expanded="false" hidden
+    on:click=${() => openMenu()}><span>More</span><span class="tab-more-n num"></span>${Icon('chevron-down', { size: 'xs' })}</button>` as HTMLButtonElement;
+  const row = html`<div class="pill-row">${list}${more}</div>` as HTMLElement;
+  const openMenu = () => openPopover(more, close => {
+    const items = away.map(index => props.tabs[index]).map(tab => html`<button type="button" class="mi tab-mi" role="menuitemradio" tabindex="-1"
+      aria-checked=${() => String(props.active.get() === tab.id)} on:click=${() => { close(); props.active.set(tab.id); }}>
+      ${dot(tab)}<span class="tab-l">${tab.label}</span>${chip(tab)}</button>` as HTMLButtonElement);
+    const menu = html`<div class="menu" role="none">${items}</div>` as HTMLElement;
+    menu.addEventListener('keydown', event => {
+      const at = items.indexOf(document.activeElement as HTMLButtonElement);
+      const next = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[event.key];
+      if (next === undefined || !items.length) return;
+      event.preventDefault();
+      items[(next + items.length) % items.length].focus();
+    });
+    queueMicrotask(() => items[0]?.focus());
+    return menu;
+  }, { label: `More ${props.label.toLowerCase()}`, role: 'menu', className: 'tab-more-pop' });
+  /** How many tabs fit: measured when the row has a width, else the first and PILL_TABS_SHOWN more. */
+  const fitting = (): number => {
+    const width = row.clientWidth;
+    if (typeof ResizeObserver === 'undefined' || !width) return Math.min(buttons.length, PILL_TABS_SHOWN + 1);
+    for (const button of buttons) button.hidden = false;
+    more.hidden = false;
+    const gap = parseFloat(getComputedStyle(list).columnGap) || 0;
+    const widths = buttons.map(button => button.offsetWidth + gap);
+    if (widths.reduce((sum, value) => sum + value, 0) <= width - parseFloat(getComputedStyle(row).paddingLeft || '0') * 2) return buttons.length;
+    const room = width - more.offsetWidth - 24;
+    let used = 0, count = 0;
+    while (count < widths.length && used + widths[count] <= room) used += widths[count++];
+    return Math.max(1, count);
+  };
+  const fit = () => {
+    const count = fitting();
+    const shown = new Set(buttons.map((_, index) => index).slice(0, count));
+    // The chosen tab stays in the row, in place of the last one that fit.
+    const chosen = props.tabs.findIndex(tab => tab.id === props.active.peek());
+    if (chosen >= 0 && !shown.has(chosen)) { shown.delete(Math.max(...shown)); shown.add(chosen); }
+    away = buttons.map((_, index) => index).filter(index => !shown.has(index));
+    buttons.forEach((button, index) => { button.hidden = !shown.has(index); });
+    more.hidden = !away.length;
+    more.querySelector('.tab-more-n')!.textContent = String(away.length);
+    more.setAttribute('aria-label', `${away.length} more tabs`);
+  };
+  effect(() => { props.active.get(); untrack(fit); });
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(() => fit());
+    observer.observe(row);
+    onCleanup(() => observer.disconnect());
+  }
+  return fit;
 }
 
 /** The panel of one tab; rendered only while its tab is active. */

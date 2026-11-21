@@ -77,13 +77,22 @@ def main():
         command('app', 'notes', '--project', root)
         command('instance', 'acme', '--project', root)
         command('install', 'notes', '--instance', 'acme', '--trust', '--project', root)
+        # evlet serve takes no first-admin setup over HTTP: the Administrator's password is set from the shell.
+        # A new session has no terminal, so the prompts read the password from standard input.
+        subprocess.run([sys.executable, '-I', '-m', 'evlet', 'users', 'set-password', 'acme', 'admin', '--project', str(root)],
+                       input=f'{password}\n{password}\n', check=True, capture_output=True, text=True, start_new_session=True)
         with server('serve', 'acme', '--project', root) as url:
             with urlopen(url) as response:
                 assert b'<div id="evlet-app">' in response.read()
-            client = HTTPClient(url)
-            client.request('POST', '/api/auth/setup', {'username': 'owner', 'password': password})
-            codes = enrol(url, 'owner', password)
-            client = client.login('owner', password, code=codes.pop)
+            refused = HTTPClient(url)
+            try:
+                refused.request('POST', '/api/auth/setup', {'username': 'owner', 'password': password})
+            except Exception:
+                pass
+            else:
+                raise AssertionError('evlet serve accepted first-admin setup over HTTP')
+            codes = enrol(url, 'admin', password)
+            client = HTTPClient(url).login('admin', password, code=codes.pop)
             client.request('POST', '/api/notesitem', {'title': 'Survives restart'})
             assert client.get('/api/notesitem')['items'][0]['title'] == 'Survives restart'
             busy = command('migrate', 'acme', '--trust', '--project', root, check=False)
@@ -94,7 +103,7 @@ def main():
         assert time.monotonic() - shutdown_started < 5, 'Open event stream delayed shutdown'
         stream.close()
         with server('dev', '--instance', 'acme', '--project', root) as url:
-            client = HTTPClient(url).login('owner', password, code=codes.pop)
+            client = HTTPClient(url).login('admin', password, code=codes.pop)
             assert client.get('/api/notesitem')['items'][0]['title'] == 'Survives restart'
             stream = urlopen(Request(url + '/api/_events/stream', headers={'Cookie':client.cookie}), timeout=10)
             assert stream.readline().startswith(b'id:')
@@ -114,7 +123,7 @@ def main():
             stream.close()
         command('migrate', 'acme', '--trust', '--project', root)
         with server('serve', 'acme', '--project', root) as url:
-            client = HTTPClient(url).login('owner', password, code=codes.pop)
+            client = HTTPClient(url).login('admin', password, code=codes.pop)
             assert client.get('/api/notesitem')['items'][0]['title'] == 'Survives restart'
         before = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
         with server('playground', '--no-link') as url:
