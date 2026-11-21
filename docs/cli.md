@@ -125,6 +125,28 @@ evlet playground --port 8000
 evlet docs --port 8001
 ```
 
+`evlet --help` lists the commands in groups: Start (`setup`, `app`, `instance`, `install`),
+Develop (`dev`, `dev-link`, `playground`, `docs`, `build`), Change (`makemigration`, `migrate`,
+`upgrade`), Operate (`serve`, `restart`, `routes`, `proxy`, `host`, `link-user`, `jobs`,
+`ledger`, `backup`), Recover (`restore`, `users`, `controls`, `secrets`, `ids`, `activity`) and
+Connector (`login`, `logout`, `describe`, `mcp`). `install`, `migrate` and `dev` build the apps
+themselves, so `evlet build` is optional: it only checks and builds ahead of time.
+
+Every command that takes an instance accepts it either way: as a name (`evlet dev acme`,
+`evlet install notes acme`, `evlet backup acme`, `evlet jobs list acme`) or as `--instance acme`
+(`evlet serve --instance acme`, `evlet users set-password --instance acme mariam`). The forms in
+the list above keep working. `serve`, `migrate`, `dev`, `install`, `makemigration`, `backup`,
+`restore`, `dev-link`, `jobs list` and `ledger list` use the only instance when the project has
+one; the others always need the name. Giving two different names is refused.
+
+`evlet install` creates the tables of an app that is new to the instance straight from its
+models, as on a first install, also when the instance already has other apps; the app's
+existing migrations are recorded without running (their seed steps run). It prints the app
+(`Tables created from the models of sales`) and that later changes need a migration. On a new
+instance the framework's own steps are summarised (`Framework tables: created (17 framework
+migrations recorded)`); on an existing database each one that ran is listed. Applied app
+migrations are named as `notes 0001_changes`.
+
 `python -m evlet` accepts the same commands. It drops the working directory from
 `sys.path` before loading apps, but modules Python imports at startup can still be
 shadowed by files there; run it with `python -P -m evlet` (or set

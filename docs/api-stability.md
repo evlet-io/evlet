@@ -219,6 +219,12 @@ production ready, but the rules below hold from 0.3 on.
   decimals, *, actor='cli')`, `round_stored_money(application, code, decimals, *, actor='cli')`, `currency_decimals` in `/api/schema`, the 409 refusal when lowering a code's
   decimals, Currency storage at 6 places with values serialized with at least 2, and the
   `currency` entry of a finite plan's Currency targets ([model-engine.md](model-engine.md#decimal-places-per-currency)).
+- **App tests.** `evlet.testing`: `TestApp(path, *, apps=None, instance=None, directory=None)` with
+  `client(user=None, *, role=None)`, `as_admin()`, `user(username=None, *, role='admin', password=None)`,
+  `context(user=None, *, role='admin')`, `model(name)`, `close()` and its use as a context manager;
+  `Client` with `get`, `post`, `put`, `patch`, `delete`, `request` and `sign_in(username, password)`;
+  and `TestResponse` (`status`, `data`, `headers`, `body`) ([testing.md](testing.md)). Import them from
+  `evlet.testing`; they are not root exports.
 
 For each of these, the contract covers the name and the arguments it takes: their names,
 order, whether they are keyword-only, and their defaults. Model `Meta` options and the

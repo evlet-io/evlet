@@ -157,7 +157,7 @@
   },
   "evlet.Session": {
     "aggregate": "def(self, model, *, measures, group_by=(), filters=None, limit=None, after=None)",
-    "count": "def(self, model, *, filters=None, search='')",
+    "count": "def(self, model, *, filters=None, search='', cap=None)",
     "create": "def(self, model, /, **values)",
     "delete": "def(self, model, record_id)",
     "get": "def(self, model, record_id)",

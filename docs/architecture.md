@@ -100,7 +100,7 @@ points upward; every module must be in the map.
 | 5 | `web` | HTTP application and routes | app, runtime, routing, business, forms, workspaces, services, events, jobs, framework, devlink, discovery |
 | 6 | `admin` | Controls and settings | controls, controls_export, controls_system, customization, settings, printing |
 | 7 | `ai` | Eva, MCP, tools | eva, tools, mcp, connector, connectors, assistants, mailboxes |
-| 8 | `site` | Sites, apps, deployment | instances, packages, builds, deployment, tenancy, serverless |
+| 8 | `site` | Sites, apps, deployment, app tests | instances, packages, builds, deployment, tenancy, serverless, testing |
 
 The state manager's declarations (`State`, `State.Step`, `State.Rule`, `State.Level`, `State.Remark`) live in
 `evlet/declarations.py` in core, so models and sequences import them downward; `evlet/statemanager.py` (engine)

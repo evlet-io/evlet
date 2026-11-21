@@ -29,6 +29,69 @@ def choose_instance(root, command):
     raise ValueError(f'Select an instance with evlet {command} --instance NAME. Create and install an app first')
 
 
+INSTANCE_HELP = 'Instance name; --instance NAME also works'
+
+
+def add_instance_option(command, help='Required when the project has several instances'):
+    """--instance NAME, and the same name as an optional positional (evlet dev acme)."""
+    command.add_argument('instance_arg', nargs='?', metavar='INSTANCE', help='Instance name; the same as --instance')
+    command.add_argument('--instance', help=help)
+
+
+# Commands whose instance is a positional argument, with the words that name them. `--instance NAME` is moved
+# into that position before parsing, so both forms work everywhere (evlet serve acme, evlet serve --instance acme).
+POSITIONAL_INSTANCE = {
+    'serve': 1, 'migrate': 1, 'restart': 1, 'upgrade': 1, 'routes': 1, 'proxy': 1, 'link-user': 1,
+    'controls': 2, 'users': 2, 'secrets': 2, 'ids': 2, 'activity': 2, 'host': 2,
+}
+
+# evlet --help lists the commands in these groups.
+GROUPS = (
+    ('Start', ('setup', 'app', 'instance', 'install')),
+    ('Develop', ('dev', 'dev-link', 'playground', 'docs', 'build')),
+    ('Change', ('makemigration', 'migrate', 'upgrade')),
+    ('Operate', ('serve', 'restart', 'routes', 'proxy', 'host', 'link-user', 'jobs', 'ledger', 'backup')),
+    ('Recover', ('restore', 'users', 'controls', 'secrets', 'ids', 'activity')),
+    ('Connector', ('login', 'logout', 'describe', 'mcp')),
+)
+
+
+def move_instance_option(values):
+    """Rewrite `--instance NAME` (or --instance=NAME) into the positional slot of commands that take it there."""
+    values = list(values)
+    words, index = [], 0
+    while index < len(values) and len(words) < 2:
+        value = values[index]
+        if value == '--project':
+            index += 2
+            continue
+        if not value.startswith('-'):
+            words.append((index, value))
+            if POSITIONAL_INSTANCE.get(words[0][1]) == len(words):
+                break
+            if words[0][1] not in POSITIONAL_INSTANCE:
+                return values
+        index += 1
+    if not words or POSITIONAL_INSTANCE.get(words[0][1]) != len(words):
+        return values
+    position = words[-1][0] + 1
+    for at in range(position, len(values)):
+        value = values[at]
+        if value == '--':
+            break
+        if value == '--instance' and at + 1 < len(values):
+            name = values[at + 1]
+            del values[at:at + 2]
+        elif value.startswith('--instance='):
+            name = value.split('=', 1)[1]
+            del values[at]
+        else:
+            continue
+        values.insert(position, name)
+        break
+    return values
+
+
 class ShowVersion(argparse.Action):
     """evlet --version: this evlet, and the Evlet in the project's .venv when run inside a project."""
 
@@ -66,10 +129,10 @@ def check_framework_source(framework):
 
 
 def parser():
-    result = argparse.ArgumentParser(prog='evlet', description=__doc__)
+    result = argparse.ArgumentParser(prog='evlet', description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     result.add_argument('--project', help='Project path; also accepted after the command')
     result.add_argument('--version', action=ShowVersion)
-    commands = result.add_subparsers(dest='command', required=True)
+    commands = result.add_subparsers(dest='command', required=True, metavar='COMMAND')
     setup = commands.add_parser('setup', help='Create apps/, instances/ and an isolated .venv')
     setup.add_argument('directory')
     setup.add_argument('--framework', help='Reviewed local framework wheel or source for offline/development setup')
@@ -97,13 +160,13 @@ def parser():
     instance.add_argument('--list', action='store_true')
     install = commands.add_parser('install', help='Install a trusted app and its available app dependencies')
     install.add_argument('name')
-    install.add_argument('--instance', required=True)
+    add_instance_option(install, 'The instance to install into (default: the only one)')
     install.add_argument('--trust', action='store_true', help='Explicitly trust the selected Python apps and dependencies')
     offer = install.add_mutually_exclusive_group()
     offer.add_argument('--yes', action='store_true', help="Serve each new frontend with a suggested host on <label>.<instance domain> without asking")
     offer.add_argument('--no-host', action='store_true', help='Offer no host for frontends with a suggested host')
     migrate = commands.add_parser('migrate', help='Back up and migrate a selected instance; recover interrupted installation')
-    migrate.add_argument('instance')
+    migrate.add_argument('instance', nargs='?', help=INSTANCE_HELP + ' (default: the only one)')
     migrate.add_argument('--trust', action='store_true', help='Trust changed app source without prompting')
     migrate.add_argument('--recompute-posted', action='store_true',
                          help='Let Recompute operations recalculate released records (in a release=True step) too; each changed one gets an Activity entry')
@@ -115,16 +178,16 @@ def parser():
                          help='Print the pending migrations and how they differ from the models; write nothing')
     makemigration = commands.add_parser('makemigration', help="Write the migration --plan suggests into a flat app's migrations folder")
     makemigration.add_argument('app')
-    makemigration.add_argument('--instance', required=True, help='The instance whose database the migration starts from')
+    add_instance_option(makemigration, 'The instance whose database the migration starts from (default: the only one)')
     makemigration.add_argument('--name', default='changes', help='Migration name after its number (default: changes)')
     makemigration.add_argument('--trust', action='store_true', help='Trust changed app source without prompting')
     for name in ('serve', 'dev'):
         command = commands.add_parser(name, help='Serve an instance' if name == 'serve' else 'Develop with Python reloads and the bundled UI')
         if name == 'serve':
-            command.add_argument('instance')
+            command.add_argument('instance', nargs='?', help=INSTANCE_HELP + ' (default: the only one)')
             command.add_argument('--jobs', action='store_true', help='Run the existing short-task queue in this process')
         else:
-            command.add_argument('--instance', help='Required when the project has several instances')
+            add_instance_option(command)
             command.add_argument('--watch', action='store_true', help='Accepted for compatibility; evlet dev always reloads app source')
             add_link_options(command)
         command.add_argument('--debug', action='store_true', help='Show tracebacks for expected startup errors')
@@ -134,22 +197,22 @@ def parser():
             command.add_argument('--ssl-keyfile', help='The private key for --ssl-certfile')
         command.add_argument('--port', type=int, default=8000)
     restart = commands.add_parser('restart', help="Check an instance, then restart its systemd service and wait until it answers")
-    restart.add_argument('instance')
+    restart.add_argument('instance', help=INSTANCE_HELP)
     restart.add_argument('--check', action='store_true', help='Run the checks only; restart nothing')
     restart.add_argument('--yes', action='store_true', help='Restart without asking')
     restart.add_argument('--service', metavar='NAME', help='The systemd unit to restart (default: evlet-<instance>)')
     restart.add_argument('--timeout', type=float, default=30.0, help='Seconds to wait for /health after the restart (default: 30)')
     upgrade = commands.add_parser('upgrade', help="Stage a newer Evlet, then plan, stop, back up, migrate and restart its instances")
-    upgrade.add_argument('instance')
+    upgrade.add_argument('instance', help=INSTANCE_HELP)
     upgrade.add_argument('--to', metavar='VERSION', help='Install this version (default: the newest 0.x.* of the current minor, or of the current major from 1.0)')
     upgrade.add_argument('--yes', action='store_true', help='Upgrade without asking')
     upgrade.add_argument('--all-instances', action='store_true', help='Upgrade every installed instance sharing the project environment')
     upgrade.add_argument('--service', metavar='NAME', help='The systemd unit to stop and restart (default: evlet-<instance>)')
     routes = commands.add_parser('routes', help='Print the resolved hosts and paths of an instance')
-    routes.add_argument('instance')
+    routes.add_argument('instance', help=INSTANCE_HELP)
     routes.add_argument('--port', type=int, default=8000, help='Development port shown in loopback origins')
     proxy = commands.add_parser('proxy', help='Print or write a Caddy or nginx configuration for the instance hosts')
-    proxy.add_argument('instance')
+    proxy.add_argument('instance', help=INSTANCE_HELP)
     kind = proxy.add_mutually_exclusive_group(required=True)
     kind.add_argument('--caddy', action='store_true')
     kind.add_argument('--nginx', action='store_true')
@@ -163,7 +226,7 @@ def parser():
     host_remove = host_commands.add_parser('remove', help='Remove a host from routes.py and rewrite the Caddy site')
     host_list = host_commands.add_parser('list', help='Print the hosts of an instance with their root frontends')
     for command in (host_add, host_remove, host_list):
-        command.add_argument('instance')
+        command.add_argument('instance', help=INSTANCE_HELP)
         command.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     for command in (host_add, host_remove):
         command.add_argument('host')
@@ -174,7 +237,7 @@ def parser():
         command.add_argument('--apply', action='store_true', help='Run the printed sudo steps: install the Caddy site, reload Caddy, restart the service')
         command.add_argument('--routes-only', action='store_true', help='Change routes.py only, for Caddy with on-demand TLS; then run evlet restart')
     link = commands.add_parser('link-user', help='Link an account to a record, such as a portal user to their customer')
-    link.add_argument('instance')
+    link.add_argument('instance', help=INSTANCE_HELP)
     link.add_argument('username')
     link.add_argument('model')
     link.add_argument('record_id', type=from_argument)
@@ -182,7 +245,7 @@ def parser():
     controls = commands.add_parser('controls', help='Restore access to Controls from the server shell')
     controls_commands = controls.add_subparsers(dest='controls_command', required=True)
     controls_grant = controls_commands.add_parser('grant', help='Make a user an active admin; audited as cli')
-    controls_grant.add_argument('instance')
+    controls_grant.add_argument('instance', help=INSTANCE_HELP)
     controls_grant.add_argument('username')
     controls_grant.add_argument('--clear-allowlist', action='store_true',
                                 help='Also clear the allowed networks set in Controls')
@@ -190,50 +253,50 @@ def parser():
     users = commands.add_parser('users', help='Account recovery from the server shell')
     users_commands = users.add_subparsers(dest='users_command', required=True)
     reset_two_step = users_commands.add_parser('reset-two-step', help="Clear a user's two-step sign-in; they set it up again at next sign-in. Audited as cli")
-    reset_two_step.add_argument('instance')
+    reset_two_step.add_argument('instance', help=INSTANCE_HELP)
     reset_two_step.add_argument('username')
     reset_two_step.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     set_password = users_commands.add_parser('set-password', help="Set a user's password; asks twice without echo. Ends their sessions. Audited as cli")
-    set_password.add_argument('instance')
+    set_password.add_argument('instance', help=INSTANCE_HELP)
     set_password.add_argument('username')
     set_password.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     set_email = users_commands.add_parser('set-email', help="Set a user's email address for notifications. Audited as cli")
-    set_email.add_argument('instance')
+    set_email.add_argument('instance', help=INSTANCE_HELP)
     set_email.add_argument('username')
     set_email.add_argument('email')
     set_email.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     keys = commands.add_parser('secrets', help='Manage the key that seals connector secrets, two-step secrets and backup codes')
     keys_commands = keys.add_subparsers(dest='secrets_command', required=True)
     keys_rotate = keys_commands.add_parser('rotate', help='Re-encrypt saved secrets under a new secret.key')
-    keys_rotate.add_argument('instance')
+    keys_rotate.add_argument('instance', help=INSTANCE_HELP)
     keys_rotate.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     ids = commands.add_parser('ids', help='Check record ids')
     ids_commands = ids.add_subparsers(dest='ids_command', required=True)
     ids_check = ids_commands.add_parser('check', help='Report rows with an impossible id and tables that allow id changes')
-    ids_check.add_argument('instance')
+    ids_check.add_argument('instance', help=INSTANCE_HELP)
     ids_check.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     activity = commands.add_parser('activity', help="Check records' Activity")
     activity_commands = activity.add_subparsers(dest='activity_command', required=True)
     verify = activity_commands.add_parser('verify', help='Report breaks in the hash chains of tamper-evident Activity')
-    verify.add_argument('instance')
+    verify.add_argument('instance', help=INSTANCE_HELP)
     verify.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     ledger = commands.add_parser('ledger', help='Review ledger models')
     ledger_commands = ledger.add_subparsers(dest='ledger_command', required=True)
     ledger_list = ledger_commands.add_parser('list', help='Print each ledger model with its table, row count and options')
-    ledger_list.add_argument('--instance', help='Required when the project has several instances')
+    add_instance_option(ledger_list)
     ledger_list.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     jobs = commands.add_parser('jobs', help='Review background jobs')
     jobs_commands = jobs.add_subparsers(dest='jobs_command', required=True)
     jobs_list = jobs_commands.add_parser('list', help='Print the newest jobs with their state, attempts and progress')
-    jobs_list.add_argument('--instance', help='Required when the project has several instances')
+    add_instance_option(jobs_list)
     jobs_list.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     backup = commands.add_parser('backup', help="Copy an instance's four database files into data/backups as one set")
-    backup.add_argument('--instance', help='Required when the project has several instances')
+    add_instance_option(backup)
     backup.add_argument('--to', help='Write the set into this directory instead of data/backups')
     backup.add_argument('--with-files', action='store_true', help="Also archive the instance's files/ folder (uploaded attachments)")
     restore = commands.add_parser('restore', help="Replace an instance's database files with a backup set, with the server stopped")
     restore.add_argument('backup', help='The main file of the set, such as data/backups/20261112T101500000000Z.sqlite3')
-    restore.add_argument('--instance', help='Required when the project has several instances')
+    add_instance_option(restore)
     restore.add_argument('--yes', metavar='NAME', help='Restore without asking; give the instance name to confirm')
     for name, port in (('playground', 8000), ('docs', 8001)):
         command = commands.add_parser(name, help='Launch bundled ' + name + ' without a project')
@@ -242,14 +305,30 @@ def parser():
             add_link_options(command)
     dev_link = commands.add_parser('dev-link', help='Print a fresh one-time sign-in link for a running evlet dev or evlet playground')
     dev_link.add_argument('--user', help='Sign in as this user (default: the built-in Administrator)')
-    dev_link.add_argument('--instance', help='Required when the project has several instances')
+    add_instance_option(dev_link)
     dev_link.add_argument('--port', type=int, help='The development server port (default: 8000, or the running Playground)')
     dev_link.add_argument('--playground', action='store_true', help='Use the running evlet playground even inside a project')
     for command in commands.choices.values():
         command.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     from .connector import add_commands
     add_commands(commands)
+    grouped_help(result, commands)
     return result
+
+
+def grouped_help(result, commands):
+    """List the commands of evlet --help in GROUPS instead of one flat list."""
+    helps = {action.dest: action.help or '' for action in commands._choices_actions}
+    listed = [name for _, names in GROUPS for name in names]
+    if sorted(listed) != sorted(helps):
+        raise RuntimeError('evlet --help groups do not list every command: ' + ', '.join(sorted(set(helps) ^ set(listed))))
+    width = max(map(len, listed))
+    result.epilog = '\n\n'.join(f'{title}:\n' + '\n'.join(f'  {name.ljust(width)}  {helps[name]}' for name in names)
+                                 for title, names in GROUPS)
+    result.epilog += ('\n\nRun evlet COMMAND --help for its options. A command that takes an instance accepts its name '
+                      'either way: evlet dev acme or evlet dev --instance acme.')
+    commands.help = 'One of the commands below'
+    commands._choices_actions.clear()
 
 
 def command_name(values):
@@ -268,7 +347,12 @@ def main(argv=None):
     command_parser = parser()
     if command_name(values) == 'journal':
         command_parser.error("'evlet journal' was renamed: use 'evlet activity verify INSTANCE'")
-    args = command_parser.parse_args(values)
+    args = command_parser.parse_args(move_instance_option(values))
+    given = getattr(args, 'instance_arg', None)
+    if given is not None:
+        if getattr(args, 'instance', None) not in (None, given):
+            command_parser.error(f'Two instances given: {given} and --instance {args.instance}')
+        args.instance = given
     from . import connector
     if args.command in connector.COMMANDS:
         return connector.run(args)
@@ -311,6 +395,8 @@ def main(argv=None):
         if argv is None:
             from .setup import delegate
             delegate(root, values)
+        if args.command in ('install', 'migrate', 'makemigration', 'serve') and not args.instance:
+            args.instance = choose_instance(root, args.command + (' ' + (getattr(args, 'name', None) or getattr(args, 'app', None) or '')).rstrip())
         if args.command == 'app':
             from .app import create_app, get_app
             if args.name and (args.get or args.list):
@@ -390,10 +476,18 @@ def main(argv=None):
             result = install(root, args.instance, app_name=args.name if args.command == 'install' else None, trust=args.trust, confirm=confirm,
                              recompute_posted=posted, allow_destructive=args.command == 'migrate' and args.allow_destructive,
                              allow_maintenance=args.command == 'migrate' and args.allow_maintenance)
-            print(f'Instance {args.instance}: installed ' + ', '.join(result['apps']))
-            print('Applied migrations: ' + (', '.join(result['migrations']) or 'none; schema is current'))
-            if result.get('framework'):
+            from .install import migration_label
+            print(f'Instance {args.instance}: ' + ('installed ' if args.command == 'install' else 'apps ') + ', '.join(result['apps']))
+            added = [name for name in result['apps'] if name not in before]
+            if added:
+                # The same rule as a first install: a new app's tables come from its models; later changes need a migration.
+                print('Tables created from the models of ' + ', '.join(added) +
+                      f'. After this, every model change needs a migration: evlet makemigration APP --instance {args.instance}')
+            print('Applied migrations: ' + (', '.join(map(migration_label, result['migrations'])) or 'none; schema is current'))
+            if result.get('framework') and result['backup']:
                 print('Framework migrations: ' + ', '.join(result['framework']))
+            elif result.get('framework'):
+                print(f'Framework tables: created ({len(result["framework"])} framework migrations recorded)')
             if posted:
                 print(f'Posted records recalculated: {result.get("posted", 0)}')
             if result['backup']:

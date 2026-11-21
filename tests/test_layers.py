@@ -18,7 +18,7 @@ LAYERS = {
     'web': 'app runtime oidc routing business forms workspaces services events jobs framework devlink discovery search',
     'admin': 'controls controls_export controls_system customization settings printing',
     'ai': 'eva tools mcp connector connectors assistants mailboxes',
-    'site': 'instances packages builds deployment tenancy serverless',
+    'site': 'instances packages builds deployment tenancy serverless testing',
 }
 LAYER = {module: number for number, modules in enumerate(LAYERS.values()) for module in modules.split()}
 NAME = dict(enumerate(LAYERS))

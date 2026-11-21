@@ -4,6 +4,20 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Upgrading
+
+- **Public API is additive only.** `Session.count(..., cap=None)` counts at most `cap` rows; `evlet.testing`
+  (`TestApp`, `Client`, `TestResponse`) is new for app tests; `/api/schema` carries `timezone`.
+- **`evlet serve` no longer accepts first-admin setup over HTTP.** Create the Administrator with
+  `evlet users set-password INSTANCE admin`; `evlet dev` and the Playground still print a sign-in link.
+- **Report runs stop after `EVLET_REPORT_SECONDS` (300)** with a 504; set `0` to turn the limit off.
+- **Generated proxy configs send HSTS and the generated unit is sandboxed.** Re-run `evlet setup --host` or
+  `evlet proxy` to pick them up.
+- **Decimal and Currency text input is strict:** `1_000`, exponents, non-ASCII digits and surrounding spaces are
+  refused, as `calc` already did.
+
 ## 0.4.17 (20-11-2026)
 
 ### Upgrading to 0.4.17
