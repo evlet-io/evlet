@@ -500,6 +500,9 @@ class Registry:
                 raise ValueError(f'Model and table names (storage_name or Table attribute) must use lowercase letters, digits and underscores: {name!r}')
             if name in ("schema", "auth") or name.startswith("evlet_"):
                 raise ValueError("The model name is reserved for metadata")
+            if name == "home":
+                # Home is the sidebar's own entry (Workspace(home=...)); no model may take its name.
+                raise ValueError(f"{model.__name__}: the model name home is reserved for the sidebar's Home; set storage_name")
             if set(model.__fields__) & set(AUDIT):
                 raise ValueError(f"{model.__name__}: {', '.join(sorted(set(model.__fields__) & set(AUDIT)))} is reserved for the record's "
                                  "created and modified times; rename the field")

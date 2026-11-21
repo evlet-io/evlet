@@ -9,24 +9,30 @@
 
 import { cell, effect, type Cell } from '../reactive';
 import type { AppSchema, ModelSchema, ReportSchema, WorkspaceItem, WorkspaceSchema } from '../model/schema';
-import { tintFor, type Tint } from '../ui/core';
+import { TINTS, tintFor, type Tint } from '../ui/core';
 import { fieldOf, groupOf, type ScreenModel } from './meta';
 import { KIND_ICONS, SHELL_ICONS, kindOf, type ShortcutKind } from './nav-icons';
 import type { AppContext } from './context';
 
 export interface NavShortcut {
   key: string; label: string; href: string;
-  /** What it opens; its icon is the kind's (app/nav-icons.ts), never the item's. */
+  /** What it opens. Its icon is the item's own (Shortcut(icon=...)), else the kind's (app/nav-icons.ts). */
   kind: ShortcutKind; icon: string;
   /** The model whose plain list this is: its record count can show beside it. */
   model?: string;
   /** An @api endpoint: the shortcut opens the prompt it returns over the page instead of opening an address. */
   api?: string;
-  /** An http(s) address: it opens in a new tab. */
+  /** It opens in a new tab, with the open-externally icon: an http(s) address, or a URL item with new_tab. */
   external?: boolean;
+  /** A badge filter is declared: its bounded count shows beside it (GET /api/_nav/badges). */
+  badge?: boolean;
 }
-export interface NavSection { key: string; label: string; icon: string; count?: number; items: NavShortcut[] }
+/** A parent: its icon on a tile in its colour, then its children, which take that colour. A link parent opens its one
+ * item and has no children of its own. `title` is the bold section title above it (NavSection), if any. */
+export interface NavSection { key: string; label: string; icon: string; tint?: Tint; count?: number; items: NavShortcut[];
+  link?: boolean; title?: { key: string; label: string } | null }
 export interface Workspace { key: string; label: string; icon: string; tint?: Tint; sections: NavSection[];
+  /** Home, directly under the switcher above every section; absent without one. */ home?: NavShortcut | null;
   /** custom: added on this site in the workspace editor; absent for the fallback. */ source?: WorkspaceSchema['source'] }
 export interface WorkspaceNav { workspaces: Workspace[] }
 
@@ -65,23 +71,34 @@ export function workspaceNav(schema: AppSchema, links: NavLinks, fallback = 'Wor
   if (!Array.isArray(schema.workspaces)) return fallbackNav(schema, links, fallback);
   return { workspaces: schema.workspaces.map((workspace): Workspace => ({
     key: workspace.key, label: workspace.label, icon: workspace.icon || SHELL_ICONS.workspace, tint: tintFor(workspace.key), source: workspace.source,
-    sections: workspace.groups.map(group => ({ key: group.key, label: group.label, icon: group.icon || 'layers',
-      items: group.items.map(item => shortcutOf(schema, item, links)) })).filter(section => section.items.length),
+    home: workspace.home ? { ...shortcutOf(schema, workspace.home, links), icon: HOME_ICON, badge: false } : null,
+    sections: workspace.groups.map((group): NavSection => {
+      const items = group.items.map(item => shortcutOf(schema, item, links)), link = Boolean(group.link) && items.length === 1;
+      return { key: group.key, label: group.label, icon: group.icon || (link ? items[0].icon : 'layers'), tint: tintOf(group.color, group.key),
+        items, link, title: group.section ?? null };
+    }).filter(section => section.items.length),
   })).filter(workspace => workspace.sections.length) };
 }
 
-/** One declared item as a sidebar shortcut, with its kind's icon. */
+/** Home's icon. */
+export const HOME_ICON = 'house';
+
+/** A parent's colour: its declared one, else a stable one from its key. */
+const tintOf = (color: string | null | undefined, key: string): Tint => TINTS.includes(color as Tint) ? color as Tint : tintFor(key);
+
+/** One declared item as a sidebar shortcut, with its own icon or its kind's. */
 export function shortcutOf(schema: AppSchema, item: WorkspaceItem, links: NavLinks): NavShortcut {
-  const kind = kindOf(item), base = { key: item.key, label: item.label, kind, icon: KIND_ICONS[kind] };
+  if (item.kind === 'home') return { key: item.key, label: item.label, kind: 'link', icon: HOME_ICON, href: '/' };
+  const kind = kindOf(item), base = { key: item.key, label: item.label, kind, icon: item.icon || KIND_ICONS[kind] };
   switch (item.kind) {
     case 'model': {
       const model = schema.models.find(entry => entry.name === item.model) as unknown as ScreenModel | undefined;
       const query = listQuery(model, item.view, item.filters);
-      return { ...base, href: links.list(item.model, query), model: plain(query) ? item.model : undefined };
+      return { ...base, href: links.list(item.model, query), model: plain(query) ? item.model : undefined, ...(item.badge ? { badge: true } : {}) };
     }
     case 'report': return { ...base, href: links.report(item.report) };
     case 'api': return { ...base, href: '', api: item.api };
-    default: return { ...base, href: item.url, external: /^https?:/i.test(item.url) };
+    default: return { ...base, href: item.url, external: item.new_tab ?? /^https?:/i.test(item.url) };
   }
 }
 
@@ -241,4 +258,21 @@ export function modelCounts(ctx: AppContext): Cell<Record<string, number>> {
   let found = counts.get(ctx);
   if (!found) counts.set(ctx, found = cell<Record<string, number>>({}, { name: 'nav.counts' }));
   return found;
+}
+
+// Badge counts of the shortcuts that declare a badge filter (GET /api/_nav/badges), by workspace and item key. The
+// shell asks once the sidebar shows a workspace, and again on navigation at most every BADGE_EVERY ms.
+export interface NavBadge { count: number; more: boolean; partial: boolean }
+export const BADGE_EVERY = 30_000;
+const badgeCells = new WeakMap<AppContext, Cell<Record<string, Record<string, NavBadge>>>>();
+export function navBadges(ctx: AppContext): Cell<Record<string, Record<string, NavBadge>>> {
+  let found = badgeCells.get(ctx);
+  if (!found) badgeCells.set(ctx, found = cell<Record<string, Record<string, NavBadge>>>({}, { name: 'nav.badges' }));
+  return found;
+}
+
+/** How a badge reads: nothing for 0, "99+" from the cap on, else the number found. */
+export function badgeText(badge: NavBadge | undefined): string | null {
+  if (!badge || (!badge.more && badge.count <= 0)) return null;
+  return badge.more || badge.count > 99 ? '99+' : String(badge.count);
 }

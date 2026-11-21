@@ -367,7 +367,7 @@ describe('the navigation icons', () => {
     expect(nav.workspaces[0].sections.map(section => section.icon)).toEqual(['file-text', 'layers']);
   });
 
-  it('draws the kind\'s icon at the start of each shortcut row, blue on the active row, and in the collapsed sidebar with a tooltip', async () => {
+  it('draws the kind\'s icon at the start of each shortcut row in the parent\'s colour, the active row a white card, and in the collapsed sidebar with a tooltip', async () => {
     const { host } = start(routes(), '/app/invoice?tab=issued');
     await until(() => expect(host.querySelector('.nav-sc.active')).not.toBeNull());
     const rows = [...host.querySelectorAll<HTMLElement>('.nav-sc')];
@@ -380,10 +380,12 @@ describe('the navigation icons', () => {
     }
     const active = host.querySelector('.nav-sc.active')!;
     expect(active.firstElementChild!.classList.contains('nav-ic')).toBe(true);
-    // The icon is muted, and blue on the active row's light blue tint.
+    // The icon takes the parent's colour; the active row is a white card with a border, marked on the guide line.
     const css = node.getBuiltinModule('node:fs').readFileSync(`${node.cwd()}/src/evlet/ui/styles.css`, 'utf8');
-    expect(css).toContain('.nav-sc .nav-ic{color:var(--fg-3)}');
-    expect(css).toContain('.nav-sc.active .nav-ic{color:var(--nav-on-fg)}');
+    expect(css).toContain('.nav-sc .nav-ic{color:var(--nav-tint,var(--fg-3))}');
+    expect(css).toContain('.sidebar .nav-item.active{background:var(--side-on);color:var(--fg);box-shadow:inset 0 0 0 1px var(--border-strong)}');
+    expect(css).toContain('.nav-item.nav-sc.active::before{');
+    expect((active.closest('.nav-sec') as HTMLElement).style.getPropertyValue('--nav-tint')).toMatch(/^var\(--t-[a-z]+\)$/);
     // Collapsed: the same icons, each with its name in a tooltip.
     click(host.querySelector('.side-edge'));
     await until(() => expect(host.querySelector('.app.collapsed')).not.toBeNull());

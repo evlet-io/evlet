@@ -224,19 +224,27 @@ export interface WorkspaceSchema {
   app: string | null;
   /** custom: added on this site (Controls workspace overrides). */
   source: 'declared' | 'automatic' | 'custom';
+  /** Home, directly under the switcher above every section (Workspace(home=...)): kind 'home' opens the start
+   * page, any other kind its target. Absent from older servers. */
+  home?: WorkspaceItem | null;
   groups: WorkspaceGroup[];
 }
 
-/** A titled group of a workspace's sidebar; never empty. */
-export interface WorkspaceGroup { key: string; label: string; icon: string | null; items: WorkspaceItem[] }
+/** A parent of a workspace's sidebar; never empty. Its section is the bold title above it (NavSection), its colour one
+ * of the tints (null: a stable one from its key). A link (`link`) is a parent that opens its one item. The colour,
+ * section and link are absent from older servers. */
+export interface WorkspaceGroup { key: string; label: string; icon: string | null; color?: string | null;
+  section?: { key: string; label: string } | null; link?: boolean; items: WorkspaceItem[] }
 
 /** One sidebar entry. The key is stable: model:<name>[:<label or view>], report:<name>, api:<endpoint> or url:<label>. */
-export type WorkspaceItem =
+export type WorkspaceItem = { /** Replaces the kind's icon (Shortcut(icon=...)). */ icon?: string | null } & (
   | { key: string; kind: 'model'; label: string; model: string; view: 'list' | 'board';
-      /** Conditions in the list address form (?f=), or null for the whole list. */ filters: unknown[] | null }
+      /** Conditions in the list address form (?f=), or null for the whole list. */ filters: unknown[] | null;
+      /** A badge filter is declared and this role may count by it (GET /api/_nav/badges). */ badge?: boolean }
   | { key: string; kind: 'report'; label: string; report: string }
   | { key: string; kind: 'api'; label: string; api: string }
-  | { key: string; kind: 'url'; label: string; url: string };
+  | { key: string; kind: 'url'; label: string; url: string; /** Opens in a new tab, with the open-externally icon. */ new_tab?: boolean }
+  | { key: string; kind: 'home'; label: string });
 
 /** A report column: its type, and for a link column the model its values open. */
 export interface ReportColumn { name: string; type: 'text' | 'integer' | 'decimal' | 'currency' | 'date' | 'boolean' | 'link'; label: string | null;

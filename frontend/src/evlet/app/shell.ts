@@ -6,8 +6,8 @@
 // sidebar and the switcher leave the page so the main column keeps its width: a menu button at the top bar's left
 // opens them as a drawer, the Evlet brand at its top, then the switcher, then the navigation.
 
-import { html, listen, when, type Child } from '../dom';
-import { cell, derive, effect } from '../reactive';
+import { html, listen, read, when, type Child } from '../dom';
+import { cell, derive, effect, untrack } from '../reactive';
 import { Icon, IconButton, IconTile, Key } from '../ui/base';
 import { tooltip } from '../ui/tooltip';
 import { mountToasts, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
@@ -19,7 +19,8 @@ import { InboxButton } from './inbox';
 import { RecentsButton } from './recents';
 import { rememberAppPage } from './last-page';
 import { rootModels } from './meta';
-import { activeShortcut, chosenWorkspace, homeWorkspace, modelCounts, workspaceNav, workspacesVersion, type NavSection, type NavShortcut, type Workspace } from './workspaces';
+import { activeShortcut, badgeText, BADGE_EVERY, chosenWorkspace, homeWorkspace, modelCounts, navBadges, workspaceNav, workspacesVersion,
+  type NavBadge, type NavSection, type NavShortcut, type Workspace } from './workspaces';
 import { openService } from './prompts';
 import { customizeAccess, openWorkspaceEditor } from './workspace-editor';
 import { openExplorer } from './explorer';
@@ -92,27 +93,74 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     if (next[id]) delete next[id]; else next[id] = true;
     closed.set(next);
   };
-  const shortcut = (item: NavShortcut) => {
-    const active = () => here.get()?.item.key === item.key && here.get()?.workspace.key === current.get()?.key;
-    // The kind's icon (app/nav-icons.ts), small and muted, in place of a dot; blue on the active row.
-    const inside = [Icon(item.icon, { size: 'sm', className: 'nav-ic' }), html`<span class="lbl">${item.label}</span>`, countOf(item)];
-    // An endpoint's prompt opens over the page; an http(s) address opens in a new tab.
-    const link = (item.api ? html`<button type="button" class="nav-item nav-sc" data-kind=${item.kind} on:click=${() => void openService(item.api!)}>${inside}</button>`
-      : item.external ? html`<a class="nav-item nav-sc" data-kind=${item.kind} href=${item.href} target="_blank" rel="noopener external">${inside}</a>`
-      : html`<a class="nav-item nav-sc" data-kind=${item.kind} class:active=${active} aria-current=${() => active() ? 'page' : null} href=${item.href}>${inside}</a>`) as HTMLElement;
+  // Badges: the bounded counts of the shortcuts that declare a badge filter, asked once the sidebar shows a
+  // workspace, and again on navigation at most every 30 seconds. Reads only; a failure shows no badge.
+  const badges = navBadges(ctx);
+  const asked = new Map<string, number>();
+  const askBadges = (workspace: Workspace | null) => {
+    if (!workspace || !workspace.sections.some(entry => entry.items.some(item => item.badge))) return;
+    const last = asked.get(workspace.key);
+    if (last !== undefined && Date.now() - last < BADGE_EVERY) return;
+    asked.set(workspace.key, Date.now());
+    void ctx.api.request<{ badges: Record<string, NavBadge> }>('GET', `/api/_nav/badges?workspace=${encodeURIComponent(workspace.key)}`)
+      .then(answer => badges.set({ ...badges.peek(), [workspace.key]: answer.data.badges ?? {} }), () => {});
+  };
+  effect(() => { route.get(); const workspace = current.get(); untrack(() => askBadges(workspace)); });
+  const badgeOf = (workspace: Workspace, item: NavShortcut) => () => {
+    const badge = badges.get()[workspace.key]?.[item.key], text = badgeText(badge);
+    if (text === null) return null;
+    const element = html`<span class="nav-badge num">${text}</span>` as HTMLElement;
+    if (badge?.partial && !badge.more) element.title = 'Among the latest 1,000';
+    return element;
+  };
+  // A new-tab item ends with the open-externally icon.
+  const outIcon = () => Icon('external-link', { size: 'xs', className: 'nav-out' });
+  const linkTo = (item: NavShortcut, className: string, inside: Child[], active: () => boolean) => {
+    // An endpoint's prompt opens over the page; a new-tab item (an http(s) address by default) opens in a new tab.
+    const link = (item.api ? html`<button type="button" class=${className} data-kind=${item.kind} on:click=${() => void openService(item.api!)}>${inside}</button>`
+      : item.external ? html`<a class=${className} data-kind=${item.kind} href=${item.href} target="_blank" rel="noopener external">${inside}${outIcon()}</a>`
+      : html`<a class=${className} data-kind=${item.kind} class:active=${active} aria-current=${() => active() ? 'page' : null} href=${item.href}>${inside}</a>`) as HTMLElement;
     tooltip(link, () => collapsed.get() ? item.label : null, 'right');
     return link;
   };
+  const activeItem = (item: NavShortcut) => () => here.get()?.item.key === item.key && here.get()?.workspace.key === current.get()?.key;
+  // A child: its icon in the parent's colour, its label, then its badge (or its record count, when turned on).
+  const shortcut = (workspace: Workspace, item: NavShortcut) => {
+    const badge = item.badge ? badgeOf(workspace, item) : null;
+    const inside = [Icon(item.icon, { size: 'sm', className: 'nav-ic' }), html`<span class="lbl">${item.label}</span>`,
+      badge ? () => read(badge) ?? (countOf(item) as () => Child)() : countOf(item)];
+    return linkTo(item, 'nav-item nav-sc', inside, activeItem(item));
+  };
+  // A parent's icon on a tile in its colour.
+  const tile = (entry: NavSection) => html`<span class=${`nav-tile b-${entry.tint ?? 'slate'}`}>${Icon(entry.icon, { size: 'sm' })}</span>`;
   const section = (workspace: Workspace, entry: NavSection) => {
     const id = `ev-nav-${sectionId(workspace, entry).replace(/[^a-z0-9_-]/gi, '-')}`;
-    // The section holding the page's shortcut is drawn in blue, open or closed. Its title counts its shortcuts.
     const holdsPage = () => here.get()?.section.key === entry.key && here.get()?.workspace.key === workspace.key && current.get()?.key === workspace.key;
-    return html`<div class="nav-sec" class:open=${() => isOpen(workspace, entry)} class:on=${holdsPage}>
+    // A link parent opens its one item: the tile, the label, and the open-externally icon when it opens a new tab.
+    if (entry.link) return html`<div class="nav-sec nav-par-link" style:--nav-tint=${`var(--t-${entry.tint ?? 'slate'})`}>${linkTo(entry.items[0], 'nav-item nav-par',
+      [tile(entry), html`<span class="lbl">${entry.label}</span>`], activeItem(entry.items[0]))}</div>`;
+    return html`<div class="nav-sec" class:open=${() => isOpen(workspace, entry)} class:on=${holdsPage} style:--nav-tint=${`var(--t-${entry.tint ?? 'slate'})`}>
       <button type="button" class="nav-sec-h" aria-expanded=${() => String(isOpen(workspace, entry))} aria-controls=${id} on:click=${() => toggleSection(workspace, entry)}>
-        ${Icon(entry.icon, { size: 'sm', className: 'nav-sec-ic' })}<span class="lbl">${entry.label}</span>
-        <span class="count">${String(entry.count ?? entry.items.length)}</span>${Icon('chevron-right', { size: 'xs', className: 'nav-sec-chev' })}</button>
-      <div class="nav-sec-items" id=${id} role="group" aria-label=${entry.label}>${entry.items.map(shortcut)}</div></div>`;
+        ${tile(entry)}<span class="lbl">${entry.label}</span>${Icon('chevron-right', { size: 'xs', className: 'nav-sec-chev' })}</button>
+      <div class="nav-sec-items" id=${id} role="group" aria-label=${entry.label}>${entry.items.map(item => shortcut(workspace, item))}</div></div>`;
   };
+  // The workspace's parents under their section titles: bold, in capitals, never collapsing. A parent outside a section
+  // has no title above it.
+  const sections = (workspace: Workspace) => {
+    const out: Child[] = [];
+    let title: string | null = null;
+    for (const entry of workspace.sections) {
+      const key = entry.title?.key ?? null;
+      if (key !== title && entry.title) out.push(html`<div class="nav-title" role="heading" aria-level="2">${entry.title.label}</div>`);
+      title = key;
+      out.push(section(workspace, entry));
+    }
+    return out;
+  };
+  // Home: directly under the switcher, above every section, with no title or parent.
+  const homeItem = (workspace: Workspace) => workspace.home ? linkTo(workspace.home, 'nav-item nav-par nav-home',
+    [html`<span class="nav-tile b-slate">${Icon(workspace.home.icon, { size: 'sm' })}</span>`, html`<span class="lbl">${workspace.home.label}</span>`],
+    activeItem(workspace.home)) : null;
   // The one account area, at the bottom of the sidebar. Its menu follows the Settings design order.
   const settings = ctx.me;
   const fullName = () => settings.get()?.profile.full_name || ctx.user.username;
@@ -177,14 +225,16 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const brandMark = () => html`<div class="brand">${Lockup()}${Logo('Evlet')}</div>`;
   const brand = brandMark();
 
+  // The Workspace switcher sits at the top of the sidebar, above Home; the drawer's head adds the brand above it.
   const sidebar = html`<aside class="sidebar" id="ev-sidebar" aria-label="Main navigation">
-    <div class="side-head">${brandMark()}${workspaceSwitch()}</div>
+    <div class="side-head">${brandMark()}${appSwitch}</div>
     <div class="side-body">
       <nav class="nav">
+        ${() => { const workspace = current.get(); return workspace ? homeItem(workspace) : null; }}
         ${docsOn(ctx.session) ? navItem({ href: router.href('docs', {}), icon: SHELL_ICONS.docs, tint: 'slate', label: 'Docs', active: () => ['docs', 'topic'].includes(route.get()?.name ?? '') }) : null}
         ${() => ctx.eva.get() ? navItem({ href: router.href('eva', {}), icon: SHELL_ICONS.eva, tint: 'violet', label: 'Eva', active: () => ['eva', 'evaChat', 'evaTasks'].includes(route.get()?.name ?? ''),
           count: () => ctx.eva.get()?.pending_approvals ? html`<span class="badge" title="Waiting for your approval">${ctx.eva.get()!.pending_approvals}</span>` : null }) : null}
-        ${() => { const workspace = current.get(); return workspace ? html`<div class="nav-secs">${workspace.sections.map(entry => section(workspace, entry))}</div>` : null; }}
+        ${() => { const workspace = current.get(); return workspace ? html`<div class="nav-secs">${sections(workspace)}</div>` : null; }}
       </nav>
       ${ctx.dev ? html`<div class="side-bottom"><a class="nav-item" href=${ctx.libraryHref} rel="external" ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? 'Library' : null, 'right')}>
         ${Icon('layers', { tint: 'violet' })}<span class="lbl">Library</span></a></div>` : null}
@@ -229,7 +279,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const searchBox = html`<div class="top-search">${searchPart}</div>`;
   const topbar = html`<header class="topbar">
     <span class="nav-menu-btn">${IconButton({ icon: SHELL_ICONS.menu, tip: 'Menu', onClick: () => ctx.toggleSidebar() })}</span>
-    <div class="top-left">${brand}<span class="top-pipe" aria-hidden="true"></span>${appSwitch}</div>
+    <div class="top-left">${brand}</div>
     <div class="top-actions">
       ${searchBox}
       ${RecentsButton(ctx, models)}

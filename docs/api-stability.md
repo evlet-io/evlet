@@ -197,10 +197,12 @@ production ready, but the rules below hold from 0.3 on.
   commit, `_job` on an action's detail, and `JobQueue.wake()` and `JobQueue.wait(timeout)`
   ([jobs-realtime.md](jobs-realtime.md#queue-a-job-from-an-action)).
 
-- **Workspaces.** `Workspace`, `NavGroup` and `Shortcut` with their arguments, discovery of an app
+- **Workspaces.** `Workspace` (with `home`), `NavSection`, `NavGroup` (with `color`) and `Shortcut` (with
+  `icon`, `color`, `badge` and `new_tab`) with their arguments, the reserved `home`, `GET /api/_nav/badges`
+  and its bounds, discovery of an app
   package's `workspaces.py`, `Application(workspaces=...)` and `AppDefinition(workspaces=...)`, the
   key scheme, and the `workspaces` entry of `/api/schema` with its item kinds (`model`, `report`,
-  `api`, `url`) and `source` values. The report catalog's `source_kind` (`"ledger"`, `"model"` or
+  `api`, `url`, and `home` for Home), its group `section`, `color` and `link`, and `source` values. The report catalog's `source_kind` (`"ledger"`, `"model"` or
   null) is public too ([ui.md](ui.md#workspaces), [reports.md](reports.md)). So are the workspace
   override routes (`/api/_controls/workspaces`), their value format, the `custom` source and the
   role flag `customize_workspaces`, with their answers to people without access: 404, or 403 for
