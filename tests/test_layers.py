@@ -16,7 +16,8 @@ LAYERS = {
     'access': 'auth permissions',
     'data': 'database sqlite migrations ledger writes storage object_storage secrets sequences images',
     'engine': 'documents statemanager guards activity measures unsaved mentions meaning prompts',
-    'web': 'app runtime oidc routing business forms workspaces services events jobs framework devlink discovery search',
+    'web': 'app runtime oidc routing business forms workspaces services events jobs framework devlink discovery search '
+           'essentials',
     'admin': 'controls controls_export controls_system customization settings printing',
     'ai': 'eva tools mcp connector connectors assistants mailboxes',
     'site': 'instances packages builds deployment tenancy serverless testing',
@@ -209,7 +210,6 @@ ALLOWED_LAZY_LOWER = {
     # the imported name clashes with a local or module-level name of the importing module
     ('business', 'activity'),
     ('business', 'statemanager'),
-    ('framework', 'audit'),
     # inside try/except
     ('migrations', 'naming'),
 }

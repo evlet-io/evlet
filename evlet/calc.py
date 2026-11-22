@@ -12,6 +12,7 @@ import hashlib
 import inspect
 import json
 import re
+import warnings
 
 from .identity import RecordId
 
@@ -534,6 +535,30 @@ def root_language(model):
     if profile not in (None, PROFILE):
         raise CalcError('SCHEMA_VERSION_MISMATCH', f'Unknown numeric profile {profile!r}')
     return language
+
+
+class CalculationLanguageWarning(UserWarning):
+    """A model became a finite-v1 document because one of its formulas is an F(...) expression, without saying so in
+    Meta.calculation_language. Setting it silences the warning; nothing else changes."""
+
+
+# Models already warned about, so each warns once per process however many registries are built.
+_IMPLICIT_WARNED = set()
+
+
+def warn_implicit_language(model, plan):
+    """Warn once when `model` is finite-v1 only because an expression in its tree made it so (docs/finite-calculations.md)."""
+    if root_language(model) is not None:
+        return
+    key = (model.__module__, model.__qualname__)
+    if key in _IMPLICIT_WARNED:
+        return
+    _IMPLICIT_WARNED.add(key)
+    first = next((entry['target'] for entry in plan.get('fields', ())), None)
+    cause = f' ({first} is an F(...) expression)' if first else ''
+    warnings.warn(f'{model.__name__} uses the finite-v1 formula language{cause}, which rounds differently from string '
+                  'formulas. Add calculation_language = "finite-v1" to its Meta to make the choice explicit '
+                  '(docs/finite-calculations.md#two-formula-languages).', CalculationLanguageWarning, stacklevel=2)
 
 
 def address(path, field):

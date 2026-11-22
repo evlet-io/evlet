@@ -14,6 +14,7 @@ from .models import Model, Registry, ValidationError, Child
 from .declarations import Extend, Option, Ref, Table, Query, action, depends
 from .sequences import Naming, Sequence, Series
 from .statemanager import State, release, state, validate
+from .calc import F
 
 __all__ = [
     "AddField", "AnyLink", "AddIndex", "AddTable", "AlterField", "Application", "Boolean", "ConflictError", "CreateModel", "DropField",
@@ -22,6 +23,10 @@ __all__ = [
     "SchemaError", "Select", "Text", "URL", "ValidationError",
     "Duration", "Naming", "Percent", "Phone", "Recompute", "RetireField", "RichText", "RunData", "Sequence", "Series", "State", "Tags", "Time",
 ]
+
+# F(...) expressions for computed fields and rules (docs/finite-calculations.md); the rest of the language stays in
+# evlet.calc. evlet.essentials lists the names a first app needs (docs/app-layout.md#the-essentials).
+__all__ += ["F"]
 
 from .auth import LocalAuth, OIDC, User
 from .permissions import Hierarchy, Policy, Rule, any_of, own_customer

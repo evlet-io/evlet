@@ -1078,8 +1078,7 @@ still checks the Link.
 on a Link (`option=`), or on the target's `Meta.option` for every Link to it; a Link's own wins.
 
 ```python
-from evlet import Option, Ref, Sum
-from evlet.calc import F
+from evlet import F, Option, Ref, Sum
 
 class Customer(Model):
     class Meta:

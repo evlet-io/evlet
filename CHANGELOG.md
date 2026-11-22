@@ -4,6 +4,20 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+- **`F` is a root export, and `evlet.essentials` lists the names a first app needs.** `from evlet import F` works
+  beside `from evlet.calc import F` (the same function). `evlet.essentials` re-exports about twenty root names
+  (`Model`, `Child`, `Table`, the common fields, `Link`, `State`, `validate`, `action`, `Rule`, `ValidationError`,
+  `Report`, `Column`, `api`, `cron`, `F`) as the same objects, for a short import and smaller IDE completion. Every
+  other root name keeps working ([docs/app-layout.md](docs/app-layout.md#the-essentials)).
+- **A model that becomes finite-v1 only because of an `F(...)` expression warns once.** Registration emits a
+  `CalculationLanguageWarning` (a `UserWarning`, `evlet.calc.CalculationLanguageWarning`) naming the model and the
+  first expression, and suggests `Meta.calculation_language = "finite-v1"`, which silences it. Nothing else changes
+  ([docs/finite-calculations.md](docs/finite-calculations.md#two-formula-languages)).
+- **`evlet serve` logs tracebacks with the app's own file paths,** as `evlet dev` already did, instead of the
+  `.evlet/builds/<generation>/sources/` copies it imports; HTTP error responses are unchanged and carry no paths.
+
 ## 0.4.18 (21-11-2026)
 
 ### Upgrading to 0.4.18

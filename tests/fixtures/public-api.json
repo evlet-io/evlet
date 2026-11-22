@@ -43,6 +43,7 @@
     "Email": "class(**kwargs)",
     "EventStore": "class(database, *, retention=1000)",
     "Extend": "class()",
+    "F": "def(name)",
     "Frontend": "class(name: str, kind: str = 'evlet', path: str | None = None, title: str = '', icon: str = '', auth: str | None = 'desk', roles: tuple = (), api: tuple = (), dist: str | None = None, handler: object = None, csp: dict = <factory>, routing: str = 'app', suggested_host: str | None = None) -> None",
     "HTTPClient": "class(url, *, cookie='', csrf='')",
     "Hierarchy": "class(model, *, parent)",

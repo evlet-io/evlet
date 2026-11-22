@@ -26,13 +26,15 @@ Create `reports/`, `services/` and `migrations/` when you need them, each with a
 
 ## The essentials
 
-`evlet` exports about 140 names; a new app needs about fifteen of them. Start with these and
-look the rest up when a guide calls for one:
+`evlet` exports about 140 names; a new app needs about twenty of them. Start with these and
+look the rest up when a guide calls for one. `evlet.essentials` exports exactly these names (the
+same objects as the root exports), so `from evlet.essentials import *` or
+`import evlet.essentials as ev` keeps completion short; import anything else from `evlet`:
 
 | Name | For |
 | --- | --- |
 | `Model` | A document with its own table, screens and API |
-| `Text`, `LongText`, `Integer`, `Decimal`, `Currency`, `Date`, `Boolean`, `Select` | Fields ([model-engine.md](model-engine.md)) |
+| `Text`, `LongText`, `Integer`, `Decimal`, `Currency`, `Date`, `DateTime`, `Boolean`, `Select` | Fields ([model-engine.md](model-engine.md)) |
 | `Link` | A field that points at a record of another model (a foreign key) |
 | `Child`, `Table` | Rows a document owns, such as invoice lines: a `Child` class, held by a `Table(...)` field |
 | `Rule` | One role's permissions on a model, in `permissions = {...}` ([business-capabilities.md](business-capabilities.md)) |
@@ -41,9 +43,11 @@ look the rest up when a guide calls for one:
 | `ValidationError` | Refuse a save or an action with a message for a field |
 | `Report`, `Column` | A report in `reports/` and its columns ([reports.md](reports.md)) |
 | `api`, `cron` | An HTTP endpoint or a scheduled function in `services/` ([jobs-realtime.md](jobs-realtime.md)) |
+| `F` | A field in a computed value or a condition: `compute=F("qty") * F("rate")` ([finite-calculations.md](finite-calculations.md)) |
 
-Computed fields and conditions use `F` from `evlet.calc` ([finite-calculations.md](finite-calculations.md)).
-String formulas (`compute="qty * rate"`, `visible_if=`) are the older language and round differently
+`F` is also in `evlet.calc`, with the rest of the formula language (`D`, `round`, `when`, `today`
+and others). A model whose formulas use `F` sets `calculation_language = "finite-v1"` in its
+`Meta`; without it registration warns once (`CalculationLanguageWarning`). String formulas (`compute="qty * rate"`, `visible_if=`) are the older language and round differently
 ([Two formula languages](finite-calculations.md#two-formula-languages)); do not start with them.
 Migration operations (`AddField`, `RenameField` and the rest) are written for you by
 `evlet makemigration`. Tests use `evlet.testing` ([testing.md](testing.md)).

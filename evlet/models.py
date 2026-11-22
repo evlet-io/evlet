@@ -539,7 +539,7 @@ class Registry:
         self.meaning = meaning_for(self)
         from .reactivity import graph
         child_models = {child.model for child in self.children}
-        from .calc import compile_plan, formula_hash
+        from .calc import compile_plan, formula_hash, warn_implicit_language
         plans = {}
         for model in models:
             if getattr(model, '__declaration_mode__', False) and model not in child_models:
@@ -547,6 +547,7 @@ class Registry:
                 plan = compile_plan(self, model)
                 if plan is not None:
                     plans[model] = plan
+                    warn_implicit_language(model, plan)
         self.plans = MappingProxyType(plans)
         # What saved documents record: changes only when formulas or the fields they use change.
         self.formula_hashes = MappingProxyType({root: formula_hash(plan) for root, plan in plans.items()})

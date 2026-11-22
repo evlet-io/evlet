@@ -67,7 +67,12 @@ Which one a model uses is decided per root document, not per field: one `F(...)`
 `initial=` or `*_when` rule anywhere in the root or its tables switches the whole tree to
 finite-v1, and then every computed field in it rounds as in the first column. A root cannot
 hold both kinds of formula; registration refuses the mix with `UNSUPPORTED_EXPRESSION`. Set
-`Meta.calculation_language = "finite-v1"` to make the choice visible in the model. Switching an
+`Meta.calculation_language = "finite-v1"` to make the choice visible in the model. A root that
+is finite-v1 only because of an expression, without that Meta option, warns once per process when
+it is registered: `CalculationLanguageWarning` (a `UserWarning` in `evlet.calc`) names the model
+and the first expression that made the switch. Setting the option silences it and changes
+nothing else; `warnings.filterwarnings("ignore", category=CalculationLanguageWarning)` does the
+same for a whole test suite. Switching an
 existing model's formulas from strings to `F(...)` can change stored results at the last
 place, so recompute and compare them in a test first (`Recompute` in a migration recalculates
 stored values). This page does not change which language a model uses; it only says how each
