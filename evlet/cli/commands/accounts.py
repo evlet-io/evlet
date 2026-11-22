@@ -102,6 +102,9 @@ def run_users(args, context):
     from ...instances import read_instance
     path = child(context.root, 'instances', args.instance)
     read_instance(path)
+    from ..site import as_state_owner
+    if as_state_owner(context.root, args.instance, context.values):
+        return
     if args.users_command == 'set-password':
         import getpass
         from ...controls import set_password_from_shell
@@ -134,6 +137,9 @@ def run_secrets(args, context):
     from ...secrets import SecretKey, rotate
     path = child(context.root, 'instances', args.instance)
     read_instance(path)
+    from ..site import as_state_owner
+    if as_state_owner(context.root, args.instance, context.values):
+        return
     with instance_guard(path, serving=True):
         # Recovery replays retained files sealed with the current keys, so they must not be pruned first.
         if (path / '.install-journal.json').exists():

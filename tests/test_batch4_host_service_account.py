@@ -279,3 +279,31 @@ def test_require_hashes_installs_only_the_apps_lock(tmp_path, monkeypatch, capsy
         app_cli.prepare_dependencies(root, ['notes'])
     assert ran[0][4:] == ['--disable-pip-version-check', '--require-hashes', '--no-deps', '-r', str(lock)]
     assert 'Warning: unpinned' not in capsys.readouterr().err
+
+
+def test_atomic_json_keeps_the_replaced_files_mode(tmp_path):
+    import stat
+    from evlet.cli.project import atomic_json
+    target = tmp_path / 'apps.lock'
+    target.write_text('{}')
+    target.chmod(0o644)
+    atomic_json(target, {'apps': []})
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
+    fresh = tmp_path / 'new.json'
+    atomic_json(fresh, {})
+    assert stat.S_IMODE(fresh.stat().st_mode) == 0o600
+
+
+def test_migrate_users_and_secrets_hand_over_to_the_state_owner(monkeypatch, tmp_path):
+    from evlet.cli.commands import accounts, install
+    from evlet.cli import site
+    calls = []
+    monkeypatch.setattr(site, 'as_state_owner', lambda root, name, values: calls.append(name) or True)
+    context = type('Context', (), {'root': tmp_path, 'values': ['x']})()
+    monkeypatch.setattr(install, 'require_instance', lambda root, args: None)
+    install.run_install(type('Args', (), {'instance': 'acme', 'command': 'migrate', 'plan': False})(), context)
+    monkeypatch.setattr('evlet.instances.read_instance', lambda path: None)
+    (tmp_path / 'instances/acme').mkdir(parents=True)
+    accounts.run_users(type('Args', (), {'instance': 'acme', 'users_command': 'set-password', 'username': 'admin'})(), context)
+    accounts.run_secrets(type('Args', (), {'instance': 'acme', 'secrets_command': 'rotate'})(), context)
+    assert calls == ['acme', 'acme', 'acme']
