@@ -669,7 +669,7 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .app.collapsed .side-head .app-switch{justify-content:center;padding:0}
 /* The sidebar's rows: hover a light grey, the active one a white card with a border and the list card's corners and shadow. */
 .sidebar .nav-item:hover,.sidebar .nav-sec-h:hover{background:var(--side-hover);color:var(--fg)}
-.sidebar .nav-item.active{background:var(--side-on);color:var(--fg);border-radius:var(--r-card);box-shadow:inset 0 0 0 1px var(--border-strong),var(--shadow-sm)}
+.sidebar .nav-item.active{background:var(--side-on);color:var(--fg);border-radius:var(--r-card);box-shadow:inset 0 0 0 1px var(--border-strong)}
 /* Level one: a section title, bold and in capitals, that never collapses. */
 .nav-title{padding:14px 8px 6px;font-size:11.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--fg)}
 .nav-secs>.nav-title:first-child{padding-top:8px}
