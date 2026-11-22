@@ -169,9 +169,13 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
     status.set('loading');
     try {
       if (isNew) {
-        await store.create({ ...initialValues(model, query), ...(prefill?.values ?? {}), ...(duplicate?.values ?? {}) });
+        const addressed = initialValues(model, query);
+        await store.create({ ...addressed, ...(prefill?.values ?? {}), ...(duplicate?.values ?? {}) });
         // Copied values count as the person's own: the form is dirty from the start, and leaving keeps or asks.
         if (duplicate) for (const field of Object.keys(duplicate.values)) if (store.root.fields.has(field)) store.root.field(field).touched = true;
+        // A copy, or values from the address, start with what the server's derive() sets worked out once, before the
+        // form shows (docs/ui.md#duplicate). An outcome's values arrive calculated, and a blank new record asks nothing.
+        if ((duplicate || Object.keys(addressed).length) && model.derives?.length) await store.refreshDerived();
       } else await store.open(id!);
       if (!alive) return;
       status.set('ready');

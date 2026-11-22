@@ -148,6 +148,12 @@ number is used, until Create, which sends a create (POST) like any new record.
   out starts with no rows.
 - **Saved values.** Duplicate copies the record as saved; edits not yet saved stay with it, and
   leaving it asks or keeps them as usual.
+- **Calculated before it shows.** On a model whose `derive()` sets values (`derived=True`), the copy goes
+  to `/api/_draft/<model>` once as it opens, and the form shows with what the server works out: each
+  line's derived values (unit steps, prices) next to the copied quantities, which stay as copied. A new
+  record that the address fills in (`/app/<model>/new?customer=...`) does the same. A blank new record
+  sends no such request, and an outcome's new record arrives calculated already
+  ([prompts.md](prompts.md#outcome)).
 - **Cursor and title.** Nothing is added to the title. The cursor starts where it does on any new
   form: `Meta.focus`, or the first editable field.
 - **Unsaved.** The copy has values, so it counts as unsaved from the start: leaving it keeps it as
@@ -283,7 +289,8 @@ ordinary create: the server copies nothing itself and checks the new record as a
 required, unique, row, field and action rules all apply. The browser copies the values a person
 could type and the rows of each `Table`. It leaves out what Evlet sets: the id, the name or
 document number, `Sequence` numbers, the State, calculated and read-only values and the record
-times. Two options steer it:
+times. On a model with `derive()`, the copy is sent to `/api/_draft/<model>` once as it opens, so
+derived values show before the first edit. Two options steer it:
 
 ```python
 class Invoice(Model):

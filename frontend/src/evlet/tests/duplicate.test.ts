@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { adminRoutes, byText, click, invoice, press, recorded, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
 import { copy } from './server';
+import { follow } from '../app/prompts';
 
 function platform(name: 'MacIntel' | 'Win32') { Object.defineProperty(navigator, 'platform', { value: name, configurable: true }); }
 afterEach(() => { stopAll(); delete (navigator as any).platform; });
@@ -288,4 +289,58 @@ describe('the top bar search key', () => {
       expect(text(document.querySelector('.tip'))).toBe(mac ? 'Search ⌘K' : 'Search Ctrl+K');
     });
   }
+});
+
+describe('a new record that starts from other values arrives calculated (docs/ui.md#duplicate)', () => {
+  // Each line's rate is set by the server's derive() (derived=True), so the form cannot work it out itself.
+  function derivedRoutes(rate = '7.00') {
+    const routes = orderRoutes(model => { model.derives = ['lines.rate']; });
+    const schema = routes.find(route => String(route[1]) === String(/\/api\/schema$/))![2] as any;
+    schema.body.models.find((model: any) => model.name === 'order_lines').fields.find((field: any) => field.name === 'rate').read_only = true;
+    routes.push(['POST', /\/api\/_draft\/order$/, (request: any) => ({ status: 200, etag: null, body: {
+      values: { children: { lines: (request.body.values.children?.lines ?? []).map((line: any) => ({ _key: line._key, rate })) } },
+      errors: {}, states: {}, revision: null } })]);
+    return routes;
+  }
+  const drafts = (sent: any[]) => requests(sent, 'POST', /\/api\/_draft\/order$/);
+  const rates = (host: Element) => [...host.querySelectorAll('tbody tr[data-key] td[data-col="rate"]')].map(cell => text(cell)).filter(Boolean);
+
+  it('Duplicate sends the copy to the server once as it opens and shows the derived values, keeping the copied quantities', async () => {
+    const { host, sent } = await openOrder(derivedRoutes());
+    await until(() => expect(text(host.querySelector('.ev-cmp-th .ev-cmp-count'))).toBe('120'));
+    expect(drafts(sent)).toHaveLength(0);
+    altShiftD(document.body);
+    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New order'));
+    expect(drafts(sent)).toHaveLength(1);
+    // The rate is derived, so the copy left it out; the server's answer fills it before the form shows.
+    const draft = drafts(sent)[0].body;
+    expect(draft.values.children.lines).toHaveLength(120);
+    expect(draft.values.children.lines[0]).toMatchObject({ product: '0000000000001', qty: '1.0000' });
+    expect(draft.values.children.lines[0]).not.toHaveProperty('rate');
+    await until(() => expect(rates(host)[0]).toContain('7.00'));
+    click(byText(host, '.ev-savebar button', 'Create order'));
+    await until(() => expect(requests(sent, 'POST', /\/api\/order$/)).toHaveLength(1));
+    const first = (requests(sent, 'POST', /\/api\/order$/)[0].body as any).children.lines[0];
+    // The typed quantity is kept; the derived rate is the server's to set, so it is not sent.
+    expect(first).toMatchObject({ product: '0000000000001', qty: '1.0000' });
+    expect(first).not.toHaveProperty('rate');
+  });
+
+  it("an outcome's new record shows the values its answer carries, with no extra request; a blank new record asks nothing", async () => {
+    const { host, router, sent } = await openOrder(derivedRoutes('9.99'));
+    await follow({ router } as any, { new: { model: 'order', values: { title: 'From ENQ-1', customer: '0000000000001',
+      children: { lines: [{ product: '0000000000001', qty: '24.0000', rate: '3.50' }] } } } }, 'ENQ-1');
+    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New order'));
+    expect(host.querySelector<HTMLInputElement>('.fld[data-field="title"] input')!.value).toBe('From ENQ-1');
+    await until(() => expect(rates(host)[0]).toContain('3.50'));
+    expect(drafts(sent)).toHaveLength(0);
+    click(byText(host, '.ev-savebar button', 'Create order'));
+    await until(() => expect(requests(sent, 'POST', /\/api\/order$/)).toHaveLength(1));
+    expect((requests(sent, 'POST', /\/api\/order$/)[0].body as any).children.lines[0]).toMatchObject({ qty: '24.0000' });
+    stopAll();
+    const blank = start(derivedRoutes(), '/app/order/new');
+    await until(() => expect(text(blank.host.querySelector('.doc-head h1'))).toBe('New order'));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(drafts(blank.sent)).toHaveLength(0);
+  });
 });

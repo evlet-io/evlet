@@ -649,9 +649,8 @@ class Business:
         if self.forms and (path == '/api/_reports' or path.startswith('/api/_reports/')):
             return self.forms.dispatch(scope, body, user)
         if path.startswith('/api/_draft/') and method == 'POST':
-            from .documents import load_draft, settle, source_values, walk
             model = self.registry.resolve(path.removeprefix('/api/_draft/'))
-            if not getattr(model, '__declaration_mode__', False) or model in self.child_models or self.registry.api.get(model) is None:
+            if not self.drafts_model(model):
                 raise AccessError(404, 'Draft evaluation is unavailable')
             if self.registry.api.get(model) == 'read':
                 raise AccessError(403, read_only(model))
@@ -666,52 +665,7 @@ class Business:
             if 'calculation' in body:
                 self.check_calculation(model, body['calculation'])
             with self.context(user, readonly=True) as context:
-                draft, previous = load_draft(context, model, record_id, body.get('values', {}), preview=True)
-                # A record that keeps its saved results on a save shows those in the preview too.
-                from .documents import keeps_saved_results
-                kept = bool(keeps_saved_results(context, model, previous))
-                errors, states = settle(context, draft, complete=False, previous=previous, kept=kept)
-                # Every serialized row, by model, so Links the user cannot follow are emptied in one batch per model.
-                serialized = {}
-                def values(item):
-                    allowed = self.policy.fields(user, item._definition)
-                    def shown(field, value):
-                        # Invalid submitted values are reported in errors; the preview sends null.
-                        try: return field.serialize(value)
-                        except Exception: return None
-                    result = {'id': item.id, '_key': item.key, '_sources': source_values(item, allowed), **{name: shown(field, item._values.get(name))
-                              for name, field in item._definition.__declared_fields__.items() if name in allowed and not name.startswith('evlet_')}}
-                    serialized.setdefault(item._definition, []).append(result)
-                    return result
-                allowed_errors = set()
-                saved_rows = {}
-                for _, item in walk(draft):
-                    if item is not draft and item.id:
-                        saved_rows.setdefault(item._definition, []).append(item.id)
-                shown = {(definition, row_id) for definition, ids in saved_rows.items()
-                         for row_id in self.policy.visible(context._tx, user, definition, ids)}
-
-                def tree(item, prefix):
-                    result = values(item)
-                    allowed_errors.update(prefix + name for name in result if name not in ('_key', 'id', '_sources'))
-                    owned = [child for child in self.children.values() if child.parent is item._definition]
-                    if owned or item is draft:
-                        result['children'] = {}
-                    for child in owned:
-                        if not self.policy.allows(user, child.model, 'read'):
-                            continue
-                        rows = []
-                        for row in item._rows.get(child.name, []):
-                            if row.id and (child.model, row.id) not in shown:
-                                continue
-                            rows.append(tree(row, prefix + child.name + '.' + row.key + '.'))
-                        result['children'][child.name] = rows
-                    return result
-                result = tree(draft, '')
-                for definition, rows in serialized.items():
-                    self.policy.hide_unfollowable(context._tx, user, definition, rows)
-                errors = {key: value for key, value in errors.items() if key in allowed_errors}
-                states = {key: value for key, value in states.items() if key in allowed_errors}
+                result, errors, states = self.draft_answer(context, model, record_id, body.get('values', {}))
             return 200, {'values': result, 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
         if path == '/api/auth/logout' and method == 'POST':
             return 204, None, self.auth.logout(scope)
@@ -753,6 +707,93 @@ class Business:
                 return self.model_dispatch(scope, body, user, model, parts)
         except ValidationError as exc:
             raise ValidationError(self.visible_errors(user, model, exc.errors)) from None
+
+    def drafts_model(self, model):
+        """Whether /api/_draft/<model> evaluates drafts of this model: a declared root model the API serves."""
+        return bool(getattr(model, '__declaration_mode__', False)) and model not in self.child_models and self.registry.api.get(model) is not None
+
+    def draft_answer(self, context, model, record_id, submitted):
+        """A draft of `model` (a new record when record_id is None) evaluated as /api/_draft/<model> answers it:
+        (values, errors, states). Inputs, fetches, derive() and calculations apply; nothing is saved. The values hold
+        only the fields, rows and Link targets this user may read, and errors and states only for those."""
+        from .documents import keeps_saved_results, load_draft, settle, source_values, walk
+        user = context.user
+        draft, previous = load_draft(context, model, record_id, submitted, preview=True)
+        # A record that keeps its saved results on a save shows those in the preview too.
+        kept = bool(keeps_saved_results(context, model, previous))
+        errors, states = settle(context, draft, complete=False, previous=previous, kept=kept)
+        # Every serialized row, by model, so Links the user cannot follow are emptied in one batch per model.
+        serialized = {}
+        def values(item):
+            allowed = self.policy.fields(user, item._definition)
+            def shown(field, value):
+                # Invalid submitted values are reported in errors; the preview sends null.
+                try: return field.serialize(value)
+                except Exception: return None
+            result = {'id': item.id, '_key': item.key, '_sources': source_values(item, allowed), **{name: shown(field, item._values.get(name))
+                      for name, field in item._definition.__declared_fields__.items() if name in allowed and not name.startswith('evlet_')}}
+            serialized.setdefault(item._definition, []).append(result)
+            return result
+        allowed_errors = set()
+        saved_rows = {}
+        for _, item in walk(draft):
+            if item is not draft and item.id:
+                saved_rows.setdefault(item._definition, []).append(item.id)
+        shown = {(definition, row_id) for definition, ids in saved_rows.items()
+                 for row_id in self.policy.visible(context._tx, user, definition, ids)}
+
+        def tree(item, prefix):
+            result = values(item)
+            allowed_errors.update(prefix + name for name in result if name not in ('_key', 'id', '_sources'))
+            owned = [child for child in self.children.values() if child.parent is item._definition]
+            if owned or item is draft:
+                result['children'] = {}
+            for child in owned:
+                if not self.policy.allows(user, child.model, 'read'):
+                    continue
+                rows = []
+                for row in item._rows.get(child.name, []):
+                    if row.id and (child.model, row.id) not in shown:
+                        continue
+                    rows.append(tree(row, prefix + child.name + '.' + row.key + '.'))
+                result['children'][child.name] = rows
+            return result
+        result = tree(draft, '')
+        for definition, rows in serialized.items():
+            self.policy.hide_unfollowable(context._tx, user, definition, rows)
+        errors = {key: value for key, value in errors.items() if key in allowed_errors}
+        states = {key: value for key, value in states.items() if key in allowed_errors}
+        return result, errors, states
+
+    def writable_values(self, user, model, values):
+        """`values` (with rows as {children: {table: [rows]}}) without the fields this user may not write, at every
+        depth: what the record form would send for them. Tables the user may not read are left out."""
+        allowed = self.policy.fields(user, model, write=True)
+        result = {name: value for name, value in values.items() if name != 'children' and name in allowed}
+        children = {}
+        for name, rows in (values.get('children') or {}).items():
+            child = self.children.get((model, name))
+            if child is not None and isinstance(rows, list) and self.policy.allows(user, child.model, 'read'):
+                children[name] = [self.writable_values(user, child.model, row) if isinstance(row, dict) else row for row in rows]
+        if children:
+            result['children'] = children
+        return result
+
+    def calculated_new(self, context, model, values):
+        """The values of an Outcome(new=(model, values)), calculated as /api/_draft/<model> works out a new record of
+        `model` for this user: fetches from the linked records as they are now, derive() and formulas, with the given
+        values kept. Only fields and rows this user may read come back. A model the draft route does not evaluate, or
+        one this user may not create, keeps the values as given; the save checks them."""
+        if not self.drafts_model(model) or self.registry.api.get(model) == 'read' or not self.policy.allows(context.user, model, 'create'):
+            return values
+        result, _, _ = self.draft_answer(context, model, None, self.writable_values(context.user, model, values))
+
+        def plain(item):
+            # The preview's bookkeeping (id, _key, _sources) is not part of a new record's values, nor are empty fields.
+            row = {key: value for key, value in item.items() if key not in ('id', '_key', '_sources', 'children') and value is not None}
+            children = {name: [plain(line) for line in lines] for name, lines in item.get('children', {}).items() if lines}
+            return {**row, 'children': children} if children else row
+        return plain(result)
 
     def visible_errors(self, user, model, errors, tx=None):
         """Hide error keys that name unreadable fields or rows the user cannot see."""
