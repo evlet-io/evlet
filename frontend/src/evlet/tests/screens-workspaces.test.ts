@@ -59,6 +59,12 @@ describe('the Workspace switcher', () => {
     expect(button.parentElement!.matches('.sidebar > .side-head')).toBe(true);
     expect(host.querySelector('.topbar .app-switch')).toBeNull();
     expect(text(button.querySelector('.as-text b'))).toBe('Sales');
+    // The workspace's icon, on a tile in its colour, comes before its name: the same icon its menu row shows.
+    const tile = button.querySelector<HTMLElement>(':scope > .as-tile')!;
+    expect(button.firstElementChild).toBe(tile);
+    expect(tile.className).toMatch(/^as-tile b-[a-z]+$/);
+    expect(tile.getAttribute('aria-hidden')).toBe('true');
+    const tileIcon = tile.querySelector('svg')!.innerHTML;
     expect(button.getAttribute('aria-label')).toBe('Workspace: Sales');
     expect(button.getAttribute('aria-haspopup')).toBe('menu');
     button.getBoundingClientRect = () => ({ left: 120, right: 220, top: 12, bottom: 40, width: 100, height: 28, x: 120, y: 12, toJSON: () => ({}) });
@@ -73,6 +79,7 @@ describe('the Workspace switcher', () => {
     expect(card.getAttribute('aria-label')).toBe('Workspace');
     const rows = [...card.querySelectorAll<HTMLButtonElement>('.ws-item')];
     expect(rows.map(text)).toEqual(['Sales', 'Stock', 'Crm']);
+    expect(rows[0].querySelector('svg')!.innerHTML).toBe(tileIcon);
     expect(rows.map(row => row.getAttribute('role'))).toEqual(['menuitemradio', 'menuitemradio', 'menuitemradio']);
     expect(rows.map(row => row.getAttribute('aria-checked'))).toEqual(['true', 'false', 'false']);
     expect(rows.every(row => row.querySelector('svg.i'))).toBe(true);

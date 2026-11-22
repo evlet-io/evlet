@@ -45,6 +45,8 @@
   --font:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   --r-sm:4px; --r:4px; --r-lg:4px;
+  /* The list card's corners; the title row's New button, the sidebar's active item and the Workspace switcher share them. */
+  --r-card:6px;
   --sidebar-w:248px; --topbar-h:52px; --doc-side-w:370px;
   /* The list and record pages' side padding, and the gap above and below a list's measure cards (their own gap). */
   --page-gutter:12px; --page-gap:8px;
@@ -658,12 +660,16 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
    brand sits above it (below). Collapsed, it keeps its chevrons only. */
 .side-head{display:flex;flex-direction:column;align-items:stretch;gap:12px;padding:10px 8px 2px;background:var(--bg-subtle)}
 .side-head .brand{display:none}
-.side-head .app-switch{width:100%;justify-content:space-between}
+.side-head .app-switch{width:100%;justify-content:space-between;gap:8px;border-radius:var(--r-card);box-shadow:var(--shadow-sm)}
+.side-head .as-text{flex:1}
+/* The current workspace's icon, on a tile before its name. */
+.as-tile{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;flex:none}
 .app.collapsed .side-head .as-text{display:none}
+.app.collapsed .side-head .as-tile{display:none}
 .app.collapsed .side-head .app-switch{justify-content:center;padding:0}
-/* The sidebar's rows: hover a light grey, the active one a white card with a border. */
+/* The sidebar's rows: hover a light grey, the active one a white card with a border and the list card's corners and shadow. */
 .sidebar .nav-item:hover,.sidebar .nav-sec-h:hover{background:var(--side-hover);color:var(--fg)}
-.sidebar .nav-item.active{background:var(--side-on);color:var(--fg);box-shadow:inset 0 0 0 1px var(--border-strong)}
+.sidebar .nav-item.active{background:var(--side-on);color:var(--fg);border-radius:var(--r-card);box-shadow:inset 0 0 0 1px var(--border-strong),var(--shadow-sm)}
 /* Level one: a section title, bold and in capitals, that never collapses. */
 .nav-title{padding:14px 8px 6px;font-size:11.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--fg)}
 .nav-secs>.nav-title:first-child{padding-top:8px}

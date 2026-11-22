@@ -103,18 +103,30 @@
 .ev-list{--ev-gut:16px;--ev-pad-top:20px;--ev-card-top:12px}
 .ev-list.page{max-width:none;padding:var(--ev-pad-top) var(--page-gutter) 16px}
 .ev-list-card{position:sticky;top:var(--ev-card-top);z-index:2;display:flex;flex-direction:column;min-width:0;height:calc(100% + var(--ev-pad-top) - var(--ev-card-top));
-  border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);overflow:hidden}
+  border:1px solid var(--border);border-radius:var(--r-card);background:var(--surface);box-shadow:var(--shadow-sm);overflow:hidden}
 .ev-list-card > .tabs{flex:none;margin:0;padding:0 8px}
+/* The tab row: the state tabs and their More menu, then the search box at its right end, 8px after More. The
+   tabs keep their own row's padding, so More counts the room the search box leaves as before. */
+.ev-list-card > .ev-tab-row{flex:none;display:flex;align-items:center;min-width:0;border-bottom:1px solid var(--divider)}
+.ev-tab-row > .pill-row{flex:1;padding-right:8px;border-bottom:0}
+.ev-tab-row > .search-field{flex:none;margin:0 12px 0 auto}
+.ev-tab-row > .search-field .input{width:240px}
+/* The New button in the title row: the list card's corners and shadow. */
+.ev-list > .ph .btn.primary{border-radius:var(--r-card);box-shadow:var(--shadow-sm)}
 .ev-list-card > .toolbar{flex:none;margin:0;padding:10px var(--ev-gut);border-bottom:1px solid var(--divider)}
 .ev-list-card > .tabs + .toolbar{border-top:0}
 .ev-list-card > .pill-row{flex:none}
-/* Phones: the search row comes first, above the tabs. */
+/* Phones: the search box comes first, on its own line above the tabs. */
 @media (max-width:760px){
+  .ev-list-card > .ev-tab-row{flex-wrap:wrap}
+  .ev-tab-row > .search-field{order:-1;flex:1 1 100%;margin:8px 12px 0}
+  .ev-tab-row > .pill-row{padding-right:12px}
+  .ev-tab-row > .search-field .input{width:100%}
+  .ev-list-card > .ev-tab-row ~ .toolbar:not(:has(.filters *)){display:none}
   .ev-list-card > .toolbar{order:-1}
   .ev-list-card > .toolbar .search-field{flex:1}
   .ev-list-card > .toolbar > .grow{display:none}
   .ev-list-card > .toolbar .search-field .input{width:100%}
-  .ev-list-card > .pill-row{padding:8px 12px}
 }
 .ev-list-body{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:auto}
 .ev-list-body > *{flex:none}
