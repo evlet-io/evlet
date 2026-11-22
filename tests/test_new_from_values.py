@@ -5,8 +5,6 @@ signed-in user: fetches from the linked records as they are now, derive() and fo
 gave kept (docs/prompts.md#outcome). More > Duplicate sends its copy through /api/_draft once when the new
 record opens (docs/ui.md#duplicate); the browser side is in frontend/src/evlet/tests/record.test.ts."""
 
-from decimal import Decimal as D
-
 import pytest
 
 from evlet import Child, Currency, Database, Decimal, Integer, Link, Model, Outcome, Registry, Rule, Table, Text, User, action
@@ -137,20 +135,20 @@ def test_a_user_who_may_not_create_the_record_gets_the_values_as_given(app):
     assert 'pack_steps' not in values['children']['lines'][0]
 
 
-def test_a_duplicate_draft_recalculates_the_copy_and_keeps_the_typed_values(app):
-    """Duplicate sends its copy (derived values left out, as the browser copies) through /api/_draft when the copy
-    opens: derived values come back, fetched ones are read again, and values the person typed stay."""
+def test_a_duplicate_draft_fetches_linked_values_again_and_keeps_the_typed_quantity(app):
+    """Duplicate leaves out derived fields and fields fetched from a link (initial=F('item.description')), as the
+    browser copies (frontend/src/evlet/app/duplicate.ts), and sends the copy through /api/_draft once as it opens:
+    derived values come back, fetched ones are read from the item as it is now, and the copied quantity stays."""
     c = client(app)
     status, saved, _ = c('POST', '/api/quotation', {'title': 'Q1', 'children': {'lines': [
         {'item': str(app.ids['pen']), 'qty': '24', 'rate': '2.20', 'description': 'Pens, gift box'}]}})
     assert status == 201, saved
+    # The item changed after the quotation was saved.
     with app.business.context(ADMIN) as context:
-        context.update(Item, app.ids['pen'], pack_size='6')
-    copy = {'title': 'Q1', 'children': {'lines': [{'_key': 'n1', 'item': str(app.ids['pen']), 'qty': '24', 'rate': '2.20',
-                                                    'description': 'Pens, gift box'}]}}
+        context.update(Item, app.ids['pen'], description='Blue pen 0.7 mm', pack_size='6', price='3')
+    copy = {'title': 'Q1', 'children': {'lines': [{'_key': 'n1', 'item': str(app.ids['pen']), 'qty': '24'}]}}
     status, draft, _ = c('POST', '/api/_draft/quotation', {'values': copy})
     assert status == 200, draft
     line = draft['values']['children']['lines'][0]
-    assert line['pack_steps'] == '6.00' and line['qty'] == '24.00' and line['rate'] == '2.20' and line['amount'] == '52.80'
-    assert line['description'] == 'Pens, gift box' and draft['values']['line_count'] == 1
-    assert D(line['amount']) == D('24') * D('2.20')
+    assert line['pack_steps'] == '6.00' and line['qty'] == '24.00' and draft['values']['line_count'] == 1
+    assert line['description'] == 'Blue pen 0.7 mm' and line['rate'] == '3.00' and line['amount'] == '72.00'

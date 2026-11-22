@@ -6,6 +6,8 @@
 // without their ids, so they are created new. Left out: the id, the name or number the server assigns
 // (the naming field, Sequence fields), the State, calculated and read-only fields, fields marked
 // unique (named in a note), and a row's link to its parent. Files and the Activity belong to the record.
+// A field whose initial value is read through a Link (`initial=F("item.description")`) is left out too, so the new
+// record reads it from the linked record as it is now, as the server's draft does when the copy opens.
 // Meta.duplicate = False (`duplicate: false` on a model) turns Duplicate off, and copy=False (`copy: false`
 // on a field or a Table) leaves it as a new record starts. Every such schema key is read here only, so a rename touches this file.
 
@@ -31,9 +33,18 @@ export const duplicateAllowed = (model: { duplicate?: boolean }) => model.duplic
 /** Whether a Table's rows are copied: not one marked `copy: false`; absent means copy. */
 const tableCopied = (table: { copy?: boolean }) => table.copy !== false;
 
-/** Whether a field's value is copied: a visible, stored field the role may write and the server does not set. */
+/** Whether an expression reads through a Link (a `hop`): a value fetched from a linked record. */
+function readsLink(node: unknown): boolean {
+  if (Array.isArray(node)) return node.some(readsLink);
+  if (node === null || typeof node !== 'object') return false;
+  return (node as { $expr?: unknown }).$expr === 'hop' || Object.values(node).some(readsLink);
+}
+
+/** Whether a field's value is copied: a visible, stored field the role may write and the server does not set, and
+ * not one fetched from a linked record (it is fetched again). */
 function copied(meta: FieldSchema, calculated: boolean, skip: ReadonlySet<string>): boolean {
   return meta.name !== 'id' && !skip.has(meta.name) && meta.copy !== false && !meta.hidden && !meta.read_only && !calculated && !meta.compute
+    && !readsLink(meta.initial)
     && meta.stored !== false && meta.type !== 'sequence' && meta.type !== 'state' && (meta as { state?: boolean }).state !== true;
 }
 

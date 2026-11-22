@@ -146,6 +146,11 @@ number is used, until Create, which sends a create (POST) like any new record.
   provides it, `"copy": false` on a field or on a Table entry leaves it out too; without the key it
   is copied. A field left out starts as on any new record (empty, or its default), and a table left
   out starts with no rows.
+- **Fetched again:** a field whose value comes from a linked record (`initial=F("item.description")`,
+  a unit from `item.sale_unit`, a currency from the customer) is not copied: the new record reads it
+  from the linked record as it is now, as when the link is first chosen. A value someone changed by
+  hand in the source is fetched again too. The link itself, and values typed into plain fields (a
+  quantity), are copied.
 - **Saved values.** Duplicate copies the record as saved; edits not yet saved stay with it, and
   leaving it asks or keeps them as usual.
 - **Calculated before it shows.** On a model whose `derive()` sets values (`derived=True`), the copy goes
@@ -290,7 +295,8 @@ required, unique, row, field and action rules all apply. The browser copies the 
 could type and the rows of each `Table`. It leaves out what Evlet sets: the id, the name or
 document number, `Sequence` numbers, the State, calculated and read-only values and the record
 times. On a model with `derive()`, the copy is sent to `/api/_draft/<model>` once as it opens, so
-derived values show before the first edit. Two options steer it:
+derived values show before the first edit. A field whose `initial=` reads through a Link is not copied:
+it is fetched again from the linked record as it is now. Two options steer it:
 
 ```python
 class Invoice(Model):

@@ -108,7 +108,9 @@ describe('what Duplicate copies', () => {
     for (const field of ['id', 'name', 'due', 'total', 'line_count', 'remark', 'issued']) expect(body).not.toHaveProperty(field);
     expect(body.children.lines).toHaveLength(120);
     const first = body.children.lines[0];
-    expect(first).toMatchObject({ product: '0000000000001', qty: '1.0000', rate: '2.50' });
+    // The rate is fetched from the product (initial=F('product.price')): the copy reads the product as it is now
+    // (250.00), not the 2.50 the saved line held.
+    expect(first).toMatchObject({ product: '0000000000001', qty: '1.0000', rate: '250.00' });
     expect(first).not.toHaveProperty('id');
     expect(first).not.toHaveProperty('amount');
     expect(first).not.toHaveProperty('order');
