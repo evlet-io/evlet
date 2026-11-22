@@ -190,7 +190,7 @@
             "customer",
             "project",
             "reference",
-            "total",
+            "currency",
             "posting_date",
             "status",
             "tax_rate",
@@ -237,6 +237,11 @@
             "kind": "section",
             "name": "Details",
             "label": "Details",
+            "main": true
+          },
+          {
+            "kind": "table",
+            "name": "lines",
             "main": true
           }
         ]
@@ -294,19 +299,36 @@
           "default_kind": "none"
         },
         {
+          "name": "currency",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 3,
+          "label": "Currency",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": false,
+          "column": false,
+          "default_kind": "none"
+        },
+        {
           "name": "total",
           "type": "currency",
-          "required": true,
+          "required": false,
           "unique": false,
           "index": false,
           "scale": 6,
-          "minimum": "0.01",
+          "minimum": null,
           "maximum": null,
           "label": "Total",
           "help_text": "",
           "placeholder": "",
           "hidden": false,
-          "read_only": false,
+          "read_only": true,
+          "stored": true,
           "currency_source": {
             "link": "customer",
             "field": "currency"
@@ -355,7 +377,7 @@
           "minimum": "0",
           "maximum": "100",
           "label": "Tax rate",
-          "help_text": "Recorded separately; this does not calculate the total.",
+          "help_text": "Recorded separately; the total is the sum of the lines.",
           "placeholder": "",
           "suffix": "%",
           "display_scale": 2,
@@ -454,54 +476,18 @@
           }
         },
         "reference": {},
-        "total": {},
+        "currency": {
+          "finite": true
+        },
+        "total": {
+          "finite": true
+        },
         "posting_date": {},
         "status": {},
         "tax_rate": {},
         "amount_paid": {},
         "payment_status": {
-          "compute": {
-            "$expr": "choose",
-            "args": [
-              {
-                "$expr": "gte",
-                "args": [
-                  {
-                    "$expr": "ref",
-                    "args": [
-                      "amount_paid"
-                    ]
-                  },
-                  {
-                    "$expr": "ref",
-                    "args": [
-                      "total"
-                    ]
-                  }
-                ]
-              },
-              "paid",
-              {
-                "$expr": "choose",
-                "args": [
-                  {
-                    "$expr": "gt",
-                    "args": [
-                      {
-                        "$expr": "ref",
-                        "args": [
-                          "amount_paid"
-                        ]
-                      },
-                      0
-                    ]
-                  },
-                  "partly_paid",
-                  "unpaid"
-                ]
-              }
-            ]
-          }
+          "finite": true
         },
         "name": {},
         "title": {}
@@ -510,6 +496,7 @@
         "customer",
         "project",
         "reference",
+        "currency",
         "total",
         "posting_date",
         "status",
@@ -517,7 +504,14 @@
         "amount_paid",
         "payment_status",
         "name",
-        "title"
+        "title",
+        "lines.currency",
+        "lines.item",
+        "lines.qty",
+        "lines.rate",
+        "lines.amount",
+        "lines.evlet_owner",
+        "lines.evlet_position"
       ],
       "sources": {}
     },
@@ -5745,6 +5739,190 @@
         "receipts.evlet_owner",
         "receipts.evlet_position"
       ],
+      "sources": {}
+    },
+    {
+      "name": "invoice_lines",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "currency",
+            "item",
+            "qty",
+            "rate",
+            "amount"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows",
+          "main": true
+        }
+      ],
+      "label": "Invoice line",
+      "plural": "Invoice lines",
+      "description": "",
+      "title_field": "currency",
+      "list_fields": [
+        "id",
+        "item",
+        "qty",
+        "rate",
+        "amount"
+      ],
+      "search_fields": [
+        "currency",
+        "item"
+      ],
+      "open_in": "page",
+      "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
+      "fields": [
+        {
+          "name": "currency",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 3,
+          "label": "Currency",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": false,
+          "column": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "item",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 140,
+          "label": "Item",
+          "help_text": "What was sold or done.",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "qty",
+          "type": "decimal",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": "0.01",
+          "maximum": null,
+          "label": "Quantity",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "1.00"
+        },
+        {
+          "name": "rate",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 6,
+          "minimum": null,
+          "maximum": null,
+          "label": "Rate",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "currency_source": {
+            "field": "currency"
+          },
+          "default_kind": "static",
+          "default": "0.00"
+        },
+        {
+          "name": "amount",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 6,
+          "minimum": null,
+          "maximum": null,
+          "label": "Amount",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": true,
+          "currency_source": {
+            "field": "currency"
+          },
+          "default_kind": "none"
+        },
+        {
+          "name": "evlet_owner",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": true,
+          "minimum": 1,
+          "maximum": null,
+          "target": "invoice",
+          "label": "Evlet owner",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        },
+        {
+          "name": "evlet_position",
+          "type": "integer",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "minimum": null,
+          "maximum": null,
+          "label": "Evlet position",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "static",
+          "default": 0
+        }
+      ],
+      "document_version": 1,
+      "resource": "Invoice.lines",
+      "behavior": {
+        "currency": {
+          "finite": true
+        },
+        "item": {},
+        "qty": {},
+        "rate": {},
+        "amount": {
+          "finite": true
+        },
+        "evlet_owner": {},
+        "evlet_position": {}
+      },
+      "order": [],
       "sources": {}
     },
     {

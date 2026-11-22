@@ -1029,6 +1029,22 @@ write to it. Records (area `Records`) lists each migration run that recalculated
 each lock change and each `unlocked_periods` block (actor `python`). The Audit log page searches who, what and the detail, filters by area and pages
 newest first, 50 rows at a time.
 
+### Tamper evidence
+
+Each audit row stores in `hash` the SHA-256 of its canonical content (`at`, `actor`, `area`,
+`target`, `detail`, `before`, `after`, as compact JSON) and the hash of the row before it, so the
+rows form one chain. The framework step `0018_audit_chain` adds the column; rows from before it
+keep no hash and the chain starts at the first row written after it. `evlet.audit.verify_log(connection)`
+returns the rows checked and the first break, `{"id", "message"}`: a row whose hash no longer
+matches (it was changed, or a row before it was removed or changed) or a row without a hash after
+the chain started. Controls, Overview checks the chain on each load and shows a red **The audit log
+was changed at row N** item under Needs attention when it is broken. The Audit log page's
+`GET /api/_controls/audit` also returns `head`, the id and hash of the newest chained row.
+
+What it does not protect against: whoever can write the database file can rewrite every row and
+recompute the whole chain, or drop the newest rows, and the check passes. Keep the head hash off
+the host and compare it later ([production-operations.md](production-operations.md#audit-log-integrity)).
+
 ## API
 
 | Route | Purpose |

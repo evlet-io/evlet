@@ -9,6 +9,7 @@ from evlet import (Application, Boolean, Currency, Database, Date, DateTime, Dec
                    Integer, Link, LongText, Model, Registry, Select, Text, URL)
 from examples.playground.migrate import legacy_registry, migrations
 from examples.playground.models import Customer, Invoice, Payment, Project, registry
+from test_batch4_invoice_lines import raw_invoice
 from test_api import request
 
 
@@ -117,7 +118,7 @@ def test_relationship_search_reaches_records_beyond_first_hundred(database, appl
     first = database.create(Customer, customer_name='Old customer')
     with database.transaction() as tx:
         for i in range(105): tx.create(Customer, customer_name=f'Recent customer {i}')
-    invoice = database.create(Invoice, customer=first.id, reference='OLD', total='12.50')
+    invoice = raw_invoice(database, customer=first.id, reference='OLD', total='12.50')
     page = request(application, 'GET', '/api/customer?q=Old&limit=20')[1]
     assert page['total'] == 1 and page['items'][0]['id'] == str(first.id)
     assert request(application, 'GET', f'/api/customer/{first.id}')[1]['customer_name'] == 'Old customer'

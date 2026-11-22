@@ -10,6 +10,7 @@ from evlet import Model, Registry, Text
 from evlet.framework import upgrade
 from evlet.unsaved import DAY
 from examples.playground.models import Customer, Invoice, Project, ProjectTask
+from test_batch4_invoice_lines import raw_invoice
 from test_api_keys import create as create_key, with_key
 from support import PASSWORD, client, http  # noqa: F401
 
@@ -210,7 +211,7 @@ def test_documents_keep_edits_without_numbers_validators_or_history(secured):
     with secured.database.transaction() as tx:
         customer = tx.create(Customer, customer_name='Acme', email='a@example.com')
     admin = client(secured)
-    status, invoice, _ = admin('POST', '/api/invoice', {'customer': str(customer.id), 'reference': 'PO-1', 'total': '10.00'})
+    status, invoice, _ = admin('POST', '/api/invoice', {'customer': str(customer.id), 'reference': 'PO-1', 'children': {'lines': [{'item': 'Work', 'rate': '10.00'}]}})
     assert status == 201, invoice
     record = type('Opened', (), {'id': invoice['id']})
     etag = opened(admin, record, 'invoice')
@@ -361,7 +362,7 @@ def test_read_only_api_models_keep_nothing(secured):
     from examples.playground.models import LedgerEntry
     with secured.database.transaction() as tx:
         customer = tx.create(Customer, customer_name='Acme', email='a@example.com')
-        invoice = tx.create(Invoice, customer=customer.id, reference='PO-9', total='5.00')
+        invoice = raw_invoice(tx, customer=customer.id, reference='PO-9', total='5.00')
         with trusted():
             entry = tx.create(LedgerEntry, invoice=invoice.id, customer=customer.id, posting_date='2026-11-04', amount='5.00')
     admin = client(secured)

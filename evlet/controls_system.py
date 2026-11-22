@@ -10,6 +10,7 @@ from threading import Lock
 import time
 
 from . import qb
+from .audit import log_head, verify_log
 from .auth import AccessError, User
 from .models import ValidationError
 from .routing import PLANNED, RESERVED
@@ -282,7 +283,19 @@ class System:
             add('lock', 'security', f'Two-step sign-in is unavailable for {roles}', reason)
         if failed:
             add('clock', 'jobs', f"{failed} job{'s' if failed != 1 else ''} failed", 'Retry them from Jobs once the cause is fixed.')
+        broken = self.audit_chain()['break']
+        if broken:
+            items.append({'tone': 'red', 'icon': 'lock', 'page': 'audit', 'title': f"The audit log was changed at row {broken['id']}",
+                          'text': f"Its hash chain is broken: {broken['message']}. Compare with a backup and the head hash kept off the server."})
         return items
+
+    def audit_chain(self):
+        """The audit log's hash chain (evlet/audit.py), read in one snapshot: rows checked, the first break or None,
+        and the head {"id", "hash"} to keep off the server."""
+        with self.controls.database._connection() as connection:
+            connection.snapshot()
+            checked, broken = verify_log(connection)
+            return {'checked': checked, 'break': broken, 'head': log_head(connection)}
 
     # ---------- audit ----------
 
@@ -305,4 +318,5 @@ class System:
         with self.controls.database._connection() as connection:
             rows = [dict(row) for row in connection.run(query.order_by('-id').limit(PAGE + 1))]
             areas = [row[0] for row in connection.run(qb.select('evlet_audit', 'area').distinct().order_by('area'))]
-        return {'items': rows[:PAGE], 'next': rows[PAGE - 1]['id'] if len(rows) > PAGE else None, 'areas': areas}
+            head = log_head(connection)
+        return {'items': rows[:PAGE], 'next': rows[PAGE - 1]['id'] if len(rows) > PAGE else None, 'areas': areas, 'head': head}

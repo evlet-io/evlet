@@ -383,7 +383,10 @@ def test_playground_ignores_customer_database_environment(tmp_path, monkeypatch)
     app = playground_app(tmp_path / 'demo')
     assert app.database.path != customer
     assert customer.read_bytes() == b'preserve existing database'
-    assert app.database.count(app.registry.models['customer']) == 1
+    # The demo data (examples/playground/app.py, seed_demo): its customers and the invoices with their lines.
+    from examples.playground.app import DEMO_CUSTOMERS, DEMO_INVOICES
+    assert app.database.count(app.registry.models['customer']) == len(DEMO_CUSTOMERS)
+    assert app.database.count(app.registry.models['invoice']) == len(DEMO_INVOICES)
 
 
 def test_docs_are_available_without_project_or_database(tmp_path, monkeypatch):

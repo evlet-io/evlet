@@ -32,7 +32,8 @@ portal = Frontend('portal', kind='static', dist='portal', path='/portal', title=
 website = Frontend('site', kind='static', dist='site', path='/site', title='Website', auth=None, routing='pages', suggested_host='www')
 PORTAL_RULES = {
     ('portal', Customer): Rule(('read',), read_fields=('customer_name', 'title', 'email'), scope=own_customer('id')),
-    ('portal', Invoice): Rule(('read',), read_fields=('customer', 'name', 'title', 'reference', 'total', 'status', 'posting_date'), scope=own_customer()),
+    ('portal', Invoice): Rule(('read',), read_fields=('customer', 'name', 'title', 'reference', 'total', 'status', 'posting_date'),
+                              scope=own_customer()),
     # Admin prints whatever it reads; editors print invoices because their Rule names 'print'.
     ('editor', Invoice): Rule(('read', 'create', 'update', 'delete', 'print')),
 }
@@ -128,6 +129,44 @@ def show_currencies(app):
     UAE dirham symbol from the Central Bank of the UAE, can be uploaded in Controls, Currencies. KWD keeps its
     ISO 3 places."""
     return set_currency_display(app, {'XCR': {'symbol': 'CR', 'position': 'suffix', 'decimals': 5}}, actor='playground')
+
+
+# The demo data `evlet playground` starts with (seed_demo): customers in three currencies and invoices whose
+# totals come from their lines, so lists, reports, boards and the payment badges show something.
+DEMO_CUSTOMERS = (
+    ('Example customer', 'hello@example.test', 'AED'),
+    ('Zayed Medical Supplies', 'orders@zms.example', 'AED'),
+    ('Gulf Freight Partners', 'accounts@gulffreight.example', 'USD'),
+    ('Kuwait Office Fitout', 'finance@kof.example', 'KWD'),
+)
+DEMO_INVOICES = (
+    # (customer, reference, days before today, amount paid, lines of (item, quantity, rate))
+    ('Example customer', 'PO-1001', 30, '1500.00', (('Discovery workshop', '1', '1500.00'),)),
+    ('Zayed Medical Supplies', 'ZMS-2207', 21, '0.00', (('Consulting hours', '12', '350.00'), ('Travel', '1', '420.00'))),
+    ('Zayed Medical Supplies', 'ZMS-2231', 7, '2000.00', (('Support plan, quarterly', '1', '3600.00'),)),
+    ('Gulf Freight Partners', 'GFP-88', 14, '0.00', (('Integration setup', '1', '2400.00'), ('Training session', '2', '300.00'))),
+    ('Kuwait Office Fitout', 'KOF-14', 3, '0.000', (('Design review', '3', '125.750'),)),
+)
+
+
+def seed_demo(app):
+    """Create the demo customers, a project and the demo invoices with their lines; returns {reference: invoice id}.
+
+    Invoices are finite-v1 documents, so they are written through a Context: the total is the sum of the lines.
+    It writes as the built-in Administrator with no account id, so Record info names no one."""
+    from datetime import date, timedelta
+    from evlet import User
+    ids, invoices = {}, {}
+    with app.business.context(User(0, 'admin', 'admin')) as context:
+        for name, email, currency in DEMO_CUSTOMERS:
+            ids[name] = context.create(Customer, customer_name=name, email=email, currency=currency)['id']
+        context.create(Project, title='Explore Evlet', customer=ids['Example customer'],
+                       children={'tasks': [{'title': 'Try models, actions and private files'}]})
+        for customer, reference, days, paid, lines in DEMO_INVOICES:
+            invoices[reference] = context.create(
+                Invoice, customer=ids[customer], reference=reference, posting_date=date.today() - timedelta(days=days), amount_paid=paid,
+                children={'lines': [{'item': item, 'qty': qty, 'rate': rate} for item, qty, rate in lines]})['id']
+    return invoices
 
 
 def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=None):

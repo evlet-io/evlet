@@ -11,12 +11,19 @@ write itself:
 They are not fields: they never appear in a model's fields, forms, imports or field lists, and no
 client can write them. A Session carries the acting user in `session.actor`; a document Context and
 the record routes set it, and raw trusted Python leaves it None.
+
+The Controls audit log (`evlet_audit`, written by evlet.controls.audit) is hash chained here: each new
+row stores in `hash` the SHA-256 of its canonical content and the hash of the row before it, and
+`verify_log` reports the first broken link (docs/controls.md, "Tamper evidence").
 """
 
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
+import hashlib
 import itertools
+import json
 
+from .adapter import Column
 from .identity import EPOCH_MS, RANDOM_BITS
 from . import qb
 
@@ -78,7 +85,6 @@ def id_time(record_id):
 
 def columns():
     """The four columns, as adapter Columns for CREATE TABLE and ADD COLUMN: times as text, users as integers."""
-    from .adapter import Column
     return [Column(name, 'TEXT' if name.endswith('_at') else 'INTEGER') for name in COLUMNS]
 
 
@@ -151,3 +157,61 @@ def detail(business, tx, user, record):
         if value in names:
             result[key] = {'id': value, 'name': names[value]}
     return result
+
+
+# ---------- the Controls audit log's hash chain ----------
+
+LOG = 'evlet_audit'
+LOG_CONTENT = ('at', 'actor', 'area', 'target', 'detail', 'before', 'after')
+# NULL on rows written before framework step 0018_audit_chain.
+LOG_HASH = Column('hash', 'TEXT')
+
+
+def add_log_hash(connection):
+    """Give an audit log made before the hash chain its nullable hash column. Idempotent (framework step 0018_audit_chain)."""
+    if connection.table_exists(LOG) and LOG_HASH.name not in connection.columns(LOG):
+        connection.add_column(LOG, LOG_HASH)
+
+
+def log_hash(row, previous):
+    """SHA-256 of the canonical JSON of an audit row's content (LOG_CONTENT, from a mapping) and the previous row's hash.
+
+    The id is not hashed: it is assigned by the insert, and the previous hash already fixes the row's place."""
+    content = [row[name] for name in LOG_CONTENT] + [previous]
+    return hashlib.sha256(json.dumps(content, ensure_ascii=False, separators=(',', ':')).encode()).hexdigest()
+
+
+def log_previous(connection):
+    """The hash a new audit row chains to: the newest row's, or None while the log is empty or ends in rows
+    written before the chain existed (the chain then starts at the new row)."""
+    return connection.run(qb.select(LOG, 'hash').order_by('-id').limit(1)).value()
+
+
+def log_head(connection):
+    """{"id", "hash"} of the newest chained audit row, or None. Ship it off the host to detect a rewrite of the whole chain."""
+    row = connection.run(qb.select(LOG, 'id', 'hash').where(qb.not_null('hash')).order_by('-id').limit(1)).one()
+    return None if row is None else {'id': row[0], 'hash': row[1]}
+
+
+def verify_log(connection, *, batch=1000):
+    """(rows checked, first break) for the audit log, read on this connection. A break is {"id", "message"}, or None.
+
+    Rows before the first chained row (written before the chain existed) are skipped. After it, every row must
+    have a hash that matches its content and the hash of the row before it."""
+    previous, started, checked, after = None, False, 0, 0
+    while True:
+        rows = connection.run(qb.select(LOG, 'id', 'hash', *LOG_CONTENT).where(qb.gt('id', after)).order_by('id').limit(batch)).all()
+        if not rows:
+            return checked, None
+        for row in rows:
+            if row['hash'] is None:
+                if started:
+                    return checked, {'id': row['id'], 'message': 'this row has no hash, but earlier rows do'}
+                continue
+            started = True
+            if log_hash(row, previous) != row['hash']:
+                return checked, {'id': row['id'], 'message': 'the hash does not match this row and the row before it: '
+                                 'it was changed, or a row before it was removed or changed'}
+            checked += 1
+            previous = row['hash']
+        after = rows[-1]['id']

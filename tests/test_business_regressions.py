@@ -3,13 +3,14 @@ import pytest
 from support import client
 from evlet import Policy, Rule
 from examples.playground.models import Customer, Invoice, Project, ProjectTask, registry
+from test_batch4_invoice_lines import raw_invoice
 
 
 @pytest.mark.parametrize('value', ['not-an-id', 0, True, 2**63])
 def test_authenticated_invalid_link_returns_field_validation(secured, value):
     call = client(secured, 'editor')
     status, data, _ = call('POST', '/api/invoice', {
-        'customer': value, 'reference': 'REVIEW', 'total': '1.00',
+        'customer': value, 'reference': 'REVIEW', 'children': {'lines': [{'item': 'Work', 'rate': '1.00'}]},
     })
     assert status == 422, (status, data)
     assert 'customer' in data['fields']
@@ -18,7 +19,7 @@ def test_authenticated_invalid_link_returns_field_validation(secured, value):
 @pytest.mark.parametrize('value', ['invalid', 0, True, 2**63])
 def test_authenticated_invalid_link_patch_is_validation_and_atomic(secured, value):
     customer = secured.database.create(Customer, customer_name='Review')
-    invoice = secured.database.create(Invoice, customer=customer.id, reference='ORIGINAL', total='1.00')
+    invoice = raw_invoice(secured.database, customer=customer.id, reference='ORIGINAL', total='1.00')
     call = client(secured, 'editor')
     url = f'/api/invoice/{invoice.id}'
     # The invoice has a calculated payment status, so an update sends its ETag.

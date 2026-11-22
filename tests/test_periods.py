@@ -280,7 +280,7 @@ def test_playground_posts_invoices_to_a_read_only_ledger_and_locks_periods(secur
     app = secured
     admin, editor = client(app), client(app, 'editor')
     customer = admin('POST', '/api/customer', {'customer_name': 'Acme'})[1]['id']
-    status, invoice, _ = editor('POST', '/api/invoice', {'customer': customer, 'reference': 'PO-1', 'total': '100.00', 'posting_date': '2026-03-10'})
+    status, invoice, _ = editor('POST', '/api/invoice', {'customer': customer, 'reference': 'PO-1', 'children': {'lines': [{'item': 'Work', 'rate': '100.00'}]}, 'posting_date': '2026-03-10'})
     assert status == 201, invoice
     url = f"/api/invoice/{invoice['id']}"
     assert editor('POST', f'{url}/actions/post', {}, headers=etag(editor, url))[0] == 200
@@ -291,5 +291,5 @@ def test_playground_posts_invoices_to_a_read_only_ledger_and_locks_periods(secur
     assert admin('POST', '/api/_controls/periods', {'scope': None, 'date': '2026-03-31'})[0] == 200
     status, payload, _ = editor('PATCH', url, {'reference': 'PO-1b'}, headers=etag(editor, url))
     assert status == 422 and payload['fields'] == {'posting_date': CLOSED.format('31-03-2026')}
-    status, late, _ = editor('POST', '/api/invoice', {'customer': customer, 'reference': 'PO-2', 'total': '5.00', 'posting_date': '2026-03-30'})
+    status, late, _ = editor('POST', '/api/invoice', {'customer': customer, 'reference': 'PO-2', 'children': {'lines': [{'item': 'Work', 'rate': '5.00'}]}, 'posting_date': '2026-03-30'})
     assert status == 422 and late['fields'] == {'posting_date': CLOSED.format('31-03-2026')}

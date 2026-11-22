@@ -370,7 +370,7 @@
             "customer",
             "project",
             "reference",
-            "total",
+            "currency",
             "posting_date",
             "status",
             "tax_rate",
@@ -417,6 +417,11 @@
             "kind": "section",
             "name": "Details",
             "label": "Details",
+            "main": true
+          },
+          {
+            "kind": "table",
+            "name": "lines",
             "main": true
           }
         ]
@@ -520,21 +525,54 @@
           "visible_when": null
         },
         {
+          "name": "currency",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 3,
+          "label": "Currency",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": false,
+          "column": false,
+          "default_kind": "none",
+          "operators": [],
+          "compute": {
+            "$expr": "hop",
+            "field": "customer",
+            "steps": [
+              [
+                "customer",
+                "currency",
+                "text"
+              ]
+            ]
+          },
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
+        },
+        {
           "name": "total",
           "type": "currency",
-          "required": true,
+          "required": false,
           "unique": false,
           "index": false,
           "scale": 6,
-          "minimum": "0.01",
+          "minimum": null,
           "maximum": null,
           "label": "Total",
           "help_text": "",
           "placeholder": "",
           "hidden": false,
-          "read_only": false,
-          "default_kind": "none",
+          "read_only": true,
           "stored": true,
+          "default_kind": "none",
           "operators": [
             "eq",
             "ne",
@@ -547,7 +585,13 @@
             "in",
             "nin"
           ],
-          "compute": null,
+          "compute": {
+            "$expr": "aggregate",
+            "kind": "sum",
+            "table": "lines",
+            "field": "amount",
+            "where": null
+          },
           "initial": null,
           "applies_when": null,
           "required_when": null,
@@ -632,7 +676,7 @@
           "minimum": "0",
           "maximum": "100",
           "label": "Tax rate",
-          "help_text": "Recorded separately; this does not calculate the total.",
+          "help_text": "Recorded separately; the total is the sum of the lines.",
           "placeholder": "",
           "suffix": "%",
           "display_scale": 2,
@@ -732,7 +776,61 @@
             "nin",
             "isnull"
           ],
-          "compute": null,
+          "compute": {
+            "$expr": "when",
+            "args": [
+              {
+                "$expr": "gte",
+                "args": [
+                  {
+                    "$expr": "ref",
+                    "scope": "self",
+                    "field": "amount_paid"
+                  },
+                  {
+                    "$expr": "ref",
+                    "scope": "self",
+                    "field": "total"
+                  }
+                ]
+              },
+              {
+                "$expr": "literal",
+                "type": "text",
+                "value": "paid"
+              },
+              {
+                "$expr": "when",
+                "args": [
+                  {
+                    "$expr": "gt",
+                    "args": [
+                      {
+                        "$expr": "ref",
+                        "scope": "self",
+                        "field": "amount_paid"
+                      },
+                      {
+                        "$expr": "literal",
+                        "type": "decimal",
+                        "value": "0"
+                      }
+                    ]
+                  },
+                  {
+                    "$expr": "literal",
+                    "type": "text",
+                    "value": "partly_paid"
+                  },
+                  {
+                    "$expr": "literal",
+                    "type": "text",
+                    "value": "unpaid"
+                  }
+                ]
+              }
+            ]
+          },
           "initial": null,
           "applies_when": null,
           "required_when": null,
@@ -819,54 +917,18 @@
           }
         },
         "reference": {},
-        "total": {},
+        "currency": {
+          "finite": true
+        },
+        "total": {
+          "finite": true
+        },
         "posting_date": {},
         "status": {},
         "tax_rate": {},
         "amount_paid": {},
         "payment_status": {
-          "compute": {
-            "$expr": "choose",
-            "args": [
-              {
-                "$expr": "gte",
-                "args": [
-                  {
-                    "$expr": "ref",
-                    "args": [
-                      "amount_paid"
-                    ]
-                  },
-                  {
-                    "$expr": "ref",
-                    "args": [
-                      "total"
-                    ]
-                  }
-                ]
-              },
-              "paid",
-              {
-                "$expr": "choose",
-                "args": [
-                  {
-                    "$expr": "gt",
-                    "args": [
-                      {
-                        "$expr": "ref",
-                        "args": [
-                          "amount_paid"
-                        ]
-                      },
-                      0
-                    ]
-                  },
-                  "partly_paid",
-                  "unpaid"
-                ]
-              }
-            ]
-          }
+          "finite": true
         },
         "name": {},
         "title": {}
@@ -875,6 +937,7 @@
         "customer",
         "project",
         "reference",
+        "currency",
         "total",
         "posting_date",
         "status",
@@ -882,7 +945,12 @@
         "amount_paid",
         "payment_status",
         "name",
-        "title"
+        "title",
+        "lines.currency",
+        "lines.item",
+        "lines.qty",
+        "lines.rate",
+        "lines.amount"
       ],
       "sources": {},
       "naming": {
@@ -904,7 +972,21 @@
         }
       ],
       "child_only": false,
-      "children": [],
+      "children": [
+        {
+          "name": "lines",
+          "model": "invoice_lines",
+          "link": "evlet_owner",
+          "label": "Lines",
+          "row_changes": true,
+          "filterable": true,
+          "min_rows": 1,
+          "max_rows": 100,
+          "totals": [
+            "total"
+          ]
+        }
+      ],
       "actions": [
         {
           "name": "post",
@@ -942,7 +1024,530 @@
             "-id"
           ]
         }
-      ]
+      ],
+      "calculation": {
+        "language": "finite-v1",
+        "numeric_profile": "finite40-hu18-v1",
+        "model_schema_hash": "sha256:6bb36a420a69a9c263c643817f5ca99a44661836e27a78df924f0e1f3b6de094",
+        "capabilities": {
+          "currency": "local_universal",
+          "lines[*].currency": "local_universal",
+          "lines[*].amount": "local_universal",
+          "total": "local_universal",
+          "payment_status": "local_universal"
+        },
+        "plan": {
+          "plan_version": 1,
+          "language": "finite-v1",
+          "numeric_profile": "finite40-hu18-v1",
+          "expression_version": 1,
+          "compiler_version": "evlet-finite-1",
+          "root_resource": "invoice",
+          "limits": {
+            "expression_nodes": 128,
+            "expression_depth": 32,
+            "table_depth": 8,
+            "collection_rows": 1000,
+            "document_rows": 5000,
+            "graph_nodes": 50000,
+            "graph_edges": 250000,
+            "evaluation_steps": 1000000,
+            "decimal_text": 128
+          },
+          "tables": {
+            "$root": {
+              "path": [],
+              "model": "invoice",
+              "fields": {
+                "customer": {
+                  "type": "link",
+                  "kind": "link",
+                  "stored": true,
+                  "computed": false,
+                  "required": true,
+                  "scale": 0,
+                  "minimum": "1",
+                  "maximum": null,
+                  "default": null
+                },
+                "project": {
+                  "type": "link",
+                  "kind": "link",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": 0,
+                  "minimum": "1",
+                  "maximum": null,
+                  "default": null
+                },
+                "reference": {
+                  "type": "text",
+                  "kind": "text",
+                  "stored": true,
+                  "computed": false,
+                  "required": true,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "currency": {
+                  "type": "text",
+                  "kind": "text",
+                  "stored": false,
+                  "computed": true,
+                  "required": false,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "total": {
+                  "type": "decimal",
+                  "kind": "currency",
+                  "stored": true,
+                  "computed": true,
+                  "required": false,
+                  "scale": 6,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "posting_date": {
+                  "type": "date",
+                  "kind": "date",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "status": {
+                  "type": "text",
+                  "kind": "select",
+                  "stored": true,
+                  "computed": false,
+                  "required": true,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": {
+                    "value": "draft"
+                  }
+                },
+                "tax_rate": {
+                  "type": "decimal",
+                  "kind": "decimal",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": 4,
+                  "minimum": "0",
+                  "maximum": "100",
+                  "default": {
+                    "value": "0"
+                  }
+                },
+                "amount_paid": {
+                  "type": "decimal",
+                  "kind": "currency",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": 6,
+                  "minimum": "0",
+                  "maximum": null,
+                  "default": {
+                    "value": "0"
+                  }
+                },
+                "payment_status": {
+                  "type": "text",
+                  "kind": "select",
+                  "stored": true,
+                  "computed": true,
+                  "required": false,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "name": {
+                  "type": "text",
+                  "kind": "text",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "title": {
+                  "type": "text",
+                  "kind": "text",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                }
+              },
+              "tables": [
+                "lines"
+              ],
+              "lookups": [
+                {
+                  "model": "customer",
+                  "fields": [
+                    "currency"
+                  ]
+                }
+              ]
+            },
+            "lines[*]": {
+              "path": [
+                "lines"
+              ],
+              "model": "invoice_lines",
+              "fields": {
+                "currency": {
+                  "type": "text",
+                  "kind": "text",
+                  "stored": false,
+                  "computed": true,
+                  "required": false,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "item": {
+                  "type": "text",
+                  "kind": "text",
+                  "stored": true,
+                  "computed": false,
+                  "required": true,
+                  "scale": null,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                },
+                "qty": {
+                  "type": "decimal",
+                  "kind": "decimal",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": 2,
+                  "minimum": "0.01",
+                  "maximum": null,
+                  "default": {
+                    "value": "1"
+                  }
+                },
+                "rate": {
+                  "type": "decimal",
+                  "kind": "currency",
+                  "stored": true,
+                  "computed": false,
+                  "required": false,
+                  "scale": 6,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": {
+                    "value": "0"
+                  }
+                },
+                "amount": {
+                  "type": "decimal",
+                  "kind": "currency",
+                  "stored": true,
+                  "computed": true,
+                  "required": false,
+                  "scale": 6,
+                  "minimum": null,
+                  "maximum": null,
+                  "default": null
+                }
+              },
+              "tables": [],
+              "min_rows": 1,
+              "max_rows": 100
+            }
+          },
+          "fields": [
+            {
+              "target": "currency",
+              "path": [],
+              "field": "currency",
+              "result_type": "text",
+              "target_type": "text",
+              "scale": null,
+              "stored": false,
+              "rounding": null,
+              "expression": {
+                "$expr": "hop",
+                "field": "customer",
+                "steps": [
+                  [
+                    "customer",
+                    "currency",
+                    "text"
+                  ]
+                ]
+              },
+              "reads": [
+                [
+                  "self",
+                  null,
+                  "customer"
+                ],
+                [
+                  "lookup",
+                  "customer",
+                  "currency"
+                ]
+              ]
+            },
+            {
+              "target": "lines[*].currency",
+              "path": [
+                "lines"
+              ],
+              "field": "currency",
+              "result_type": "text",
+              "target_type": "text",
+              "scale": null,
+              "stored": false,
+              "rounding": null,
+              "expression": {
+                "$expr": "ref",
+                "scope": "parent",
+                "field": "currency"
+              },
+              "reads": [
+                [
+                  "parent",
+                  null,
+                  "currency"
+                ]
+              ]
+            },
+            {
+              "target": "lines[*].amount",
+              "path": [
+                "lines"
+              ],
+              "field": "amount",
+              "result_type": "decimal",
+              "target_type": "currency",
+              "scale": 6,
+              "stored": true,
+              "rounding": "half_up",
+              "expression": {
+                "$expr": "mul",
+                "args": [
+                  {
+                    "$expr": "ref",
+                    "scope": "self",
+                    "field": "qty"
+                  },
+                  {
+                    "$expr": "ref",
+                    "scope": "self",
+                    "field": "rate"
+                  }
+                ]
+              },
+              "reads": [
+                [
+                  "self",
+                  null,
+                  "qty"
+                ],
+                [
+                  "self",
+                  null,
+                  "rate"
+                ],
+                [
+                  "self",
+                  null,
+                  "currency"
+                ]
+              ],
+              "currency": {
+                "expression": {
+                  "$expr": "ref",
+                  "scope": "self",
+                  "field": "currency"
+                },
+                "reads": [
+                  [
+                    "self",
+                    null,
+                    "currency"
+                  ]
+                ]
+              }
+            },
+            {
+              "target": "total",
+              "path": [],
+              "field": "total",
+              "result_type": "decimal",
+              "target_type": "currency",
+              "scale": 6,
+              "stored": true,
+              "rounding": "half_up",
+              "expression": {
+                "$expr": "aggregate",
+                "kind": "sum",
+                "table": "lines",
+                "field": "amount",
+                "where": null
+              },
+              "reads": [
+                [
+                  "membership",
+                  "lines",
+                  null
+                ],
+                [
+                  "member",
+                  "lines",
+                  "amount"
+                ],
+                [
+                  "self",
+                  null,
+                  "customer"
+                ],
+                [
+                  "lookup",
+                  "customer",
+                  "currency"
+                ]
+              ],
+              "currency": {
+                "expression": {
+                  "$expr": "hop",
+                  "field": "customer",
+                  "steps": [
+                    [
+                      "customer",
+                      "currency",
+                      "text"
+                    ]
+                  ]
+                },
+                "reads": [
+                  [
+                    "self",
+                    null,
+                    "customer"
+                  ],
+                  [
+                    "lookup",
+                    "customer",
+                    "currency"
+                  ]
+                ]
+              }
+            },
+            {
+              "target": "payment_status",
+              "path": [],
+              "field": "payment_status",
+              "result_type": "text",
+              "target_type": "select",
+              "scale": null,
+              "stored": true,
+              "rounding": null,
+              "expression": {
+                "$expr": "when",
+                "args": [
+                  {
+                    "$expr": "gte",
+                    "args": [
+                      {
+                        "$expr": "ref",
+                        "scope": "self",
+                        "field": "amount_paid"
+                      },
+                      {
+                        "$expr": "ref",
+                        "scope": "self",
+                        "field": "total"
+                      }
+                    ]
+                  },
+                  {
+                    "$expr": "literal",
+                    "type": "text",
+                    "value": "paid"
+                  },
+                  {
+                    "$expr": "when",
+                    "args": [
+                      {
+                        "$expr": "gt",
+                        "args": [
+                          {
+                            "$expr": "ref",
+                            "scope": "self",
+                            "field": "amount_paid"
+                          },
+                          {
+                            "$expr": "literal",
+                            "type": "decimal",
+                            "value": "0"
+                          }
+                        ]
+                      },
+                      {
+                        "$expr": "literal",
+                        "type": "text",
+                        "value": "partly_paid"
+                      },
+                      {
+                        "$expr": "literal",
+                        "type": "text",
+                        "value": "unpaid"
+                      }
+                    ]
+                  }
+                ]
+              },
+              "reads": [
+                [
+                  "self",
+                  null,
+                  "amount_paid"
+                ],
+                [
+                  "self",
+                  null,
+                  "total"
+                ],
+                [
+                  "self",
+                  null,
+                  "amount_paid"
+                ]
+              ]
+            }
+          ],
+          "model_schema_hash": "sha256:7ea5e275fc2975c89219c9b5f3d3a0853a177776dfcbc2715338d855cf3759f3",
+          "source_plan_hash": "sha256:6bb36a420a69a9c263c643817f5ca99a44661836e27a78df924f0e1f3b6de094"
+        }
+      }
     },
     {
       "name": "payment",
@@ -11138,6 +11743,264 @@
           "source_plan_hash": "sha256:0142cf595c19d92a103a3d9da7046024728eb2d94b2a8aa8d7a1dc7f165771c3"
         }
       }
+    },
+    {
+      "name": "invoice_lines",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "currency",
+            "item",
+            "qty",
+            "rate",
+            "amount"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows",
+          "main": true
+        }
+      ],
+      "label": "Invoice line",
+      "plural": "Invoice lines",
+      "description": "",
+      "title_field": "currency",
+      "list_fields": [
+        "id",
+        "item",
+        "qty",
+        "rate",
+        "amount"
+      ],
+      "search_fields": [
+        "currency",
+        "item"
+      ],
+      "open_in": "page",
+      "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
+      "fields": [
+        {
+          "name": "currency",
+          "type": "text",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 3,
+          "label": "Currency",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": false,
+          "column": false,
+          "default_kind": "none",
+          "operators": [],
+          "compute": {
+            "$expr": "ref",
+            "scope": "parent",
+            "field": "currency"
+          },
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
+        },
+        {
+          "name": "item",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 140,
+          "label": "Item",
+          "help_text": "What was sold or done.",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
+        },
+        {
+          "name": "qty",
+          "type": "decimal",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 2,
+          "minimum": "0.01",
+          "maximum": null,
+          "label": "Quantity",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "1.00",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull",
+            "in",
+            "nin"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null
+        },
+        {
+          "name": "rate",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 6,
+          "minimum": null,
+          "maximum": null,
+          "label": "Rate",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "0.00",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull",
+            "in",
+            "nin"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null,
+          "currency_source": {
+            "field": "currency"
+          }
+        },
+        {
+          "name": "amount",
+          "type": "currency",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "scale": 6,
+          "minimum": null,
+          "maximum": null,
+          "label": "Amount",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "stored": true,
+          "default_kind": "none",
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull",
+            "in",
+            "nin"
+          ],
+          "compute": {
+            "$expr": "mul",
+            "args": [
+              {
+                "$expr": "ref",
+                "scope": "self",
+                "field": "qty"
+              },
+              {
+                "$expr": "ref",
+                "scope": "self",
+                "field": "rate"
+              }
+            ]
+          },
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null,
+          "visible_when": null,
+          "currency_source": {
+            "field": "currency"
+          }
+        }
+      ],
+      "document_version": 1,
+      "resource": "Invoice.lines",
+      "behavior": {
+        "currency": {
+          "finite": true
+        },
+        "item": {},
+        "qty": {},
+        "rate": {},
+        "amount": {
+          "finite": true
+        }
+      },
+      "order": [],
+      "sources": {},
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": true,
+      "children": [],
+      "actions": [],
+      "attachments": false
     },
     {
       "name": "item_prices",

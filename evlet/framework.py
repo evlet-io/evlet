@@ -17,6 +17,7 @@ from . import qb
 from .adapter import Column, TableDefinition
 from .migrations import SchemaError
 from .activity import SCALAR_COLUMNS, rename_legacy, stored_table
+from .audit import add_columns as add_time_columns, add_log_hash
 from .auth import ensure_administrator
 from .database import ROW_LIMIT, Session
 from .identity import add_id_guard
@@ -78,10 +79,9 @@ def _record_times(connection, registry):
     """Give every record table the created and modified columns (evlet/audit.py) and fill them: from the
     record's Activity where it has one, otherwise from the time in its id. New tables have them from the
     start, and every app migration batch adds them too; this step covers an instance with nothing to migrate."""
-    from .audit import add_columns
     for table, model in registry.models.items():
         if not getattr(model, '__ledger__', False):  # Ledger tables have no record times (evlet/ledger.py).
-            add_columns(connection, table)
+            add_time_columns(connection, table)
 
 
 def _unsaved_changes(connection):
@@ -217,6 +217,11 @@ def _activity(connection):
 def _prompt_tickets(connection):
     ensure_tickets(connection)
 
+def _audit_chain(connection):
+    """0018: give the Controls audit log its hash column (evlet/audit.py). Earlier rows keep NULL; the chain starts
+    at the first row written after this step. A new database gets the column when startup creates the table."""
+    add_log_hash(connection)
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -248,6 +253,8 @@ STEPS = (
                   _activity),
     FrameworkStep('0017_prompt_tickets', 'Add evlet_prompt_tickets, the single-use tickets of prompts shown over HTTP, '
                   'and drop evlet_operations, the receipts of the removed dialogs and slips.', _prompt_tickets),
+    FrameworkStep('0018_audit_chain', 'Add the hash column of the Controls audit log, so each new row is chained to '
+                  'the row before it and a changed or removed row can be found.', _audit_chain),
 )
 
 LEDGER = TableDefinition('evlet_framework_migrations', (

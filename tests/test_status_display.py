@@ -208,12 +208,14 @@ def test_playground_invoice_shows_a_calculated_payment_status(tmp_path):
     field = next(item for item in invoice['fields'] if item['name'] == 'payment_status')
     assert field['read_only'] and field['colors'] == {'unpaid': 'slate', 'partly_paid': 'amber', 'paid': 'green'}
     customer = c('POST', '/api/customer', {'customer_name': 'Al Sahra'})[1]
-    status, created, _ = c('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-1', 'total': '100.00'})
+    status, created, _ = c('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-1', 'children': {'lines': [{'item': 'Work', 'rate': '100.00'}]}})
     assert status == 201 and created['payment_status'] == 'unpaid'
     url = f'/api/invoice/{created["id"]}'
     assert c('PATCH', url, {'amount_paid': '40.00'}, headers=etag(c, url))[1]['payment_status'] == 'partly_paid'
     assert c('PATCH', url, {'amount_paid': '100.00'}, headers=etag(c, url))[1]['payment_status'] == 'paid'
-    assert c('PATCH', url, {'payment_status': 'unpaid'}, headers=etag(c, url))[0] == 403
+    # A finite-v1 document refuses a write of a calculated field with a field error.
+    status, refused, _ = c('PATCH', url, {'payment_status': 'unpaid'}, headers=etag(c, url))
+    assert status == 422 and 'COMPUTED_FIELD_WRITE' in refused['fields']['payment_status']
 
 
 def test_a_legacy_formula_may_calculate_a_select_but_only_its_choices(tmp_path):

@@ -290,6 +290,36 @@ class ExpenseReceiptRow(Model):
 migrations.append(Migration('0022_expenses', CreateModel(ExpenseRecord), CreateModel(ExpenseSplitRow), CreateModel(ExpenseReceiptRow)))
 
 
+class InvoiceLineRow(Model):
+    """Frozen creation schema of an invoice's Lines table."""
+    storage_name = 'invoice_lines'
+    evlet_owner = Link(Invoice, required=True, index=True)
+    evlet_position = Integer(required=True, default=0)
+    item = Text(required=True, max_length=140)
+    qty = Decimal(scale=2, minimum='0.01', default='1')
+    rate = Currency(default='0.00')
+    amount = Currency()
+
+
+def lines_from_totals(session):
+    """Invoices had a typed total; now it is the sum of their lines. Each invoice from before gets one line for its
+    total (quantity 1), so no total changes. Invoices are finite-v1 documents, which trusted session writes refuse
+    outside a maintenance repair, so the rows are copied in one statement, as stored values: a quantity of 1 at
+    scale 2 is 100 and amounts are millionths (docs/model-engine.md)."""
+    session.connection.execute(
+        'INSERT INTO invoice_lines (evlet_owner, evlet_position, item, qty, rate, amount) '
+        "SELECT id, 0, 'Invoiced amount', 100, total, total FROM invoice "
+        'WHERE total IS NOT NULL AND id NOT IN (SELECT evlet_owner FROM invoice_lines)')
+
+
+# The standard Invoice has lines (item, quantity, rate, amount) and its total is their sum.
+migrations.append(Migration('0023_invoice_lines',
+    CreateModel(InvoiceLineRow),
+    AlterField('invoice', 'total', Currency()),
+    RunData(lines_from_totals),
+))
+
+
 def configured_database():
     path = os.environ.get('EVLET_DATABASE', str(Path(__file__).parent / '.data' / 'playground.sqlite3'))
     return Database(path, registry, migrations=migrations)

@@ -6,6 +6,7 @@ import pytest
 from evlet import Application, Database
 from examples.playground.app import create_app
 from examples.playground.models import Customer, registry
+from test_batch4_invoice_lines import raw_invoice
 
 
 def request(app, method, path, data=None, *, body=None, content_type=b"application/json", chunks=None):
@@ -29,20 +30,20 @@ def request(app, method, path, data=None, *, body=None, content_type=b"applicati
 def test_complete_customer_invoice_payment_api(application):
     assert request(application, "GET", "/health")[:2] == (200, {"status": "ok"})
     status, schema, _ = request(application, "GET", "/api/schema")
-    # Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item with its two tables, and Employee with its
-    # Skills and Skill levels.
-    assert status == 200 and len(schema["models"]) == 15
+    # Customer, Invoice with its Lines, Payment, LedgerEntry, Project, ProjectTask, Item with its two tables, and Employee
+    # with its Skills and Skill levels.
+    assert status == 200 and len(schema["models"]) == 16
     status, customer, headers = request(application, "POST", "/api/customer", {"customer_name": "Studio"})
     assert status == 201
     assert headers[b"location"] == f'/api/customer/{customer["id"]}'.encode()
-    status, invoice, _ = request(application, "POST", "/api/invoice", {
-        "customer": customer["id"], "reference": "INV-1", "total": "19.95",
-    })
-    assert status == 201 and invoice["total"] == "19.95"
+    # An invoice is a finite-v1 document (its total is the sum of its lines): this plain Application has no document
+    # pipeline, so the test writes it as trusted code; the Playground creates them through its routes.
+    invoice = raw_invoice(application.database, customer=customer["id"], reference="INV-1", total="19.95").to_dict()
+    assert invoice["total"] == "19.95"
     status, payment, _ = request(application, "POST", "/api/payment", {
-        "invoice": invoice["id"], "reference": "PAY-1", "amount": "19.95",
+        "invoice": str(invoice["id"]), "reference": "PAY-1", "amount": "19.95",
     })
-    assert status == 201 and payment["invoice"] == invoice["id"]
+    assert status == 201 and payment["invoice"] == str(invoice["id"])
     assert request(application, "GET", f'/api/payment/{payment["id"]}')[1] == payment
     assert request(application, "GET", "/api/customer?limit=1&offset=0")[1]["items"] == [customer]
 
@@ -58,7 +59,7 @@ def test_complete_customer_invoice_payment_api(application):
     ("POST", "/api/customer", {}, 422),
     ("POST", "/api/customer", {"customer_name": "A", "model": "fake"}, 422),
     ("POST", "/api/customer", [], 422),
-    ("POST", "/api/invoice", {"customer": 99, "reference": "A", "total": "1.00"}, 409),
+    ("POST", "/api/payment", {"invoice": 99, "reference": "A", "amount": "1.00"}, 409),
     ("GET", "/api/customer?limit=0", None, 422),
     ("GET", "/api/customer?limit=101", None, 422),
     ("GET", "/api/customer?offset=-1", None, 422),
