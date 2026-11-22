@@ -4,6 +4,20 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Fixed
+
+- **An outcome's new record can be posted back to create it.** 0.4.19 answered `Outcome(new=(model, values))` with
+  the derived (`derived=True` fields and Tables) and calculated values in `new.values`, so a client that sent
+  `new.values` straight back to `POST /api/<model>` or MCP `create_record` was refused with
+  `DERIVED_FIELD_WRITE` (and the formulas with `COMPUTED_FIELD_WRITE`). `new.values` now holds only the fields
+  and rows this user may write, as the record form would send them, and creates the record unchanged; the
+  server works out the derived and calculated values again on save. The whole calculated record, as the form
+  shows it, is in the new `new.calculated` key. Sending a derived or calculated value is still refused, whatever
+  it is. Browser code that read derived values from `new.values` reads `new.calculated`
+  ([docs/prompts.md](docs/prompts.md#outcome)).
+
 ## 0.4.19 (22-11-2026)
 
 ### Upgrading to 0.4.19
@@ -28,7 +42,8 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **A new record that starts from other values arrives calculated.** An action's `Outcome(new=(model, values))`
   now answers the new record as `/api/_draft/<model>` works it out for the signed-in user: fetched fields read from
   the linked record as it is now, `derive()` and the formulas, with the outcome's values kept and only fields the
-  user may read and write. Enquiry → New quotation shows each line's unit steps, rate and amount at once, so a
+  user may read. (Correction: 0.4.19 also put the derived and calculated values in `new.values`, so posting them
+  back to create was refused with `DERIVED_FIELD_WRITE`; 0.4.20 moves them to `new.calculated`, see above.) Enquiry → New quotation shows each line's unit steps, rate and amount at once, so a
   quantity typed next is no longer refused. More > Duplicate, and a new record the address fills in, send the copy
   to `/api/_draft` once as they open on a model with `derive()`; a blank new record sends nothing. Duplicate no
   longer copies fields fetched from a linked record (`initial=F("item.description")`): they are fetched again, so
