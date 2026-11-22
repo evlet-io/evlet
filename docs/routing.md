@@ -90,7 +90,8 @@ the primary host reports `desk` there. `theme` is the signed-in person's theme (
 `dark` or `system`; see [settings.md](settings.md)); the framework's own pages also carry it
 as `data-theme` on `<html>`, and a static or server frontend may read it from the block.
 
-The pages Evlet serves send one Content-Security-Policy. Its `img-src` is `'self' https: data:`,
+The pages Evlet serves send one Content-Security-Policy (`worker-src 'self'` and `manifest-src 'self'` are
+named for the installable desk, [ui.md](ui.md#installation-and-offline-notice)). Its `img-src` is `'self' https: data:`,
 since records may hold `https` image URLs. To allow only some image hosts, set
 `EVLET_IMAGE_ORIGINS` for the server process to exact, lowercase `https` origins separated by
 spaces (`EVLET_IMAGE_ORIGINS="https://cdn.example.com https://img.example.com"`): `img-src`

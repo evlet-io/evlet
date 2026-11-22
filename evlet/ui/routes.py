@@ -24,12 +24,15 @@ def dispatch(application, scope):
         # Other hosts' pages may be opened from a link too: a top-level navigation loads the page shell, whose
         # data comes from /api, where every cross-site request stays rejected.
         if application.business and not application.routes.public(host): application.business.auth.guard(scope, navigation=True)
-        from .serving import static_response
+        from .serving import MANIFEST, manifest_response, static_response
         target = application.routes.redirect(host, path)
         if target:
             return 302, Download(b''), [(b'location', target.encode())]
         found = application.routes.match(host, path)
         if found is None: raise HTTPError(404, 'Route not found')
+        if found[0] == 'evlet.assets' and path == MANIFEST:
+            # Public like every bundled asset: browsers fetch the manifest without the session cookie.
+            return manifest_response(application.name)
         if path.startswith('/assets/'):
             # Model scripts (evlet/ui/scripts.py) load their own folder's files; Evlet's bundled ones are not theirs to import.
             from .scripts import PREFIX, script_response

@@ -39,7 +39,7 @@ def test_the_config_block_still_fills_in_the_version_when_a_caller_leaves_it_out
 
 def test_image_sources_default_to_https_and_can_be_limited_to_listed_origins():
     assert "img-src 'self' https: data:;" in serving.CSP
-    assert serving.content_policy() == "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    assert serving.content_policy() == "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data:; connect-src 'self'; frame-src 'self' blob:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     assert "img-src 'self' data:;" in serving.content_policy('')
     limited = serving.content_policy('https://cdn.example.com  https://img.example.com:8443')
     assert "img-src 'self' https://cdn.example.com https://img.example.com:8443 data:;" in limited and 'https:;' not in limited

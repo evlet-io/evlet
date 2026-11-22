@@ -4,8 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 
 const original = readFileSync(`${process.cwd()}/public/assets/evlet-sw.js`, 'utf8');
 // As vite build writes it (vite.config.js): this build's fingerprinted files.
-const source = original.replace('[/* evlet:build-assets */]', JSON.stringify(['/assets/app-12345678.js', '/assets/index-Ab_c-123.css']));
-function worker(fetch = vi.fn(async () => new Response('public asset'))) {
+const source = original.replace('[/* evlet:build-assets */]', JSON.stringify(['/assets/app-12345678.js', '/assets/index-Ab_c-123.css']))
+  .replace("/* evlet:build */'dev'", "'v1'");
+function worker(fetch = vi.fn(async () => new Response('public asset')), names = ['evlet-static-v1', 'another-app']) {
   const listeners = {}, entries = new Map([['/assets/evlet-cache-state', new Response('enabled')]]);
   // Like the Cache API, a relative key and its absolute URL name the same entry.
   const at = key => new URL(typeof key === 'string' ? key : key.url, 'https://evlet.test').pathname;
@@ -15,7 +16,7 @@ function worker(fetch = vi.fn(async () => new Response('public asset'))) {
     keys: vi.fn(async () => [...entries.keys()].map(url => ({ url: new URL(url, 'https://evlet.test').href }))),
     delete: vi.fn(async key => entries.delete(at(key))),
   };
-  const caches = { open: vi.fn(async () => cache), match: cache.match, keys: vi.fn(async () => ['evlet-static-v1', 'another-app']), delete: vi.fn() };
+  const caches = { open: vi.fn(async () => cache), match: cache.match, keys: vi.fn(async () => names), delete: vi.fn() };
   vm.runInNewContext(source, { URL, Response, fetch, caches, self: { location: { origin: 'https://evlet.test' }, addEventListener: (name, run) => { listeners[name] = run; } } });
   const waits = [];
   const request = (path, options = {}) => {
@@ -126,5 +127,31 @@ describe('opt-in PWA static cache', () => {
     expect(w.request('/assets/app-12345678.js')).toBeUndefined();
     await w.settled();
     expect(w.request('/assets/app-12345678.js')).toBeDefined();
+  });
+
+  it('gives navigations the offline notice while the asset cache is off, never caching them', async () => {
+    const fetch = vi.fn(async () => new Response('authenticated HTML'));
+    const w = worker(fetch);
+    await w.message('EVLET_DISABLE_STATIC_CACHE');
+    expect(await (await w.request('/', { mode: 'navigate' })).text()).toBe('authenticated HTML');
+    w.entries.set('/assets/evlet-offline.html', new Response('generic offline notice'));
+    fetch.mockRejectedValueOnce(new Error('offline'));
+    expect(await (await w.request('/app/customer', { mode: 'navigate' })).text()).toBe('generic offline notice');
+    expect(w.cache.put).not.toHaveBeenCalledWith(expect.stringContaining('/app'), expect.anything());
+    expect(w.request('/custom-site', { mode: 'navigate' })).toBeUndefined();
+    expect(w.request('/api/customer', { mode: 'navigate' })).toBeUndefined();
+  });
+
+  it('keeps the offline notice in a cache of its own build and drops earlier builds\' caches', async () => {
+    const w = worker(undefined, ['evlet-static-v1', 'evlet-static-old', 'evlet-static-control', 'evlet-offline-v1', 'evlet-offline-old', 'another-app']);
+    let pending; w.listeners.install({ waitUntil: value => { pending = value; } }); await pending;
+    expect(w.caches.open).toHaveBeenCalledWith('evlet-offline-v1');
+    expect(w.fetch).toHaveBeenCalledWith('/assets/evlet-offline.html', { credentials: 'omit', cache: 'reload' });
+    w.listeners.activate({ waitUntil: value => { pending = value; } }); await pending;
+    expect(w.caches.delete.mock.calls.map(call => call[0]).sort()).toEqual(['evlet-offline-old', 'evlet-static-old']);
+  });
+
+  it('the source worker carries exactly one build marker for vite build', () => {
+    expect(original.split("/* evlet:build */'dev'")).toHaveLength(2);
   });
 });

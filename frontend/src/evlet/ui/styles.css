@@ -168,6 +168,10 @@ kbd{font-family:var(--font);font-size:11px;font-weight:500;color:var(--fg-3);bac
 .mobile-only{display:none}
 .view{flex:1;overflow:auto;min-height:0;position:relative}
 .page{padding:24px 28px 48px;max-width:1440px;margin:0 auto}
+/* The install offer (app/pwa.ts) above the view, in the list page's gutter; empty once dismissed or installed. */
+.ev-install{flex:none;padding:12px max(var(--page-gutter),env(safe-area-inset-right,0px)) 0 max(var(--page-gutter),env(safe-area-inset-left,0px))}
+.ev-install:empty{display:none}
+.ev-install>.inv-banner{margin:0}
 
 /* ---------- controls ---------- */
 .btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 12px;border-radius:var(--r);font-weight:550;font-size:13px;white-space:nowrap;
