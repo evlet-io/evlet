@@ -874,7 +874,7 @@ the workspace's section titles, parents and children. The Evlet brand is in the 
 - **Children** sit under their parent on a thin vertical guide line, each starting with its icon (its own, or
   its kind's, [Navigation icons](#navigation-icons)) in the parent's colour. The one the page opens exactly
   (a list with its view, tab and filters, or a report) is a white card with a 1 px border, the list card's 6 px
-  corners and light shadow, and a semibold label, and the guide line is marked at its height by a short bar in the parent's colour. A child with a
+  corners and no shadow, and a semibold label, and the guide line is marked at its height by a short bar in the parent's colour. A child with a
   badge shows its [bounded count](#badges) at the end of the row, else its record count when the person
   turned counts on.
 - **New-tab items** (an http(s) address, or `new_tab=True`) end with the open-externally icon.

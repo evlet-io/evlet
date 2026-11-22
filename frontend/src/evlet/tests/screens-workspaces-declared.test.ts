@@ -380,11 +380,12 @@ describe('the navigation icons', () => {
     }
     const active = host.querySelector('.nav-sc.active')!;
     expect(active.firstElementChild!.classList.contains('nav-ic')).toBe(true);
-    // The icon takes the parent's colour; the active row is a white card with a border and the list card's corners
-    // and shadow, marked on the guide line.
+    // The icon takes the parent's colour; the active row is a white card with a border and the list card's corners,
+    // with no drop shadow, marked on the guide line.
     const css = node.getBuiltinModule('node:fs').readFileSync(`${node.cwd()}/src/evlet/ui/styles.css`, 'utf8');
     expect(css).toContain('.nav-sc .nav-ic{color:var(--nav-tint,var(--fg-3))}');
-    expect(css).toContain('.sidebar .nav-item.active{background:var(--side-on);color:var(--fg);border-radius:var(--r-card);box-shadow:inset 0 0 0 1px var(--border-strong),var(--shadow-sm)}');
+    expect(css).toContain('.sidebar .nav-item.active{background:var(--side-on);color:var(--fg);border-radius:var(--r-card);box-shadow:inset 0 0 0 1px var(--border-strong)}');
+    expect(css).not.toMatch(/\.sidebar \.nav-item\.active{[^}]*shadow-sm/);
     expect(css).toContain('.nav-item.nav-sc.active::before{');
     expect((active.closest('.nav-sec') as HTMLElement).style.getPropertyValue('--nav-tint')).toMatch(/^var\(--t-[a-z]+\)$/);
     // Collapsed: the same icons, each with its name in a tooltip.
