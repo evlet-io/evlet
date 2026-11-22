@@ -1,5 +1,6 @@
-"""Model build steps: higher layers register the parts of Model and Registry construction they own."""
+"""Model build steps: evlet/__init__.py gives core the parts of Model and Registry construction higher layers own."""
 
+import dataclasses
 import subprocess
 import sys
 import textwrap
@@ -17,11 +18,14 @@ ORDER = ('ledger_declared', 'ledger_class', 'statemanager', 'activity_declared',
 @pytest.fixture
 def calls(monkeypatch):
     seen = []
-    for name, function in list(models.BUILD_STEPS.items()):
-        def recorded(*args, name=name, function=function, **kwargs):
+
+    def recorded(name, function):
+        def call(*args, **kwargs):
             seen.append(name)
             return function(*args, **kwargs)
-        monkeypatch.setitem(models.BUILD_STEPS, name, recorded)
+        return call
+    wrapped = {name: recorded(name, getattr(models.STEPS, name)) for name in ORDER}
+    monkeypatch.setattr(models, 'STEPS', dataclasses.replace(models.STEPS, **wrapped))
     return seen
 
 
@@ -29,9 +33,11 @@ def first_calls(names):
     return list(dict.fromkeys(names))
 
 
-def test_the_build_order_is_fixed_and_every_step_is_registered():
-    assert models.BUILD_ORDER == ORDER
-    assert set(models.BUILD_STEPS) == set(ORDER)
+def test_the_build_order_is_fixed_and_every_step_is_set():
+    assert tuple(field.name for field in dataclasses.fields(models.BuildSteps)) == ORDER
+    assert all(callable(getattr(models.STEPS, name)) for name in ORDER)
+    with pytest.raises(TypeError):
+        models.BuildSteps(**{name: print for name in ORDER[:-1]})  # every step is named
 
 
 def test_class_steps_run_in_order(calls):
@@ -62,22 +68,17 @@ def test_registry_steps_run_in_order(calls):
     assert registry.posted_reads and registry.kept_plans and registry.activities is not None
 
 
-def test_an_unregistered_step_says_what_to_do(monkeypatch):
-    monkeypatch.delitem(models.BUILD_STEPS, 'meaning')
-    with pytest.raises(RuntimeError, match='meaning is not registered: import evlet'):
-        Registry(Account)
-    with pytest.raises(ValueError, match='Unknown model build step'):
-        models.build_step('unknown')
-
-
-def test_a_model_defined_straight_after_import_evlet_gets_every_step():
-    script = textwrap.dedent('''
+@pytest.mark.parametrize('first_import', ['import evlet', 'import evlet.models'])
+def test_a_model_defined_straight_after_import_gets_every_step(first_import):
+    # Importing a submodule runs evlet/__init__.py first, so the steps are set whichever import comes first.
+    script = first_import + textwrap.dedent('''
+        import dataclasses
         import evlet
         from evlet import models
-        assert set(models.BUILD_STEPS) == set(models.BUILD_ORDER), set(models.BUILD_ORDER) - set(models.BUILD_STEPS)
         seen = []
-        for name, function in list(models.BUILD_STEPS.items()):
-            models.BUILD_STEPS[name] = lambda *args, name=name, function=function: (seen.append(name), function(*args))[1]
+        wrap = lambda name, function: lambda *args: (seen.append(name), function(*args))[1]
+        models.STEPS = dataclasses.replace(models.STEPS, **{field.name: wrap(field.name, getattr(models.STEPS, field.name))
+                                                            for field in dataclasses.fields(models.STEPS)})
 
         class Entry(evlet.Model):
             class Meta:
@@ -92,7 +93,7 @@ def test_a_model_defined_straight_after_import_evlet_gets_every_step():
                                  rules=(evlet.State.Rule('draft', 'done', 'Done'),))
 
         evlet.Registry(Entry, Note).schema()
-        missing = set(models.BUILD_ORDER) - set(seen) - {'kept_plan', 'posted_reads'}  # need a plan or a release step
+        missing = {field.name for field in dataclasses.fields(models.STEPS)} - set(seen) - {'kept_plan', 'posted_reads'}  # need a plan or a release step
         assert not missing, missing
         print('ok')
     ''')

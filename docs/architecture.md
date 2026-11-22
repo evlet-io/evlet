@@ -120,9 +120,10 @@ helpers in `evlet/cli/project.py`.
 
 Building a model class or a `Registry` runs steps that belong to higher layers (ledger options,
 state manager hooks, rule guards, sequences, measures, activities, API access). `evlet/models.py`
-lists them in `BUILD_ORDER`, the order they run in; each owning module registers its function with
-`@build_step(name)`, and `evlet/__init__.py` imports those modules before any model class exists. Optional
-subsystems without build-step registration load on first public-export access; `__all__`,
+names them as the fields of `BuildSteps`, in the order they run, and calls them through `models.STEPS`;
+`evlet/__init__.py`, which sits above every layer and runs before any submodule import completes, imports the
+owning modules and sets `models.STEPS` to their functions before any model class exists. Optional
+subsystems that supply no build step load on first public-export access; `__all__`,
 `dir(evlet)` and the original exported objects remain stable.
 
 ## API and data flow

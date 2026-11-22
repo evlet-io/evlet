@@ -3,13 +3,13 @@ import subprocess
 import sys
 
 
-def test_model_build_registration_precedes_optional_exports():
+def test_model_build_steps_precede_optional_exports():
     code = '''
 import sys
 from evlet import Model, Text, Registry
 import evlet
-from evlet.models import BUILD_ORDER, BUILD_STEPS
-assert set(BUILD_ORDER) == set(BUILD_STEPS)
+from evlet.models import STEPS
+assert STEPS is not None
 assert 'evlet.eva' not in sys.modules and 'evlet.printing' not in sys.modules
 class Item(Model):
     title = Text(required=True)
