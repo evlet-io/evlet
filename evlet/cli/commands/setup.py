@@ -33,6 +33,7 @@ def add_setup(commands):
     setup.add_argument('--port', type=int, default=8000, help='Port evlet dev or the service listens on (default: 8000)')
     setup.add_argument('--ip', action='append', help="With --host: this server's public address, for an exact DNS match; optional, kept in deploy/server.json")
     setup.add_argument('--apply', action='store_true', help='With --host: run the printed sudo steps; each is shown first')
+    setup.add_argument('--require-hashes', action='store_true', help='Install app dependencies only from the requirements.lock (with hashes) each app ships')
     setup.add_argument('--service-user', metavar='USER', help='With --host: run the service as this unprivileged account instead of you (also EVLET_SERVICE_USER)')
 
 
@@ -48,6 +49,9 @@ def run_setup(args, context):
               '&& evlet dev --instance acme')
         return
     site.check(args)
+    if args.require_hashes:
+        import os
+        os.environ['EVLET_REQUIRE_HASHES'] = '1'  # evlet install and the re-run in .venv read it too
     root = site.project(directory, framework=args.framework)
     if context.console:
         # Continue inside the project's own .venv; the re-run skips the project step.

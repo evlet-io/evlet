@@ -282,6 +282,9 @@ or spread sign-in attempts over made-up networks. Trust loopback only while a re
 same server is the only way in, keep other accounts off a server that runs Evlet behind loopback
 trust, and leave `trusted_proxies` empty when nothing proxies (as `evlet dev` and a plain
 `evlet serve` do). A proxy on another machine should be named by its own address instead.
+`evlet serve` and `evlet dev` also keep uvicorn's own forwarded-header handling off (uvicorn
+otherwise trusts `127.0.0.1` by default), so only `trusted_proxies` decides. Trust in loopback is
+always written explicitly: by `evlet setup --host` into `config.py`, or by you.
 
 The Playground has a working example: `examples/playground/portal` is a static portal
 served at `http://portal.localhost:8000` (and `/portal`), limited to customers and

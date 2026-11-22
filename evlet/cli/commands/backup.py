@@ -14,8 +14,11 @@ def add_backup(commands):
 
 def run_backup(args, context):
     from ..backup import backup
+    from ..site import as_state_owner
     root = context.root
     name = args.instance or choose_instance(root, 'backup')
+    if as_state_owner(root, name, context.values):
+        return
     written = backup(root, name, args.to, with_files=args.with_files)
     print('Backup: ' + str(written[0]))
     print('With: ' + ', '.join(item.name for item in written[1:]))
@@ -35,8 +38,11 @@ def add_restore(commands):
 
 def run_restore(args, context):
     from ..backup import restore
+    from ..site import as_state_owner
     root = context.root
     name = args.instance or choose_instance(root, 'restore')
+    if as_state_owner(root, name, context.values):
+        return
     if args.yes is not None:
         if args.yes != name:
             raise ValueError(f'--yes must name the instance being restored: {name}')

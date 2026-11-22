@@ -184,7 +184,7 @@ def proxy_files(root, name, app, port, user=None):
     from . import proxy, site
     trusted = app.business.auth.trusted_proxies
     account, chosen = site.service_account(name, user)
-    texts = {'unit': proxy.systemd_unit(root, name, port, account),
+    texts = {'unit': proxy.systemd_unit(root, name, port, account, dedicated=site.dedicated(account)),
              'site': proxy.caddy(app.routes, port, name, trusted, global_options=False), 'options': proxy.GLOBAL_OPTIONS}
     (root / 'deploy').mkdir(mode=0o755, exist_ok=True)
     written = [proxy.write(root / 'deploy' / f'evlet-{name}.caddy', texts['site']),

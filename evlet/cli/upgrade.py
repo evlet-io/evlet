@@ -45,6 +45,25 @@ for step in steps:
     print(step.name + ': ' + step.summary)
 """
 
+# With a dedicated service account, the deploy user builds the apps for the staged release first: the builds
+# are code, which the service account only reads.
+BUILD = """from pathlib import Path
+import sys
+from evlet.builds import prepare
+from evlet.instances import read_lock
+from evlet.packages import resolve_packages
+root = Path(sys.argv[1])
+prepare(root, resolve_packages(root, sorted(read_lock(root / 'instances' / sys.argv[2])['apps'])))
+"""
+
+
+def owned(owner, command):
+    """command as owner, through sudo -u, when a dedicated service account owns the instance's data.
+
+    Its plan, backup, migration and recovery then run as that account (each command is shown first);
+    stopping and restarting the service stays with the deploy user's sudo."""
+    return ['sudo', '-u', owner, *command] if owner else command
+
 
 def upgrade(root, name, *, to=None, service=None, yes=False, all_instances=False, unit_dir=None, run=None, which=None,
             interactive=None, ask=None, out=print):
@@ -103,6 +122,10 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
     python = str(python_in(root))
     evlet = [python, '-P', '-m', 'evlet', '--project', str(root)]
     step = _stepper(run, out)
+    owners = {item: site.state_owner(root, item) for item in names}
+
+    def as_owner(item, command):
+        return owned(owners[item], command)
 
     live = root / '.venv'
     if live.is_symlink():
@@ -113,6 +136,8 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
     with tempfile.TemporaryDirectory(prefix='.evlet-upgrade-', dir=root) as temporary:
         staging = Path(temporary)
         staged = staging / '.venv'
+        if any(owners.values()):
+            os.chmod(staging, 0o755)  # the service account runs the staged plan
         shutil.copytree(live, staged, symlinks=True)
         staged_python = str(python_in(staging))
         if step([staged_python, '-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', requirement]) is None:
@@ -126,7 +151,12 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
             out(f'Evlet {before} is already the newest release allowed by {requirement}. Nothing else was done.')
             return True
         for item in names:
-            if step([staged_python, '-P', '-c', PLAN, str(root), item]) is None:
+            if owners[item]:
+                if step([staged_python, '-P', '-c', BUILD, str(root), item]) is None:
+                    out(f'The build for {item} failed. The project environment and services were left unchanged.')
+                    return False
+                site.share_builds(root)
+            if step(as_owner(item, [staged_python, '-P', '-c', PLAN, str(root), item])) is None:
                 out(f'The migration plan for {item} failed. The project environment and services were left unchanged.')
                 return False
         if not yes and (ask or input)(f'Stop, back up, migrate and restart {", ".join(names)} on Evlet {after}? [y/N] ').strip().lower() not in ('y', 'yes'):
@@ -142,7 +172,7 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
             stopped.append(item)
         backups = {}
         for item in names:
-            backup = _backup_line(step([*evlet, 'backup', '--instance', item], capture=True))
+            backup = _backup_line(step(as_owner(item, [*evlet, 'backup', '--instance', item]), capture=True))
             if not backup:
                 for previous_name in stopped:
                     step(['sudo', 'systemctl', 'start', services[previous_name]])
@@ -152,7 +182,7 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
         previous = root / ('.venv-before-' + staging.name.removeprefix('.evlet-upgrade-'))
         undo = [*(f'sudo systemctl stop {services[item]}' for item in served),
                 f'if [ -d {shlex.quote(str(previous))} ]; then if [ -e {shlex.quote(str(live))} ]; then mv {shlex.quote(str(live))} {shlex.quote(str(staging.with_name(staging.name + "-failed")))}; fi; mv {shlex.quote(str(previous))} {shlex.quote(str(live))}; fi',
-                *(f'{shlex.quote(python)} -P -m evlet --project {shlex.quote(str(root))} restore {shlex.quote(backups[item])} --instance {item} --yes {item}' for item in names),
+                *(shlex.join(as_owner(item, [*evlet, 'restore', backups[item], '--instance', item, '--yes', item])) for item in names),
                 f'rm {shlex.quote(str(journal))}',
                 *(f'sudo systemctl start {services[item]}' for item in served)]
         record = {'version': 1, 'before': before, 'after': after, 'previous_environment': str(previous),
@@ -177,7 +207,7 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
                     sync_directory(root)
                     raise
             for item in names:
-                if step([*evlet, 'migrate', item]) is None:
+                if step(as_owner(item, [*evlet, 'migrate', item])) is None:
                     raise RuntimeError(f'The migration for {item} failed')
             # Every database matches the new release before any service is allowed back up.
             for item in served:
@@ -263,6 +293,7 @@ def _from_source(root, name, names, source, *, service, yes, unit_dir, run, whic
             return False
     step = _stepper(run or subprocess.run, out)
     evlet = [str(python_in(root)), '-P', '-m', 'evlet', '--project', str(root)]
+    owners = {item: site.state_owner(root, item) for item in names}
     stopped = []
 
     def start_again():
@@ -277,13 +308,13 @@ def _from_source(root, name, names, source, *, service, yes, unit_dir, run, whic
         stopped.append(item)
     backups = {}
     for item in names:
-        backups[item] = _backup_line(step([*evlet, 'backup', '--instance', item], capture=True))
+        backups[item] = _backup_line(step(owned(owners[item], [*evlet, 'backup', '--instance', item]), capture=True))
         if not backups[item]:
             start_again()
             out(f'The backup for {item} failed. No database was migrated.')
             return False
     for item in names:
-        if step([*evlet, 'migrate', item]) is None:
+        if step(owned(owners[item], [*evlet, 'migrate', item])) is None:
             out(f'The migration for {item} failed. The upgrade stopped here' + (' with the services stopped' if stopped else '') + '. '
                 'To go back, restore the backups: ' + '; '.join(f'evlet restore {backups[each]} --instance {each}' for each in names) + '.')
             return False

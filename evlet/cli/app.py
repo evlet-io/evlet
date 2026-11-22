@@ -52,20 +52,51 @@ def fetch_app(root, url, *, return_package=False):
     return f'Fetched {package.name} {package.version} at {revision}\nDeclared dependencies: {dependencies}\nStatic validation passed; no app code was run. Install only code you trust.'
 
 
-def get_app(root, url, *, trust=False, confirm=None):
+def get_app(root, url, *, trust=False, confirm=None, require_hashes=None):
     """evlet app --get: fetch statically, then prepare and build only after explicit trust."""
     from ..builds import prepare
     package = fetch_app(root, url, return_package=True)
     print(f'Fetched {package.name} {package.version} at {package.locked()["commit"]}; no app code has run')
     if not trust and not (confirm and confirm('Trust and prepare ' + package.name + ' from ' + url + ' and its declared dependencies?')):
         raise ValueError('Fetched but not built: review source, then run evlet build --trust')
-    _, manifest = prepare(root, prepare_dependencies(root, [package.name]))
+    _, manifest = prepare(root, prepare_dependencies(root, [package.name], require_hashes=require_hashes))
     print('Built generation: ' + manifest['fingerprint'])
     return package
 
 
-def prepare_dependencies(root, names):
-    """Run reviewed package hooks only in this project's environment."""
+# An app may ship this pip requirements file, every line pinned with == and --hash=sha256:..., for --require-hashes.
+LOCK_FILE = 'requirements.lock'
+
+
+def pinned(requirement):
+    """Whether a declared requirement names one exact version (== without a wildcard, or ===)."""
+    return any(spec.operator == '===' or (spec.operator == '==' and not spec.version.endswith('*')) for spec in requirement.specifier)
+
+
+def require_hashes_wanted(value=None):
+    """--require-hashes, or EVLET_REQUIRE_HASHES=1 for commands without the option (evlet install and migrate)."""
+    if value is not None:
+        return bool(value)
+    return os.environ.get('EVLET_REQUIRE_HASHES', '').strip().lower() in ('1', 'true', 'yes')
+
+
+def unpinned_warning(owners):
+    """One warning naming the apps whose third-party dependencies pip resolves at install time, or None."""
+    loose = {app: [str(item) for item in items if not pinned(item)] for app, items in owners.items()}
+    loose = {app: items for app, items in loose.items() if items}
+    if not loose:
+        return None
+    return ('Warning: unpinned app dependencies: ' + '; '.join(f'{app}: ' + ', '.join(items) for app, items in sorted(loose.items()))
+            + '. pip installs whatever these ranges allow today, so two servers can run different third-party code. '
+            f'Ship {LOCK_FILE} with hashes in the app and install with --require-hashes (see docs/production-operations.md).')
+
+
+def prepare_dependencies(root, names, *, require_hashes=None):
+    """Run reviewed package hooks only in this project's environment.
+
+    Third-party dependencies are installed from the declared ranges, with a warning for each unpinned one.
+    require_hashes (or EVLET_REQUIRE_HASHES=1) installs them only from the requirements.lock each app ships,
+    with pip --require-hashes --no-deps, so exactly the reviewed files are installed."""
     import sys
     from importlib import metadata
     from packaging.utils import canonicalize_name
@@ -74,8 +105,9 @@ def prepare_dependencies(root, names):
         # Existing projects keep their explicit environment; never pip into it implicitly.
         from ..packages import resolve_packages
         return resolve_packages(root, names)
+    require_hashes = require_hashes_wanted(require_hashes)
     available = {canonicalize_name(path.name): path for path in (root / 'apps').iterdir() if path.is_dir() and not path.name.startswith('.')}
-    packages, requirements, visiting = {}, {}, set()
+    packages, requirements, owners, visiting = {}, {}, {}, set()
     def visit(name):
         if name in visiting: raise ValueError('Circular app dependency involving ' + name)
         if name in packages: return
@@ -91,20 +123,51 @@ def prepare_dependencies(root, names):
                 try:
                     if not requirement.specifier.contains(metadata.version(requirement.name), prereleases=True): raise ValueError('Version mismatch')
                     check_extras(requirement)
-                except (metadata.PackageNotFoundError, ValueError): requirements[str(requirement)] = requirement
+                except (metadata.PackageNotFoundError, ValueError):
+                    requirements[str(requirement)] = requirement
+                    owners.setdefault(package.name, []).append(requirement)
         visiting.remove(name)
         packages[name] = package
     for name in names: visit(name)
+    from ..packages import owned_distribution
+    editable = [package for package in packages.values()
+                if not (owned_distribution(package.name, package.path) and metadata.version(package.name) == package.version)]
+    if requirements and require_hashes:
+        missing = sorted(app for app in owners if not (packages[app].path / LOCK_FILE).is_file())
+        if missing:
+            raise ValueError(f'--require-hashes needs a {LOCK_FILE} with hashes in ' + ', '.join(missing)
+                             + ' for: ' + ', '.join(str(item) for app in missing for item in owners[app]) + '. Nothing was installed')
+    elif requirements:
+        warning = unpinned_warning(owners)
+        if warning:
+            print(warning, file=sys.stderr)
+    if not (requirements or editable):
+        # Nothing to install: leave .venv untouched (a dedicated service account may only read it).
+        from ..packages import resolve_packages
+        return resolve_packages(root, names)
     with tempfile.TemporaryDirectory(prefix='.dependencies-', dir=root / '.venv') as directory:
         constraints = Path(directory) / 'constraints.txt'
         constraints.write_text('evlet==' + metadata.version('evlet') + '\n')
-        if requirements:
-            result = subprocess.run([str(python_in(root)), '-m', 'pip', 'install', '--disable-pip-version-check', '-c', str(constraints), *requirements], capture_output=True, text=True)
+        pip = [str(python_in(root)), '-m', 'pip', 'install', '--disable-pip-version-check']
+        if requirements and require_hashes:
+            for app in sorted(owners):
+                # Every file is named with its hash and dependencies are not resolved: the lock is the whole set.
+                result = subprocess.run([*pip, '--require-hashes', '--no-deps', '-r', str(packages[app].path / LOCK_FILE)], capture_output=True, text=True)
+                if result.returncode: raise ValueError(f'Installing {app}/{LOCK_FILE} with --require-hashes failed: ' + result.stderr.strip())
+            from importlib import invalidate_caches
+            invalidate_caches()
+            for requirement in requirements.values():
+                try:
+                    found = metadata.version(requirement.name)
+                except metadata.PackageNotFoundError:
+                    found = None
+                if found is None or not requirement.specifier.contains(found, prereleases=True):
+                    raise ValueError(f'The {LOCK_FILE} files do not provide {requirement} (installed: {found or "none"})')
+        elif requirements:
+            result = subprocess.run([*pip, '-c', str(constraints), *requirements], capture_output=True, text=True)
             if result.returncode: raise ValueError('Project dependency preparation failed: ' + result.stderr.strip())
-        for package in packages.values():
-            from ..packages import owned_distribution
-            if owned_distribution(package.name, package.path) and metadata.version(package.name) == package.version: continue
-            result = subprocess.run([str(python_in(root)), '-m', 'pip', 'install', '--disable-pip-version-check', '--no-deps', '-e', str(package.path)], capture_output=True, text=True)
+        for package in editable:
+            result = subprocess.run([*pip, '--no-deps', '-e', str(package.path)], capture_output=True, text=True)
             if result.returncode: raise ValueError('App package preparation failed: ' + result.stderr.strip())
     from ..packages import resolve_packages
     return resolve_packages(root, names)

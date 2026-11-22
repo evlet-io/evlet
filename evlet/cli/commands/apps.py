@@ -6,6 +6,7 @@ def add_app(commands):
     app.add_argument('name', nargs='?')
     app.add_argument('--legacy', action='store_true', help='Create the older nested AppDefinition layout (kept for existing apps)')
     app.add_argument('--trust', action='store_true', help='Trust acquired application and dependency build code')
+    app.add_argument('--require-hashes', action='store_true', help='Install third-party dependencies only from the requirements.lock (pinned, with hashes) each app ships; also EVLET_REQUIRE_HASHES=1')
     group = app.add_mutually_exclusive_group()
     group.add_argument('--get', metavar='GIT_URL', help='Statically fetch, then prepare and build after explicit trust')
     group.add_argument('--list', action='store_true')
@@ -23,7 +24,7 @@ def run_app(args, context):
                 package = read_package(path)
                 print(f'{package.name}\t{package.version}\t{package.title}')
     elif args.get:
-        get_app(root, args.get, trust=args.trust, confirm=context.confirm)
+        get_app(root, args.get, trust=args.trust, confirm=context.confirm, require_hashes=args.require_hashes or None)
     elif args.name:
         print(f'App created: {create_app(root, args.name, legacy=args.legacy)}')
     else:
@@ -33,6 +34,7 @@ def run_app(args, context):
 def add_build(commands):
     build = commands.add_parser('build', help='Build a versioned application generation without activating or migrating it')
     build.add_argument('--trust', action='store_true', help='Trust application imports and build code')
+    build.add_argument('--require-hashes', action='store_true', help='Install third-party dependencies only from the requirements.lock (pinned, with hashes) each app ships; also EVLET_REQUIRE_HASHES=1')
 
 
 def run_build(args, context):
@@ -42,7 +44,7 @@ def run_build(args, context):
     names = [path.name for path in sorted((root / 'apps').iterdir()) if path.is_dir() and not path.name.startswith('.')]
     if not args.trust and not context.confirm('Trust and build these local applications: ' + ', '.join(names) + '?'):
         raise ValueError('Build requires explicit trust; review source, then use --trust')
-    packages = prepare_dependencies(root, names)
+    packages = prepare_dependencies(root, names, require_hashes=args.require_hashes or None)
     _, manifest = prepare(root, packages)
     print('Built generation: ' + manifest['fingerprint'])
 

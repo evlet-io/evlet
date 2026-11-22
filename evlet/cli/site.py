@@ -223,13 +223,148 @@ def account_note(user, chosen):
     return None
 
 
-def privileged_steps(root, name, texts, restart=False):
+def dedicated(user):
+    """Whether the service runs as an account other than the deploy user running this command."""
+    import getpass
+    return user != getpass.getuser()
+
+
+# What the service writes in instances/<name>/: everything else there (config.py, routes.py) stays the deploy user's.
+STATE = ('data', 'files', 'secret.key', 'apps.lock', '.install-journal.json')
+LOCK = '.evlet.lock'
+NOLOGIN = '/usr/sbin/nologin'
+
+
+def account_exists(user):
+    import pwd
+    try:
+        pwd.getpwnam(user)
+    except KeyError:
+        return False
+    return True
+
+
+def ownership_steps(root, name, user, *, running=False):
+    """The sudo steps that give a dedicated service account its instance state and nothing else.
+
+    The account is created when missing (a system account with no home and no login shell). It owns data/,
+    files/, secret.key and apps.lock; the deploy user keeps the code, .venv/, config.py and routes.py. The
+    instance directory becomes group-writable for the account with the sticky bit, so the service can create
+    its own files (a new secret.key) but cannot replace or remove files it does not own. .evlet.lock is shared
+    by both accounts, so a deploy-user evlet upgrade can still wait for the server. running stops the service
+    first, so no process of the old account writes files the new one could not open."""
+    import getpass
+    import grp
+    import os
+    if getpass.getuser() == user:
+        raise ValueError('The dedicated service account must differ from the deploy user running this command')
+    path = child(root, 'instances', name)
+    for directory in ('data', 'files'):
+        (path / directory).mkdir(mode=0o700, exist_ok=True)
+    lock = path / LOCK
+    if not lock.exists():
+        os.close(os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0), 0o600))
+    group = grp.getgrgid(os.getegid()).gr_name
+    commands = []
+    if not account_exists(user):
+        commands.append(['sudo', 'useradd', '--system', '--user-group', '--no-create-home', '--home-dir', '/nonexistent',
+                         '--shell', NOLOGIN, user])
+    if running:
+        commands.append(['sudo', 'systemctl', 'stop', f'evlet-{name}'])
+    state = [str(path / item) for item in STATE if (path / item).exists()]
+    commands += [
+        ['sudo', 'chown', '-R', f'{user}:{user}', *state],
+        ['sudo', 'chmod', '-R', 'go-rwx', *(item for item in state if not item.endswith('apps.lock'))],
+        # apps.lock names the installed apps, nothing secret: the deploy user's commands read it.
+        *([['sudo', 'chmod', '644', str(path / 'apps.lock')]] if (path / 'apps.lock').exists() else []),
+        ['sudo', 'chown', f'{user}:{group}', str(lock)],
+        ['sudo', 'chmod', '660', str(lock)],
+        ['sudo', 'chgrp', user, str(path)],
+        ['sudo', 'chmod', '1770', str(path)],
+        # The service reads its configuration and the app builds, which the deploy user keeps owning.
+        *([['chmod', '-R', 'a+rX', str(root / '.evlet')]] if (root / '.evlet').is_dir() else []),
+        ['chmod', '644', *(str(path / item) for item in ('config.py', 'routes.py') if (path / item).is_file())],
+    ]
+    return commands
+
+
+def share_builds(root):
+    """Let a dedicated service account read the app builds (root/.evlet), which the deploy user writes.
+
+    Builds are copies of apps/, made private when they are written; the service needs to read them, never
+    to change them."""
+    import os
+    import stat
+    base = Path(root) / '.evlet'
+    if not base.is_dir() or base.is_symlink():
+        return
+    for path in (base, *base.rglob('*')):
+        if path.is_symlink():
+            continue
+        try:
+            info = path.stat()
+            wanted = stat.S_IMODE(info.st_mode) | (0o055 if path.is_dir() else 0o044)
+            if wanted != stat.S_IMODE(info.st_mode):
+                os.chmod(path, wanted)
+        except OSError:
+            continue
+
+
+def state_owner(root, name):
+    """The account that owns the instance's data/ when it is not the one running this command, else None."""
+    import os
+    import pwd
+    try:
+        uid = (child(root, 'instances', name) / 'data').stat().st_uid
+    except (OSError, ValueError):
+        return None
+    # A service account is never root (service_account refuses it), so root-owned state is not handed over.
+    if not hasattr(os, 'geteuid') or uid in (0, os.geteuid()):
+        return None
+    try:
+        return pwd.getpwuid(uid).pw_name
+    except KeyError:
+        return None
+
+
+def owner_command(root, owner, values):
+    """The same evlet command, run as owner with sudo -u from the project's .venv."""
+    from .setup import python_in
+    return ['sudo', '-u', owner, str(python_in(root)), '-P', '-m', 'evlet', '--project', str(root), *values]
+
+
+def as_state_owner(root, name, values, *, run=None, which=None):
+    """Run this command as the account that owns the instance's state, when that is another account.
+
+    A dedicated service account owns instances/<name>/data and the rest of the state, so the deploy user's
+    migrate, backup, restore, users set-password and secrets rotate run their whole command again as that
+    account: the command is shown first and sudo asks for the deploy user's password. Returns True when it ran
+    there (the caller then stops); raises with the exact command when this machine has no sudo."""
+    import shutil
+    import sys
+    owner = state_owner(root, name)
+    if owner is None:
+        return False
+    share_builds(root)
+    command = owner_command(root, owner, values)
+    if (which or shutil.which)('sudo') is None:
+        raise ValueError(f'instances/{name} belongs to {owner}. Run the command as that account:\n    ' + shlex.join(command))
+    print(f'instances/{name} belongs to {owner}; running the command as {owner}:\n$ ' + shlex.join(command), file=sys.stderr)
+    sys.stdout.flush()
+    result = (run or subprocess.run)(command)
+    if result.returncode:
+        raise SystemExit(result.returncode)
+    return True
+
+
+def privileged_steps(root, name, texts, restart=False, owner=None):
     """The sudo commands that install the service and the Caddy site. Shown first; run only with --apply.
 
     texts holds the unit, site and global options rendered by this command (keys unit, site, options). --apply
     installs that text through standard input, never a file from deploy/, which the service account may be able to
     rewrite. Every step runs again on each --apply, so a file that changed since the last install is replaced and
-    Caddy reloads it. restart also restarts a service that was already running with an older unit."""
+    Caddy reloads it. restart also restarts a service that was already running with an older unit. owner, a
+    dedicated service account, adds the steps that create it and hand it the instance state (ownership_steps)."""
     deploy = root / 'deploy'
     unit, site = installed(name)
     options = Path(CADDY_DIR) / GLOBAL_FILE
@@ -239,6 +374,7 @@ def privileged_steps(root, name, texts, restart=False):
         ('install', str(deploy / GLOBAL_FILE), str(options), texts['options']),
         ('import', str(site)),
         ('import-first', str(options)),
+        *(ownership_steps(root, name, owner, running=unit.exists()) if owner else []),
         ['sudo', 'systemctl', 'daemon-reload'],
         ['sudo', 'systemctl', 'enable', '--now', f'evlet-{name}'],
         *([['sudo', 'systemctl', 'restart', f'evlet-{name}']] if restart else []),
@@ -345,8 +481,13 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
     from . import proxy
     from .instance import set_domain
     path = child(root, 'instances', name)
+    owner = state_owner(root, name)
     with step('administrator'):
-        if has_users(path):
+        if owner:
+            # An earlier --apply handed the state to the service account, after the password was set.
+            print(f'Administrator: instances/{name} belongs to {owner}. To set a password: '
+                  + shlex.join(owner_command(root, owner, ['users', 'set-password', name, 'admin'])))
+        elif has_users(path):
             print(f'Administrator exists. If nobody knows its password, run evlet users set-password {name} admin')
         else:
             password = (ask or ask_admin)()
@@ -359,7 +500,7 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
         app.database.close()
         account, chosen = service_account(name, user)
         trusted = app.business.auth.trusted_proxies
-        texts = {'unit': proxy.systemd_unit(root, name, port, account),
+        texts = {'unit': proxy.systemd_unit(root, name, port, account, dedicated=dedicated(account)),
                  'site': proxy.caddy(app.routes, port, name, trusted, global_options=False), 'options': proxy.GLOBAL_OPTIONS}
         (root / 'deploy').mkdir(mode=0o755, exist_ok=True)
         site = proxy.write(root / 'deploy' / f'evlet-{name}.caddy', texts['site'])
@@ -389,7 +530,7 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
         if ips and saved_addresses(root) != sorted({str(ipaddress.ip_address(item)) for item in ips}):
             save_addresses(root, ips)
             print(f'Saved the public address in deploy/{SERVER_FILE}; later runs on this server need no --ip')
-    commands = privileged_steps(root, name, texts, restart=restart)
+    commands = privileged_steps(root, name, texts, restart=restart, owner=account if chosen and dedicated(account) else None)
     if not apply:
         print('Review the two files, then run these steps with sudo:')
         print('\n'.join('    ' + describe(command) for command in commands))
@@ -398,6 +539,9 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
     with step('install the service and Caddy site'):
         run_privileged(commands, run=run)
     print(f'Serving https://{host} through Caddy. Evlet listens on 127.0.0.1:{port} only.')
+    if dedicated(account):
+        print(f'The service runs as {account}, which owns instances/{name}/data. evlet migrate, backup, restore, '
+              f'users and secrets run themselves again as {account} with sudo -u, showing the command first.')
     print(site_answers(host))
 
 
