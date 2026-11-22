@@ -123,3 +123,19 @@ def test_essentials_table_in_app_layout_lists_the_module():
     section = text.split('## The essentials', 1)[1].split('\n## ', 1)[0]
     for name in evlet.essentials.__all__:
         assert f'`{name}`' in section, name
+
+
+
+def test_cli_errors_name_the_apps_own_files(monkeypatch, capsys):
+    import importlib
+    import pytest
+    from evlet import builds
+    cli = importlib.import_module('evlet.cli.main')
+    monkeypatch.setitem(builds.SOURCES, '/p/.evlet/builds/abc/notes', '/p/apps/notes')
+    def broken(args, context):
+        raise ValueError('/p/.evlet/builds/abc/notes/models/item.py:3: bad field')
+    entry = cli.command_entry
+    monkeypatch.setattr(cli, 'command_entry', lambda name: (entry(name)[0], broken))
+    with pytest.raises(SystemExit):
+        cli.main(['docs'])
+    assert '/p/apps/notes/models/item.py:3: bad field' in capsys.readouterr().err
