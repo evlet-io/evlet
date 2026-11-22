@@ -10,6 +10,7 @@ import pytest
 from evlet import identity
 from evlet.identity import RecordId, decode, encode, new_id, path_id
 from examples.playground.models import Customer, Invoice
+from test_batch4_invoice_lines import raw_invoice
 from tests.support import client
 
 
@@ -92,10 +93,10 @@ def test_a_taken_id_is_drawn_again(database, monkeypatch):
 
 def test_other_unique_values_still_conflict(database):
     customer = database.create(Customer, customer_name='Acme')
-    database.create(Invoice, customer=customer.id, reference='INV-1', total='1.00')
+    raw_invoice(database, customer=customer.id, reference='INV-1', total='1.00')
     from evlet import ConflictError
     with pytest.raises(ConflictError):
-        database.create(Invoice, customer=customer.id, reference='INV-1', total='2.00')
+        raw_invoice(database, customer=customer.id, reference='INV-1', total='2.00')
 
 
 def test_legacy_rows_keep_working_next_to_new_ones(database):
@@ -103,7 +104,7 @@ def test_legacy_rows_keep_working_next_to_new_ones(database):
         connection.execute("INSERT INTO customer(id, customer_name, active, currency) VALUES (42, ?, 1, 'AED')", ('Old customer',))
     old = database.get(Customer, '000000000001a')
     assert old.id == 42 and str(old.to_dict()['id']) == '000000000001a'
-    invoice = database.create(Invoice, customer=42, reference='INV-OLD', total='5.00')
+    invoice = raw_invoice(database, customer=42, reference='INV-OLD', total='5.00')
     assert invoice.customer == 42 and identity.jsonable(invoice.to_dict())['customer'] == '000000000001a'
     new = database.create(Customer, customer_name='New customer')
     assert [record.id for record in database.list(Customer, order_by='id')] == [42, new.id]
@@ -113,7 +114,7 @@ def test_http_sends_ids_only_as_text_and_takes_them_in_any_case(secured):
     call = client(secured)
     status, customer, _ = call('POST', '/api/customer', {'customer_name': 'Acme'})
     assert status == 201 and isinstance(customer['id'], str) and len(customer['id']) == 13
-    status, invoice, _ = call('POST', '/api/invoice', {'customer': customer['id'].upper(), 'reference': 'INV-9', 'total': '9.00'})
+    status, invoice, _ = call('POST', '/api/invoice', {'customer': customer['id'].upper(), 'reference': 'INV-9', 'children': {'lines': [{'item': 'Work', 'rate': '9.00'}]}})
     assert status == 201, invoice
     assert invoice['customer'] == customer['id'] and isinstance(invoice['id'], str)
     status, read, _ = call('GET', f"/api/invoice/{invoice['id'].upper()}")

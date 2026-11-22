@@ -616,7 +616,7 @@ def test_playground_prints_an_invoice_and_a_report(secured):
     admin, editor, viewer = client(secured), client(secured, 'editor'), client(secured, 'viewer')
     status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Gulf Horizon Contracting', 'currency': 'AED'})
     assert status == 201, customer
-    status, record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-55120', 'total': '5616.35',
+    status, record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-55120', 'children': {'lines': [{'item': 'Work', 'rate': '5616.35'}]},
                                                        'posting_date': '2026-11-03', 'status': 'sent'})
     assert status == 201, record
     status, content, headers = editor('GET', f"/api/invoice/{record['id']}/prints/InvoicePrint.pdf")
@@ -681,7 +681,7 @@ def test_controls_saves_previews_and_removes_a_design(secured):
     from tests.support import client
     admin, editor = client(secured), client(secured, 'editor')
     status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Gulf <b>Horizon</b>', 'currency': 'AED'})
-    status, invoice_record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-1', 'total': '10.00', 'status': 'draft'})
+    status, invoice_record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-1', 'children': {'lines': [{'item': 'Work', 'rate': '10.00'}]}, 'status': 'draft'})
     status, listing, _ = admin('GET', '/api/_controls/prints')
     assert status == 200 and listing['available'] is True
     app_design = next(item for item in listing['designs'] if item['name'] == 'InvoicePrint')
@@ -723,7 +723,7 @@ def test_stored_design_values_are_escaped(secured):
     from evlet.printing import Compiler, design_from
     admin = client(secured)
     status, customer, _ = admin('POST', '/api/customer', {'customer_name': '<script>x</script>', 'currency': 'AED'})
-    status, record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-2', 'total': '10.00'})
+    status, record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-2', 'children': {'lines': [{'item': 'Work', 'rate': '10.00'}]}})
     design = design_from('EscapePrint', {'model': 'invoice', 'main': [{'type': 'text', 'html': '<p>{{ doc.customer.customer_name }}</p>'},
                                                                       {'type': 'text', 'text': '{{ doc.customer.customer_name }}'}]}, secured.business)
     from examples.playground.models import Invoice

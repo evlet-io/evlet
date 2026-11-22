@@ -24,7 +24,7 @@ from types import MappingProxyType
 from .auth import AccessError, User, allow, page_query, record_in
 from .fields import Link, Reference
 from .identity import RecordId, text as text_id
-from .models import build_step, ValidationError
+from .models import ValidationError
 from . import qb
 from .adapter import Column, TableDefinition
 from .database import Session
@@ -77,13 +77,11 @@ class Activity:
             raise ValueError('Activity(tamper_evident=...) is True or False')
 
 
-@build_step('activity_declared')
 def declares_activity(value):
     """Whether Meta.activity turns the activity on, which makes the model a document."""
     return isinstance(value, Activity)
 
 
-@build_step('activities')
 def compile_activities(models, child_models):
     """{model: Activity} for root models that keep one: declared with Meta.activity, or by default those
     with a State.

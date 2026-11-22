@@ -22,7 +22,7 @@ from types import MappingProxyType
 
 from .auth import AccessError, allow, has_role, record_in, PORTAL, ROLES
 from .fields import MISSING, COLORS, Link, Reference
-from .models import build_step, ValidationError, checked_body
+from .models import ValidationError, checked_body
 # The declarations live in core, where models and sequences import them; evlet.statemanager.State still works.
 from .declarations import KEY, REMARK_LENGTH, Level, Remark, Rule, State, Step, _key, check_rules  # noqa: F401
 from . import periods, qb
@@ -76,7 +76,6 @@ state.exit = lambda *states: _hook('exit', states)
 state.exit.__doc__ = '@state.exit("issued", ...): runs when the document leaves one of the states.'
 
 
-@build_step('statemanager')
 def configure(model):
     """Collect a model's hooks in class order, a subclass's method replacing its base's by name."""
     hooks = []
@@ -976,8 +975,7 @@ def route(business, scope, body, user, model, parts):
     """POST /api/{model}/{id}/restore ({version, remark}), GET .../versions, .../versions/{n} and .../versions/{a}/diff/{b or current}."""
     record_id = record_in(parts)
     if parts[4] == 'restore':
-        if len(parts) != 5 or scope['method'] != 'POST':
-            raise AccessError(405, 'Method not allowed')
+        allow(scope['method'] if len(parts) == 5 else None, 'POST')  # a longer path is a 405 too
         checked_body(body, {'remark', 'version'}, 'Send only a version and a remark')
         with business.context(user) as context:
             record = business.policy.record(context._tx, user, model, record_id, 'update')

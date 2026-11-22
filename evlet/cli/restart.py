@@ -258,18 +258,53 @@ def journal(service, run, out):
         out(text)
 
 
+def owner_checks(root, name, owner, *, service, unit_dir, which, run, out):
+    """The checks of a dedicated service account's instance: they read its data, so they run as that account
+    (evlet restart --check through sudo -u, shown first). The restart itself stays with the deploy user's sudo."""
+    import shutil
+    from . import site
+    from ..instances import read_instance
+    site.share_builds(root)
+    command = site.owner_command(root, owner, ['restart', name, '--check', '--service', service])
+    if (which or shutil.which)('sudo') is None:
+        out(f'instances/{name} belongs to {owner}. Check it as that account: {shlex.join(command)}')
+        return False, {}
+    out(f'instances/{name} belongs to {owner}; checking it as {owner}:\n$ ' + shlex.join(command))
+    try:
+        if run(command).returncode:
+            return False, {}
+    except (OSError, subprocess.SubprocessError) as exc:
+        out(f'{shlex.join(command)} failed: {exc}')
+        return False, {}
+    state = {}
+    try:
+        check_service(root, name, state, service=service, unit_dir=unit_dir, which=which or shutil.which)
+        state['config'] = read_instance(child(root, 'instances', name))
+    except (Failed, ValueError, OSError) as exc:
+        out(f'Service: {exc}')
+        return False, {}
+    return True, state
+
+
 def restart(root, name, *, service=None, check_only=False, yes=False, timeout=30.0, unit_dir=None, run=None,
             which=None, fetch=None, sleep=time.sleep, clock=time.monotonic, interactive=None, ask=None, out=print):
     """Check the instance, then restart its service and wait for /health. Returns True on success."""
     from . import site
     service = service_name(name, service)
     root = Path(root)
-    passed, state = run_checks(root, name, service=service, unit_dir=unit_dir or site.SYSTEMD_DIR, which=which, out=out)
+    run = run or subprocess.run
+    owner = site.state_owner(root, name)
+    if owner:
+        passed, state = owner_checks(root, name, owner, service=service, unit_dir=unit_dir or site.SYSTEMD_DIR,
+                                     which=which, run=run, out=out)
+    else:
+        passed, state = run_checks(root, name, service=service, unit_dir=unit_dir or site.SYSTEMD_DIR, which=which, out=out)
     if not passed:
         out(f'Checks failed. {service} was not restarted and keeps running as it was.')
         return False
     if check_only:
-        out(f'All checks passed. Run evlet restart {name} to restart {service}.')
+        if not owner:  # the checks run as the owner said so already
+            out(f'All checks passed. Run evlet restart {name} to restart {service}.')
         return True
     if not yes:
         interactive = sys.stdin.isatty() if interactive is None else interactive
@@ -280,7 +315,6 @@ def restart(root, name, *, service=None, check_only=False, yes=False, timeout=30
         if answer not in ('y', 'yes'):
             out('Nothing was restarted.')
             return False
-    run = run or subprocess.run
     command = ['sudo', 'systemctl', 'restart', service]
     out('$ ' + shlex.join(command))
     try:

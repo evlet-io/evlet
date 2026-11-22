@@ -1,6 +1,7 @@
 """Explicit application registries and validated record snapshots."""
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -10,30 +11,29 @@ from .identity import RecordId
 from .naming import standard
 from .audit import COLUMNS as AUDIT
 
-# Steps of building a model class (the first four) and a Registry (the rest) that higher layers own,
-# in the order they run. Each module registers its own with @build_step when it is imported, and
-# evlet/__init__.py imports them all, so they are in place before any app model is defined.
-BUILD_ORDER = ('ledger_declared', 'ledger_class', 'statemanager', 'activity_declared',
-               'meaning', 'guards', 'kept_plan', 'sequences', 'namings', 'measures', 'cards', 'posted_reads',
-               'activities', 'api', 'ledger_schema')
-BUILD_STEPS = {}
+@dataclass(frozen=True)
+class BuildSteps:
+    """The parts of building a model class (the first four) and a Registry (the rest) that higher layers own, in the
+    order they run. evlet/__init__.py sets STEPS to the owning modules' functions before any app model class exists;
+    importing any evlet submodule runs it first."""
+    ledger_declared: Callable  # evlet/ledger.py
+    ledger_class: Callable
+    statemanager: Callable  # evlet/statemanager.py
+    activity_declared: Callable  # evlet/activity.py
+    meaning: Callable  # evlet/meaning.py
+    guards: Callable  # evlet/guards.py
+    kept_plan: Callable
+    sequences: Callable  # evlet/sequences.py
+    namings: Callable
+    measures: Callable  # evlet/measures.py
+    cards: Callable  # evlet/meaning.py
+    posted_reads: Callable  # evlet/guards.py
+    activities: Callable  # evlet/activity.py
+    api: Callable  # evlet/permissions.py
+    ledger_schema: Callable  # evlet/ledger.py
 
 
-def build_step(name):
-    """Register the decorated function as the build step `name` of BUILD_ORDER."""
-    if name not in BUILD_ORDER:
-        raise ValueError(f'Unknown model build step: {name}')
-
-    def register(function):
-        BUILD_STEPS[name] = function
-        return function
-    return register
-
-
-def step(name):
-    if name not in BUILD_STEPS:
-        raise RuntimeError(f'The model build step {name} is not registered: import evlet before defining models')
-    return BUILD_STEPS[name]
+STEPS = None
 
 
 def identifier(name):
@@ -190,9 +190,9 @@ class ModelType(type):
             from .ui.metadata import refuse_removed
             refuse_removed(name, namespace['Meta'])
         # Meta.ledger = True: a lean table trusted code writes (evlet/ledger.py).
-        # Model and Child are built before the steps register; they declare none of what the steps check.
-        steps = step if namespace.get('__module__') != __name__ else lambda name: lambda *args: False
-        ledger = steps('ledger_declared')(name, namespace, bases)
+        # Model and Child are built before STEPS is set; they declare none of what the steps check.
+        own = namespace.get('__module__') == __name__
+        ledger = not own and STEPS.ledger_declared(name, namespace, bases)
         for key, value in namespace.items():
             if isinstance(value, Field):
                 identifier(key)
@@ -222,7 +222,7 @@ class ModelType(type):
             # No standard name and title; Meta.timestamps adds created_at and modified_at.
             if is_row_table(namespace, bases, fields):
                 raise ValueError(f'{name}: a Table row or form cannot be a ledger model')
-            ledger_options, added = steps('ledger_class')(name, namespace, bases, fields, tables, sources)
+            ledger_options, added = STEPS.ledger_class(name, namespace, bases, fields, tables, sources)
             for key in [key for key, field in fields.items() if getattr(field, 'engine_timestamp', None)]:
                 del fields[key]
             fields.update(added)
@@ -285,11 +285,10 @@ class ModelType(type):
             from .indexes import normalize
             cls.__indexes__ = normalize(name, getattr(meta, 'indexes', ()) if meta is not None else (), fields)
         cls.__derives__ = declared_hooks(cls, name, meta, fields, tables, is_row_table(namespace, bases, fields))
-        steps('statemanager')(cls)
+        if not own:
+            STEPS.statemanager(cls)
         # Meta.activity = Activity(...) makes a document, so every write goes through the pipeline that records it.
-        recorded = False
-        if hasattr(meta, 'activity'):
-            recorded = steps('activity_declared')(meta.activity)
+        recorded = not own and hasattr(meta, 'activity') and STEPS.activity_declared(meta.activity)
         if ledger:
             pass  # Trusted code writes ledger rows through the session; nothing is declarative.
         elif recorded or states or sources or tables or 'permissions' in namespace or cls.__derives__ or cls.__hooks__ or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
@@ -535,11 +534,10 @@ class Registry:
         for model in models:
             resolve_sources(self, model)
         # Key fields, reverse Links and attachment limits from each Meta (evlet/meaning.py).
-        meaning_for = step('meaning')
-        self.meaning = meaning_for(self)
+        self.meaning = STEPS.meaning(self)
         from .reactivity import graph
         child_models = {child.model for child in self.children}
-        from .calc import compile_plan, formula_hash
+        from .calc import compile_plan, formula_hash, warn_implicit_language
         plans = {}
         for model in models:
             if getattr(model, '__declaration_mode__', False) and model not in child_models:
@@ -547,27 +545,23 @@ class Registry:
                 plan = compile_plan(self, model)
                 if plan is not None:
                     plans[model] = plan
+                    warn_implicit_language(model, plan)
         self.plans = MappingProxyType(plans)
         # What saved documents record: changes only when formulas or the fields they use change.
         self.formula_hashes = MappingProxyType({root: formula_hash(plan) for root, plan in plans.items()})
         # Rule conditions and action availability, compiled once per root document.
-        compile_guards, kept_plan = step('guards'), step('kept_plan')
-        self.guards, self.guard_plans, self.guard_root_plans = compile_guards(self, models, plans, child_models)
+        self.guards, self.guard_plans, self.guard_root_plans = STEPS.guards(self, models, plans, child_models)
         # Ordinary writes on a locked record evaluate rules over the results it keeps.
-        self.kept_plans = MappingProxyType({root: kept_plan(plan) for root, plan in plans.items() if root.__state__ is not None})
+        self.kept_plans = MappingProxyType({root: STEPS.kept_plan(plan) for root, plan in plans.items() if root.__state__ is not None})
         # Document numbers: {model: {field name: Sequence}}.
-        compile_sequences = step('sequences')
-        self.sequences = compile_sequences(self, models, plans, child_models)
+        self.sequences = STEPS.sequences(self, models, plans, child_models)
         # Naming series ({model: NamingRules}); Controls replaces an entry when its series are overridden.
-        compile_namings = step('namings')
-        self.naming = compile_namings(models, child_models)
+        self.naming = STEPS.namings(models, child_models)
         from .naming import configure
         configure(self, child_models)
-        compile_declared = step('measures')
-        self.measures = MappingProxyType(compile_declared(self, models))
+        self.measures = MappingProxyType(STEPS.measures(self, models))
         # Cards at the top of a compact record page: derived fields and per-record measures (evlet/meaning.py).
-        cards_for = step('cards')
-        self.cards = MappingProxyType(cards_for(self, models, child_models))
+        self.cards = MappingProxyType(STEPS.cards(self, models, child_models))
         # Record layouts (Meta.layout, evlet/ui/metadata.py); what a layout ignores is logged once here and listed by
         # Controls as problems.
         from .ui.metadata import compile_layouts
@@ -580,19 +574,16 @@ class Registry:
         # Additions apps make to another app's models (evlet.Extend), in app install order.
         self.extensions = MappingProxyType(compile_extensions(self, extensions))
         # What a released record's stored results read, which a move out of the released set may not change.
-        posted_reads = step('posted_reads')
-        self.posted_reads = MappingProxyType({model: posted_reads(self, model, plans.get(model)) for model in models
+        self.posted_reads = MappingProxyType({model: STEPS.posted_reads(self, model, plans.get(model)) for model in models
                                               if model.__state__ and model.__declared_fields__[model.__state__].releases})
         # Record histories: {model: Activity} (evlet/activity.py).
-        compile_activities = step('activities')
-        self.activities = compile_activities(models, child_models)
+        self.activities = STEPS.activities(models, child_models)
         for model in models:
             if model.__state__ and model not in self.activities and any(rule.levels for rule in model.__declared_fields__[model.__state__].rules):
                 raise ValueError(f'{model.__name__}: approval levels are kept in its Activity, so Meta.activity cannot be None')
         # What callers reach of each model ({model: Meta.api}, evlet/permissions.py) and which stored date
         # places a record in a period that a lock can close ({model: Period}, evlet/periods.py).
-        compile_api = step('api')
-        self.api = compile_api(self)
+        self.api = STEPS.api(self)
         from .periods import compile_periods
         self.periods = compile_periods(self)
         # {name: model} of the models callers reach at all: every model but those with Meta.api = None.
@@ -682,12 +673,11 @@ class Registry:
     def schema(self):
         """The stored schema app migrations work from. Instance fields (x_) belong to Controls, not to it."""
         from .indexes import entry as index_entry
-        ledger_schema = step('ledger_schema')
         return {"version": 1, "models": [
             {"name": name, "label": model.__name__,
              "fields": [field.metadata() for field in model.__app_stored__.values() if not standard(field)],
              # Ledger models record their options; normal models add Meta.indexes only when they declare some.
-             **({"ledger": ledger_schema(model)} if ledger_schema(model) is not None else index_entry(model))}
+             **({"ledger": STEPS.ledger_schema(model)} if STEPS.ledger_schema(model) is not None else index_entry(model))}
             for name, model in self.models.items()
         ]}
 

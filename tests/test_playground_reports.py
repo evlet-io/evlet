@@ -13,7 +13,7 @@ def seed(api):
                                                     ('Al Sahra Trading', 'PO-2', '250.50', 'sent', '2026-10-15'),
                                                     ('Gulf Supplies', 'PO-3', '75.00', 'draft', '2026-09-30'),
                                                     ('Boston Imports', 'PO-4', '999.00', 'sent', '2026-10-02')):
-        assert api('POST', '/api/invoice', {'customer': owners[owner], 'reference': reference, 'total': total,
+        assert api('POST', '/api/invoice', {'customer': owners[owner], 'reference': reference, 'children': {'lines': [{'item': 'Work', 'rate': total}]},
                                             'status': status, 'posting_date': posted})[0] == 201
     return owners
 

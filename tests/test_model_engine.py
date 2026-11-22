@@ -8,6 +8,7 @@ from evlet import (Boolean, Currency, Database, Date, DateTime, Decimal, Email, 
                    Link, LongText, Model, Registry, Select, Text, URL, ValidationError,
                    ConflictError, NotFoundError, validate)
 from examples.playground.models import Customer, Invoice, Payment
+from test_batch4_invoice_lines import raw_invoice, raw_update
 from test_api import request
 
 
@@ -88,14 +89,14 @@ def test_custom_validation_runs_on_partial_update(tmp_path):
 
 def test_updates_deletes_relationships_and_rollback(database):
     customer = database.create(Customer, customer_name='Original')
-    invoice = database.create(Invoice, customer=customer.id, reference='INV', total='10.00')
+    invoice = raw_invoice(database, customer=customer.id, reference='INV', total='10.00')
     payment = database.create(Payment, invoice=invoice.id, reference='PAY', amount='10.00')
     assert database.related(invoice, 'customer').id == customer.id
     assert database.related(database.related(payment, 'invoice'), 'customer').customer_name == 'Original'
     with pytest.raises(ConflictError):
         database.delete(Customer, customer.id)
     with pytest.raises(ConflictError):
-        database.update(Invoice, invoice.id, customer=999)
+        raw_update(database, invoice.id, customer=999)
     with pytest.raises(ValidationError):
         database.update(Customer, customer.id, id=999)
     with pytest.raises(RuntimeError):
@@ -105,11 +106,12 @@ def test_updates_deletes_relationships_and_rollback(database):
             raise RuntimeError('cancel')
     assert database.get(Customer, customer.id).customer_name == 'Original'
     assert database.get(Payment, payment.id).id == payment.id
-    changed = database.update(Invoice, invoice.id, total='12.34')
+    changed = raw_update(database, invoice.id, total='12.34')
     assert changed.reference == 'INV' and changed.total == DecimalValue('12.34')
     assert invoice.total == DecimalValue('10.00')  # existing snapshot stays unchanged
     database.delete(Payment, payment.id)
-    database.delete(Invoice, invoice.id)
+    with database.transaction() as tx, tx.maintenance():
+        tx.delete(Invoice, invoice.id)
     database.delete(Customer, customer.id)
     with pytest.raises(NotFoundError):
         database.delete(Customer, customer.id)
@@ -118,8 +120,8 @@ def test_updates_deletes_relationships_and_rollback(database):
 def test_queries_use_types_relationship_paths_and_stable_order(database):
     a = database.create(Customer, customer_name='Alpha 100%_')
     b = database.create(Customer, customer_name="B'); DROP TABLE customer;--")
-    inv_a = database.create(Invoice, customer=a.id, reference='A', total='10.00')
-    inv_b = database.create(Invoice, customer=b.id, reference='B', total='2.00')
+    inv_a = raw_invoice(database, customer=a.id, reference='A', total='10.00')
+    inv_b = raw_invoice(database, customer=b.id, reference='B', total='2.00')
     payment = database.create(Payment, invoice=inv_a.id, reference='P', amount='10.00')
     assert database.list(Invoice, order_by='total')[0].id == inv_b.id
     assert database.list(Invoice, filters={'total__gte': '0', 'customer__customer_name__contains': '%_'})[0].id == inv_a.id

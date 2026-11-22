@@ -18,7 +18,7 @@ from urllib.parse import parse_qs
 from . import qb
 from .auth import AccessError, allow, record_in
 from .fields import COLORS, Boolean, Date, DateTime, Decimal, Integer, Link, LongText, Reference, Tags, Field
-from .models import build_step, Model, ValidationError
+from .models import Model, ValidationError
 from .query import SqlQuery
 from .calc import CalcError, Expr, MAX_DAY, _Context, compile_expression, lift, parse
 from .database import Session
@@ -387,7 +387,6 @@ def comparison(model, op, left, right, reads, zone):
     return matches(a, op, qb.value(value))
 
 
-@build_step('measures')
 def compile_declared(registry, models):
     """{model: {name: Compiled}} for every registered model with Meta.measures."""
     result = {}

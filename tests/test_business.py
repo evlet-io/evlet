@@ -12,6 +12,7 @@ from evlet import Application, ChildTable, Database, LocalAuth, Policy, Rule, Va
 from evlet.auth import password_hash
 from examples.playground.app import create_app
 from examples.playground.models import Customer, Invoice, Project, ProjectTask, registry
+from test_batch4_invoice_lines import raw_invoice
 
 from support import PASSWORD, client, http
 
@@ -133,7 +134,7 @@ def test_model_field_row_rules_apply_to_list_count_search_detail_writes_and_link
     db = secured.database
     visible = db.create(Customer, customer_name='Visible', notes='secretphrase', active=True)
     hidden = db.create(Customer, customer_name='Hidden', active=False)
-    invoice = db.create(Invoice, customer=hidden.id, reference='Restricted link', total='5.00')
+    invoice = raw_invoice(db, customer=hidden.id, reference='Restricted link', total='5.00')
     rule = Rule(('read', 'create', 'update'), read_fields=('customer_name', 'active'), write_fields=('customer_name', 'active'), scope=lambda user: {'active': True})
     secured.business.policy = Policy(registry, rules={('editor', Customer): rule, ('editor', Project): Rule(())})
     c = client(secured, 'editor')
@@ -145,7 +146,7 @@ def test_model_field_row_rules_apply_to_list_count_search_detail_writes_and_link
     for query in ({'filters': json.dumps({'notes': 'secretphrase'})}, {'order_by': 'notes'}, {'filters': json.dumps({'customer__name': 'Hidden'})}):
         assert c('GET', '/api/customer?' + urlencode(query))[0] == 403
     assert c('GET', f'/api/invoice/{invoice.id}')[1]['customer'] is None
-    assert c('POST', '/api/invoice', {'customer': str(hidden.id), 'reference': 'Forbidden', 'total': '1.00'})[0] == 404
+    assert c('POST', '/api/invoice', {'customer': str(hidden.id), 'reference': 'Forbidden', 'children': {'lines': [{'item': 'Work', 'rate': '1.00'}]}})[0] == 404
     etag = {b'if-match': c('GET', f'/api/customer/{visible.id}')[2][b'etag']}
     assert c('PATCH', f'/api/customer/{visible.id}', {'notes': 'override'}, headers=etag)[0] == 403
     assert c('PATCH', f'/api/customer/{visible.id}', {'active': False}, headers=etag)[0] == 404

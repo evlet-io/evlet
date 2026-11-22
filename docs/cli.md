@@ -539,6 +539,16 @@ Evlet does not install it. `--dev` and `--host` cannot be combined: development
 servers and sign-in links stay on loopback. This prepares a single-server site; it
 does not make Evlet production ready.
 
+`--service-user evlet-acme` (opt-in in 0.4) runs the service as a dedicated account
+without sudo rights instead of you: the steps create it when missing, hand it only the
+instance state, and the unit makes the rest of the file system read-only to it. Later
+`evlet backup`, `restore`, `restart` and `upgrade` run their state part as that account
+with `sudo -u`, showing the command first. See "Service account" in
+[production-operations.md](production-operations.md#service-account).
+`--require-hashes` installs app dependencies only from the `requirements.lock` each app
+ships, as `evlet app --get --require-hashes` and `evlet build --require-hashes` do; see
+"Application dependencies" there.
+
 The Caddy site refuses `/_/*` from outside except the routes MCP clients and mailbox
 sign-in need: `/_/mcp`, `/_/oauth/authorize`, `/_/oauth/token`, `/_/oauth/register`,
 `/_/oauth/revoke`, `/_/mail/callback` and `/_/mail/continue.js`

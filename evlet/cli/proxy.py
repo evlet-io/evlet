@@ -228,11 +228,13 @@ def write(path, text):
     return target
 
 
-def systemd_unit(root, instance, port=8000, user='evlet'):
+def systemd_unit(root, instance, port=8000, user='evlet', dedicated=False):
     """A systemd unit that runs evlet serve on loopback, so the proxy is the only public listener. Review before installing it.
 
     It runs the web requests and the job queue in one process (--jobs), so job steps take their turn in the same
-    write queue as people's saves. Secrets go in /etc/evlet/<instance>.env, which the unit reads when it exists."""
+    write queue as people's saves. Secrets go in /etc/evlet/<instance>.env, which the unit reads when it exists.
+    dedicated, for an account that is not the deploy user, makes the whole file system read-only to the service
+    except the instance state (ProtectSystem=strict with ReadWritePaths)."""
     from .setup import python_in
     root = Path(root)
     # systemd expands % and $ and splits on spaces; keep the paths literal.
@@ -241,6 +243,13 @@ def systemd_unit(root, instance, port=8000, user='evlet'):
     # ProtectHome would hide a project kept in a home directory, so it is set only for projects outside one.
     home = any(root.absolute().is_relative_to(base) for base in ('/home', '/root', '/run/user'))
     protect_home = '' if home else 'ProtectHome=read-only\n'
+    state = f'{root}/instances/{instance}'
+    if dedicated:
+        # The instance directory itself stays writable for a new secret.key; its sticky bit and file owners keep
+        # config.py and routes.py the deploy user's (evlet setup --service-user sets them).
+        protect = f'ProtectSystem=strict\n{protect_home}ReadWritePaths={state}/data {state}/files {state}'
+    else:
+        protect = f'ProtectSystem=full\n{protect_home}ReadWritePaths={state}'
     return f'''[Unit]
 Description=Evlet instance {instance}
 After=network.target
@@ -255,8 +264,7 @@ UMask=0077
 EnvironmentFile=-/etc/evlet/{instance}.env
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=full
-{protect_home}ReadWritePaths={root}/instances/{instance}
+{protect}
 
 [Install]
 WantedBy=multi-user.target

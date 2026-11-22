@@ -2,8 +2,7 @@
 
 from datetime import date
 
-from evlet import Child, Currency, Date, Decimal, Js, Link, Main, Outcome, Percent, Prompt, Select, Table, Text, ValidationError, validate
-from evlet.calc import F
+from evlet import Child, Currency, Date, Decimal, F, Js, Link, Main, Outcome, Percent, Prompt, Select, Table, Text, ValidationError, validate
 
 from .items import UNITS
 from .models import Customer, Invoice, Item
@@ -79,8 +78,12 @@ class QuickInvoice(Prompt):
     grand_total = Currency(currency='AED', compute=F('total') - F('discount'), label='Grand total')
 
     def submit(self):
-        return Outcome(new=(Invoice, {'customer': self.customer, 'reference': self.reference,
-                                      'posting_date': date.today(), 'total': self.grand_total}))
+        # The new invoice gets these lines, and the discount as a line of its own; its total is calculated from them.
+        session = self.context.session
+        lines = [{'item': session.get(Item, line.item).item_name, 'qty': line.qty, 'rate': line.rate} for line in self.lines]
+        if self.discount:
+            lines.append({'item': f'Discount {self.discount_percent}%', 'qty': '1', 'rate': -self.discount})
+        return Outcome(new=(Invoice, {'customer': self.customer, 'reference': self.reference, 'posting_date': date.today(), 'lines': lines}))
 
 
 def quick_invoice(context):

@@ -69,7 +69,8 @@ class ManagedRuntime:
         if self.debug or not isinstance(exc, (ValueError, OSError)):
             logger.exception('Instance lifecycle failed')
         else:
-            logger.error('%s', exc)
+            from ..builds import source_path_text
+            logger.error('%s', source_path_text(str(exc)))
 
     def fail(self, exc):
         """evlet dev: keep serving an error page instead of ending the server."""
@@ -254,7 +255,8 @@ def data_state(path):
 
 
 def show_source_paths():
-    """evlet dev: tracebacks name the app's own files, not the build generation copies the server imports."""
+    """evlet dev and evlet serve: logged tracebacks name the app's own files, not the build generation copies the server
+    imports. Only the log changes; HTTP error responses never carry paths."""
     from ..builds import SOURCES, source_path_text
     previous = logging.getLogRecordFactory()
     if getattr(previous, 'evlet_source_paths', False):
@@ -393,6 +395,7 @@ def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=Fa
                 else:
                     os.environ[key] = value
     else:
+        show_source_paths()
         if (hint := administrator_hint(path, name)) is not None:
             print(hint, flush=True)
         application = ManagedRuntime(lambda: load_runtime(root, name, port=port, public=public),

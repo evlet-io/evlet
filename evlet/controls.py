@@ -18,6 +18,7 @@ from .customization import Customization, activated, instance_fields
 from .fields import Layer, Email
 from .fields import Link
 from .adapter import Column, IntegrityError, TableDefinition
+from .audit import LOG_HASH, add_log_hash, log_hash, log_previous
 from .database import NotFoundError
 from .identity import path_id
 from .models import ValidationError, checked_body
@@ -109,7 +110,8 @@ OVERRIDES = TableDefinition('evlet_overrides', (
     Column('changed_by', 'INTEGER'), Column('changed_at', 'INTEGER')), primary_key=('kind', 'key'), checks=(qb.in_('kind', OVERRIDE_KINDS),))
 AUDIT = TableDefinition('evlet_audit', (
     Column('at', 'INTEGER', required=True), Column('actor', 'TEXT', required=True), Column('area', 'TEXT', required=True),
-    Column('target', 'TEXT', required=True), Column('detail', 'TEXT', required=True), Column('before', 'TEXT'), Column('after', 'TEXT')), numbered=True)
+    Column('target', 'TEXT', required=True), Column('detail', 'TEXT', required=True), Column('before', 'TEXT'), Column('after', 'TEXT'),
+    LOG_HASH), numbered=True)
 CONFIG = TableDefinition('evlet_config', (Column('id', 'INTEGER', primary=True), Column('version', 'INTEGER', required=True)),
                          checks=(qb.eq('id', 1),))
 
@@ -139,13 +141,17 @@ def ensure_schema(connection):
         connection.run(qb.insert_rows_from('evlet_overrides_widened', names, qb.select('evlet_overrides', *names)))
         connection.drop_table('evlet_overrides')
         connection.rename_table('evlet_overrides_widened', 'evlet_overrides')
+    add_log_hash(connection)
     connection.make_append_only('evlet_audit', 'The audit log is append-only')
 
 
 def audit(connection, actor, area, target, detail, before=None, after=None):
-    connection.run(qb.insert('evlet_audit', at=int(time.time()), actor=actor, area=area, target=target, detail=detail,
-                             before=None if before is None else json.dumps(before, sort_keys=True),
-                             after=None if after is None else json.dumps(after, sort_keys=True)))
+    """Append a row to the audit log, chained to the row before it (evlet/audit.py). Call it inside a write
+    transaction, so reading the previous hash and inserting the row cannot interleave with another writer."""
+    row = {'at': int(time.time()), 'actor': actor, 'area': area, 'target': target, 'detail': detail,
+           'before': None if before is None else json.dumps(before, sort_keys=True),
+           'after': None if after is None else json.dumps(after, sort_keys=True)}
+    connection.run(qb.insert('evlet_audit', **row, hash=log_hash(row, log_previous(connection))))
 
 
 def bump(connection):

@@ -23,7 +23,6 @@ from datetime import datetime, timezone
 import hashlib
 import json
 from . import qb, fields as types
-from .models import build_step
 from .fields import DateTime
 from .indexes import schema as index_schema, normalize
 
@@ -65,7 +64,6 @@ def option(meta, key, default=None):
     return getattr(meta, key, default) if meta is not None else default
 
 
-@build_step('ledger_declared')
 def declared(name, namespace, bases):
     """True for a ledger declaration, after checking the ledger-only options of any model."""
     meta = meta_of(name, namespace, bases)
@@ -90,7 +88,6 @@ def timestamp_fields(timestamps):
     return result
 
 
-@build_step('ledger_class')
 def class_options(name, namespace, bases, fields, tables, sources):
     """A ledger model's Meta options (append_only, timestamps, indexes) and the timestamp fields it gets."""
     options = check_class(name, namespace, bases, fields, tables, sources)
@@ -148,7 +145,6 @@ def check_class(name, namespace, bases, fields, tables, sources):
     return append_only, timestamps, indexes
 
 
-@build_step('ledger_schema')
 def schema(model):
     """The ledger options the saved schema records, or None for a normal model. Timestamps are fields
     (created_at, modified_at), so they are not repeated here."""

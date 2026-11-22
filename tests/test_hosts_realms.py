@@ -17,6 +17,7 @@ from evlet.ui.serving import STATIC
 from examples.playground.app import build_app, playground_routes
 from examples.playground.migrate import configured_database
 from examples.playground.models import Customer, Invoice, Project, registry
+from test_batch4_invoice_lines import raw_invoice
 from support import PASSWORD, http
 from test_cli_lifecycle import environment_stub, project, runtime
 
@@ -124,8 +125,8 @@ def test_portal_and_desk_cookies_are_host_only_and_separate(portal):
 def test_own_customer_scope_reads_evlet_user_links(portal):
     acme = portal.database.create(Customer, customer_name='Acme', email='buyer@acme.test')
     other = portal.database.create(Customer, customer_name='Other')
-    mine = portal.database.create(Invoice, customer=acme.id, reference='INV-1', total='10.00')
-    theirs = portal.database.create(Invoice, customer=other.id, reference='INV-2', total='20.00')
+    mine = raw_invoice(portal.database, customer=acme.id, reference='INV-1', total='10.00')
+    theirs = raw_invoice(portal.database, customer=other.id, reference='INV-2', total='20.00')
     auth = portal.business.auth
     buyer_id = next(user['id'] for user in auth.users() if user['username'] == 'buyer')
     _, _, buyer = sign_in(portal, 'buyer', PORTAL)
@@ -584,8 +585,8 @@ def test_portal_users_filter_on_records_they_can_read(portal):
     from urllib.parse import quote
     acme = portal.database.create(Customer, customer_name='Acme')
     other = portal.database.create(Customer, customer_name='Other')
-    portal.database.create(Invoice, customer=acme.id, reference='INV-1', total='10.00')
-    portal.database.create(Invoice, customer=other.id, reference='INV-2', total='20.00')
+    raw_invoice(portal.database, customer=acme.id, reference='INV-1', total='10.00')
+    raw_invoice(portal.database, customer=other.id, reference='INV-2', total='20.00')
     auth = portal.business.auth
     auth.link_user(next(user['id'] for user in auth.users() if user['username'] == 'buyer'), Customer, acme.id)
     _, _, buyer = sign_in(portal, 'buyer', PORTAL)

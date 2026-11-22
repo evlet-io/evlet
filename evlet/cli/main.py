@@ -183,5 +183,6 @@ def main(argv=None):
         print('Input ended before the command finished. Nothing was changed.', file=sys.stderr)
         raise SystemExit(1) from None
     except (ValueError, TypeError, SyntaxError, OSError, RuntimeError, ImportError, sqlite3.Error, subprocess.SubprocessError) as exc:
-        print(str(exc), file=sys.stderr)
+        from ..builds import source_path_text
+        print(source_path_text(str(exc)), file=sys.stderr)
         raise SystemExit(1) from None

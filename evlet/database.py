@@ -124,6 +124,9 @@ class Database:
         self.logs = writes.LogBuffer(self)
         self._idle = {}
         self._generation = 0
+        # The most records an HTTP list page counts (EVLET_LIST_COUNT_CAP; 0 counts exactly), read once here
+        # so a bad value stops startup instead of every list request.
+        self.count_cap = list_count_cap()
         writes.DATABASES.add(self)
 
     def files(self):
@@ -454,6 +457,36 @@ def capped_count(connection, query, cap):
         raise ValueError('Use a count cap from 1 to 1000000000')
     bounded = query.limit(cap)
     return connection.run(qb.select(qb.from_query(bounded, 'counted'), qb.count())).value()
+
+
+# The default most records a list page counts exactly; past it the total reads "10,000+" (EVLET_LIST_COUNT_CAP).
+LIST_COUNT_CAP = 10_000
+
+
+def list_count_cap():
+    """The list page count cap: EVLET_LIST_COUNT_CAP when set (0 counts exactly), else LIST_COUNT_CAP. A value
+    that is not a whole number from 0 to 999999999 is an error, so a typo never turns counting off."""
+    raw = os.environ.get('EVLET_LIST_COUNT_CAP', '').strip()
+    if not raw:
+        return LIST_COUNT_CAP
+    if not (raw.isascii() and raw.isdigit()) or int(raw) >= 10**9:
+        raise ValueError('EVLET_LIST_COUNT_CAP must be a whole number from 0 (count exactly) to 999999999')
+    return int(raw)
+
+
+def page_count(connection, query, *, limit, offset, shown, cap):
+    """(total, capped) for one list page. query is the page's qb.select without order, limit or offset. A short
+    page tells the exact total without counting; otherwise rows are counted up to the cap (None or 0 counts
+    exactly). When more rows match than counted, total is the cap, or offset + shown for a page past the
+    cap, and capped is True."""
+    total = page_total(limit, offset, shown)
+    if total is not None:
+        return total, False
+    bound = max(cap or 0, offset + shown)
+    if not cap or bound >= 10**9:
+        return connection.run(qb.select(qb.from_query(query, 'counted'), qb.count())).value(), False
+    counted = capped_count(connection, query, bound + 1)
+    return (bound, True) if counted > bound else (counted, False)
 
 
 # The most ids one tx.reserve_ids call hands out.

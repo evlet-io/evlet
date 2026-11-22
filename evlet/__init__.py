@@ -2,8 +2,16 @@
 
 from typing import TYPE_CHECKING
 
-# The modules that register model build steps (evlet/models.py BUILD_ORDER), before any model class exists.
-from . import guards, activity, ledger, meaning, measures, permissions, sequences, statemanager  # noqa: F401
+from . import activity, guards, ledger, meaning, measures, models, permissions, sequences, statemanager
+
+# The parts of model and Registry construction that higher layers own (evlet/models.py BuildSteps), set before any
+# model class exists: evlet/forms.py and evlet/prompts.py, imported below, define models.
+models.STEPS = models.BuildSteps(
+    ledger_declared=ledger.declared, ledger_class=ledger.class_options, statemanager=statemanager.configure,
+    activity_declared=activity.declares_activity, meaning=meaning.meaning_for, guards=guards.compile_guards,
+    kept_plan=guards.kept_plan, sequences=sequences.compile_sequences, namings=sequences.compile_namings,
+    measures=measures.compile_declared, cards=meaning.cards_for, posted_reads=guards.posted_reads,
+    activities=activity.compile_activities, api=permissions.compile_api, ledger_schema=ledger.schema)
 from .app import Application
 from .database import ConflictError, Database, NotFoundError
 from .fields import (AnyLink, Boolean, Currency, CurrentUser, Date, DateTime, Decimal, Duration, Email, Integer,
@@ -14,6 +22,7 @@ from .models import Model, Registry, ValidationError, Child
 from .declarations import Extend, Option, Ref, Table, Query, action, depends
 from .sequences import Naming, Sequence, Series
 from .statemanager import State, release, state, validate
+from .calc import F
 
 __all__ = [
     "AddField", "AnyLink", "AddIndex", "AddTable", "AlterField", "Application", "Boolean", "ConflictError", "CreateModel", "DropField",
@@ -22,6 +31,10 @@ __all__ = [
     "SchemaError", "Select", "Text", "URL", "ValidationError",
     "Duration", "Naming", "Percent", "Phone", "Recompute", "RetireField", "RichText", "RunData", "Sequence", "Series", "State", "Tags", "Time",
 ]
+
+# F(...) expressions for computed fields and rules (docs/finite-calculations.md); the rest of the language stays in
+# evlet.calc. evlet.essentials lists the names a first app needs (docs/app-layout.md#the-essentials).
+__all__ += ["F"]
 
 from .auth import LocalAuth, OIDC, User
 from .permissions import Hierarchy, Policy, Rule, any_of, own_customer

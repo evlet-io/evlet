@@ -43,6 +43,11 @@ def atomic_json(path, value):
             stream.write(json_text(value))
             stream.flush()
             os.fsync(stream.fileno())
+        try:
+            # Keep a replaced file's mode: apps.lock stays readable when the service account rewrites it.
+            os.chmod(name, path.stat().st_mode & 0o777)
+        except FileNotFoundError:
+            pass
         os.replace(name, path)
         sync_directory(path.parent)
     finally:

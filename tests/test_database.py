@@ -7,11 +7,12 @@ import pytest
 from evlet import ConflictError, Database, Model, NotFoundError, Registry, ValidationError
 from evlet.identity import RecordId
 from examples.playground.models import Customer, Invoice, Payment, registry
+from test_batch4_invoice_lines import raw_invoice
 
 
 def test_playground_round_trip_survives_reopening(database):
     customer = database.create(Customer, customer_name="Acme", email="hello@example.com")
-    invoice = database.create(Invoice, customer=customer.id, reference="INV-1", total="100.10")
+    invoice = raw_invoice(database, customer=customer.id, reference="INV-1", total="100.10")
     payment = database.create(Payment, invoice=invoice.id, reference="PAY-1", amount="100.10")
     reopened = Database(database.path, registry)
     reopened.initialize()  # repeatable initialization preserves data
@@ -30,11 +31,11 @@ def test_playground_round_trip_survives_reopening(database):
 def test_transactions_commit_and_rollback_as_a_unit(database):
     with database.transaction() as tx:
         customer = tx.create(Customer, customer_name="Committed")
-        tx.create(Invoice, customer=customer.id, reference="COMMITTED", total="1.00")
+        raw_invoice(tx, customer=customer.id, reference="COMMITTED", total="1.00")
     with pytest.raises(RuntimeError):
         with database.transaction() as tx:
             customer = tx.create(Customer, customer_name="Rolled back")
-            tx.create(Invoice, customer=customer.id, reference="ROLLED-BACK", total="1.00")
+            raw_invoice(tx, customer=customer.id, reference="ROLLED-BACK", total="1.00")
             raise RuntimeError("Simulated business failure")
     assert [record.customer_name for record in database.list(Customer)] == ["Committed"]
     assert [record.reference for record in database.list(Invoice)] == ["COMMITTED"]
@@ -42,13 +43,13 @@ def test_transactions_commit_and_rollback_as_a_unit(database):
 
 def test_foreign_keys_uniqueness_and_failure_rollback(database):
     with pytest.raises(ConflictError):
-        database.create(Invoice, customer=999, reference="ORPHAN", total="1.00")
+        raw_invoice(database, customer=999, reference="ORPHAN", total="1.00")
     customer = database.create(Customer, customer_name="Acme")
-    database.create(Invoice, customer=customer.id, reference="DUPLICATE", total="1.00")
+    raw_invoice(database, customer=customer.id, reference="DUPLICATE", total="1.00")
     with pytest.raises(ConflictError):
         with database.transaction() as tx:
             tx.create(Customer, customer_name="Must roll back")
-            tx.create(Invoice, customer=customer.id, reference="DUPLICATE", total="2.00")
+            raw_invoice(tx, customer=customer.id, reference="DUPLICATE", total="2.00")
     assert len(database.list(Customer)) == 1
     assert len(database.list(Invoice)) == 1
 

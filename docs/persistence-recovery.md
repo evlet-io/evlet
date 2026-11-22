@@ -17,6 +17,10 @@ reader pins all four snapshots. The barrier is released before the online copies
 can make the command fail with the normal SQLite timeout; retry the backup after they finish.
 This does not make ordinary multi-file WAL transactions crash-atomic.
 
+A backup carries the Controls audit log with its hash chain ([controls.md](controls.md#tamper-evidence)).
+Restoring an older backup brings back an older head of that chain: record the head hash you keep
+off the host again after a restore, so a later comparison does not report the restore as a rewrite.
+
 Back up `secret.key`, configuration, app sources and any external object/file storage separately.
 The database set is not a substitute for those operator backups. A restore validates all members
 before changing live data and preserves a safety backup of the current database set. When the

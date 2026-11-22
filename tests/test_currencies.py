@@ -146,7 +146,7 @@ def test_report_csv_keeps_plain_numbers_and_names_the_code(secured):
     assert save(admin, {'AED': {'image': image}})[0] == 200
     status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Gulf Horizon Contracting', 'currency': 'AED'})
     assert status == 201, customer
-    status, record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-1', 'total': '5616.35',
+    status, record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-1', 'children': {'lines': [{'item': 'Work', 'rate': '5616.35'}]},
                                                        'posting_date': '2026-11-03', 'status': 'sent'})
     assert status == 201, record
     status, content, _ = admin('POST', '/api/_reports/SalesByCustomer/export.csv', {'filters': {'status': 'sent'}})
@@ -179,7 +179,7 @@ def test_pdf_renders_the_image_symbol(secured):
     admin = client(secured)
     assert save(admin, {'AED': {'image': uri(png(24, 24))}})[0] == 200
     status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Gulf Horizon Contracting', 'currency': 'AED'})
-    status, record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-55120', 'total': '5616.35',
+    status, record, _ = admin('POST', '/api/invoice', {'customer': customer['id'], 'reference': 'PO-55120', 'children': {'lines': [{'item': 'Work', 'rate': '5616.35'}]},
                                                        'posting_date': '2026-11-03', 'status': 'sent'})
     assert status == 201, record
     business, person = secured.business, user(secured)

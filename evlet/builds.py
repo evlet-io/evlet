@@ -344,8 +344,8 @@ def prepare(root, packages):
     return pinned, manifest
 
 
-# Build copy folder -> the app folder it was copied from, for every generation this process prepared. evlet dev uses it
-# to show tracebacks with the app's own paths (evlet.cli.serve.show_source_paths).
+# Build copy folder -> the app folder it was copied from, for every generation this process prepared. evlet dev and
+# evlet serve use it to log tracebacks with the app's own paths (evlet.cli.serve.show_source_paths).
 SOURCES = {}
 
 

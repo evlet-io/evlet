@@ -97,7 +97,7 @@ points upward; every module must be in the map.
 | 2 | `access` | Who may do what | auth, permissions |
 | 3 | `data` | SQL, files, migrations | database, sqlite, migrations, ledger, writes, storage, object_storage, secrets, sequences, images |
 | 4 | `engine` | Document behaviour | documents, statemanager, guards, activity, measures, unsaved, mentions, meaning, prompts |
-| 5 | `web` | HTTP application and routes | app, runtime, oidc, routing, business, forms, workspaces, services, events, jobs, framework, devlink, discovery, search |
+| 5 | `web` | HTTP application and routes | app, runtime, oidc, routing, business, forms, workspaces, services, events, jobs, framework, devlink, discovery, search, essentials |
 | 6 | `admin` | Controls and settings | controls, controls_export, controls_system, customization, settings, printing |
 | 7 | `ai` | Eva, MCP, tools | eva, tools, mcp, connector, connectors, assistants, mailboxes |
 | 8 | `site` | Sites, apps, deployment, app tests | instances, packages, builds, deployment, tenancy, serverless, testing |
@@ -120,9 +120,10 @@ helpers in `evlet/cli/project.py`.
 
 Building a model class or a `Registry` runs steps that belong to higher layers (ledger options,
 state manager hooks, rule guards, sequences, measures, activities, API access). `evlet/models.py`
-lists them in `BUILD_ORDER`, the order they run in; each owning module registers its function with
-`@build_step(name)`, and `evlet/__init__.py` imports those modules before any model class exists. Optional
-subsystems without build-step registration load on first public-export access; `__all__`,
+names them as the fields of `BuildSteps`, in the order they run, and calls them through `models.STEPS`;
+`evlet/__init__.py`, which sits above every layer and runs before any submodule import completes, imports the
+owning modules and sets `models.STEPS` to their functions before any model class exists. Optional
+subsystems that supply no build step load on first public-export access; `__all__`,
 `dir(evlet)` and the original exported objects remain stable.
 
 ## API and data flow

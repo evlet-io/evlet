@@ -45,26 +45,53 @@ earlier `--apply` installed. When that account is root or in the `sudo`, `wheel`
 group, the command prints a note: a code-execution bug in an app then runs as an account that
 can become root and that owns the code Evlet runs.
 
-To run the service as a dedicated account instead, set `EVLET_SERVICE_USER` for the command.
-It refuses root and members of those groups. The account must exist, read the project
-(`.venv/`, `apps/`, `instances/<name>/config.py` and `routes.py`) and own only what the server
-writes. For an instance `acme` kept in `/srv/evlet`:
+To run the service as a dedicated account instead, pass `--service-user` (or set
+`EVLET_SERVICE_USER`). It is opt-in in 0.4 and becomes the default in 0.5. It refuses root and
+members of those groups. For an instance `acme` kept in `/srv/evlet`:
 
 ```bash
-sudo useradd --system --user-group --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin evlet-acme
-sudo systemctl stop evlet-acme
-sudo chown -R evlet-acme: /srv/evlet/instances/acme/data /srv/evlet/instances/acme/files \
-    /srv/evlet/instances/acme/secret.key /srv/evlet/instances/acme/.evlet.lock
-EVLET_SERVICE_USER=evlet-acme evlet setup /srv/evlet --instance acme --app ... --host erp.acme.com --apply
+evlet setup /srv/evlet --instance acme --app ... --host erp.acme.com --service-user evlet-acme --apply
 ```
 
-The code, `.venv/` and `config.py` stay owned by the deploy account and read-only to the
-service. A project in a home directory is usually not readable by another account; keep it in
-`/srv` or similar. Commands that open the instance's data then run as the service account,
-such as `sudo -u evlet-acme .venv/bin/evlet backup acme`. `evlet secrets rotate` writes a new
-`secret.key` next to `config.py`, so stop the service and run it as the deploy account, then
-chown the key again; or keep the key in `EVLET_SECRET_KEY` (below). Evlet does not yet create
-the account or change ownership for you.
+Besides the unit and the Caddy site, the printed (or applied) steps then:
+
+- create the account when it is missing: `sudo useradd --system --user-group --no-create-home
+  --home-dir /nonexistent --shell /usr/sbin/nologin evlet-acme`;
+- stop the service when a unit is already installed, so nothing of the old account keeps writing;
+- give the account the instance state and nothing else: `sudo chown -R evlet-acme:evlet-acme` on
+  `instances/acme/data`, `files`, `secret.key` and `apps.lock`, `sudo chmod -R go-rwx` on all but
+  `apps.lock`, which stays readable (`chmod 644`; it only names the installed apps);
+- share `instances/acme/.evlet.lock` between both accounts (`evlet-acme:<your group>`, mode 660),
+  so a deploy-user `evlet upgrade` can still wait for the server;
+- make `instances/acme` group-writable for the account with the sticky bit (`chgrp evlet-acme`,
+  `chmod 1770`): the service can create its own files there, such as a new `secret.key`, but cannot
+  replace or remove `config.py` or `routes.py`, which stay yours (`chmod 644`, so it can read them);
+- make the app builds in `.evlet/` readable (`chmod -R a+rX`). The code, `.venv/`, `apps/` and the
+  builds stay owned by the deploy user and read-only to the service.
+
+The unit then runs `User=evlet-acme` with `ProtectSystem=strict` and
+`ReadWritePaths=` the instance's `data`, `files` and directory, so the rest of the file system is
+read-only to the service. A project in a home directory is usually not readable by another
+account; keep it in `/srv` or similar, with `.venv/` and `apps/` world-readable (the defaults).
+
+Commands you run as the deploy user notice when `instances/<name>/data` belongs to another account
+and run their state part as that account with `sudo -u`, showing the command first; sudo asks
+for your password. `evlet backup` and `evlet restore` run again as `sudo -u evlet-acme
+.venv/bin/python -P -m evlet --project /srv/evlet backup acme`. `evlet restart` runs its checks
+that way (`restart acme --check`) and restarts the service with your own sudo. `evlet upgrade`
+builds the new release's apps as you, then plans, backs up and migrates each instance as its
+account, and stops and starts the services with your sudo. Without sudo the command prints the
+exact command to run instead. `evlet migrate`, `evlet users set-password` and `evlet secrets
+rotate` read and write the same state: run them as the account, such as
+`sudo -u evlet-acme /srv/evlet/.venv/bin/python -P -m evlet --project /srv/evlet migrate acme`.
+`sudo -u` starts with a clean environment, so pass variables such as `EVLET_SECRET_KEY` there
+yourself, or keep them in `/etc/evlet/acme.env`.
+
+Installing a new app (`evlet install`) also installs Python packages into `.venv/`, which only you
+can write: run it before handing the state over, or run `evlet install` as yourself for the
+packages and `migrate` as the account. Files the account writes are private to it (the unit's
+`UMask=0077`). If a migration run as the account rewrote `apps.lock` privately, run the
+`--apply` again (or `sudo chmod 644` it) so your own commands can read it.
 
 `--apply` installs the unit and Caddy files from the text it has just rendered, piped to
 `sudo install`; it never copies the files in `deploy/`, which the service account might be able
@@ -87,20 +114,36 @@ sudo systemctl restart evlet-acme
 
 `evlet app --get` and `evlet install` resolve an app's declared dependency ranges when they
 install, from the indexes pip is configured with, and `apps.lock` pins app source digests but not
-the third-party packages. Two servers can therefore end up with different versions. For a
-reproducible, reviewable install, install the dependencies yourself from a hashed requirements
-file before installing the app (`.venv/bin/python -m pip install --require-hashes -r requirements.lock`,
-made with a tool such as `pip-compile --generate-hashes`); pip then finds them satisfied. Evlet does
-not yet read such a file itself.
+the third-party packages. Two servers can therefore end up with different versions. Evlet
+names every dependency that is not pinned to one exact version with a warning when it installs
+it. For a reproducible, reviewable install, ship a `requirements.lock` in the app: pip
+requirements pinned with `==` and `--hash=sha256:...`, covering the app's whole third-party set
+(made with a tool such as `pip-compile --generate-hashes` or `uv pip compile --generate-hashes`).
+Then pass `--require-hashes` to `evlet app --get`, `evlet build` or `evlet setup`, or set
+`EVLET_REQUIRE_HASHES=1` for `evlet install` and `evlet migrate`. Evlet then installs each app's
+missing dependencies only with `pip install --require-hashes --no-deps -r requirements.lock`,
+refuses an app that has none, and checks that the lock satisfies the declared ranges. Without the
+option, installs resolve the ranges as before. A lock that names a source distribution still runs
+its build code; pin wheels where you can.
 
 ### Audit log integrity
 
 `evlet_audit` is append-only through SQLite triggers that refuse UPDATE and DELETE. That stops
-framework and app code from changing history by mistake. It is not tamper evidence: anyone who
-can write the database file (the service account, trusted app code, or `sqlite3` on the file)
-can drop the triggers, edit rows and recreate them, and backups copy the edited table. Where
-the audit must survive a compromised server, ship it off the host as it is written (journald or
-syslog forwarding, or regular exports to storage the server cannot rewrite) and compare.
+framework and app code from changing history by mistake. Since framework step `0018_audit_chain`
+each new row also stores a SHA-256 hash of its content and of the row before it, and Controls,
+Overview lists **The audit log was changed at row N** under Needs attention when a row was edited,
+removed or slipped in without a hash ([controls.md](controls.md#tamper-evidence)). Rows written
+before the step have no hash; the chain starts at the first row after it.
+
+The chain is evidence, not protection. Anyone who can write the database file (the service
+account, trusted app code, or `sqlite3` on the file) can drop the triggers, rewrite every row
+and recompute every hash, or remove the newest rows; the chain then checks out, and backups copy
+the rewritten table. To catch that, keep the head of the chain off the host: `GET
+/api/_controls/audit` returns `head` (`{"id", "hash"}` of the newest chained row), so record it
+regularly somewhere the server cannot rewrite (a monitoring system, a ticket, another machine)
+and compare: a head whose row now has a different hash, or a lower newest id, means the log was
+rewritten. Where the audit itself must survive a compromised server, also ship its rows off the
+host as they are written (journald or syslog forwarding, or regular exports).
 
 ### Sign-in limits and password hashing
 

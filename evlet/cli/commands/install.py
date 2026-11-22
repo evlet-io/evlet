@@ -75,6 +75,9 @@ def run_install(args, context):
     """evlet install and evlet migrate, which share the installer and its report."""
     root = context.root
     require_instance(root, args)
+    from ..site import as_state_owner
+    if as_state_owner(root, args.instance, context.values):
+        return
     if args.command == 'migrate' and args.plan:
         return run_plan(args, context)
     from ..install import install

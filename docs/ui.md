@@ -32,6 +32,9 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 - Generated model screens: lists, boards for models that name their State in `Meta.board` (`board = "docstate"`), record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves (with their remarks), child tables, measures, related records and
   files.
+- List totals. A list counts its matching records up to 10,000 (`EVLET_LIST_COUNT_CAP`); past that the title,
+  the summary and the pager read "10,000+" (the page answers `total_capped: true`) and Next stays available
+  page by page. Under the cap the total is exact ([performance.md](performance.md#list-counts)).
 - Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
   `/reports/<name>`, listed in the sidebar and in the Explorer. A text column that reads a Select field (its
   `source='model.field'`, or the report model's field of the same name) shows the choice's label, as the list
@@ -107,7 +110,8 @@ A record page shows each value once per view. The header has the title, the name
 subtitle, the first two key fields the primary area does not show. The key cards (or, without them, the summary
 strip) have calculated values and per-record measures the header doesn't show; with nothing left, there is no strip.
 The form of a saved record leaves out what the header and the cards or strip show: the title, name and State, a
-record number nothing can edit (the breadcrumb, or in a side panel the subtitle, shows it), and the cards' or
+record name or number this person cannot edit now, because it is read only or locked by its state (the breadcrumb,
+or in a side panel the subtitle, shows it; an editable one stays in the form and the header does not repeat it), and the cards' or
 strip's fields. While a side panel hides the cards or strip (`Meta.panel_summary = False`), the form keeps their
 fields. So a section left with only such fields, such as Other holding the number, does not show. A new record's
 form keeps everything. Related records are a section of their own after "more information", under the

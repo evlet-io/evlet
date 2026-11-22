@@ -5,7 +5,7 @@ from datetime import date
 from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Js, Link, LongText, Main, Model, Naming,
                    Activity, Option, Ref, Registry, Related, RichText, Rule, Section, Select, Series, State, Sum, Table, TableSection, Text,
                    ValidationError, action, state)
-from evlet.calc import F, parent
+from evlet.calc import F, parent, when
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
 # KWD has 3 decimal places (ISO 4217); XCR is a client's own credit unit the demo gives 5 in Controls, Currencies.
@@ -54,6 +54,18 @@ class Customer(Model):
         return self.context.enqueue('rebuild_points', {})
 
 
+class InvoiceLine(Child):
+    """One line of an invoice: what was sold, how many and at what rate. The amount is calculated as people type."""
+    # A row reads its invoice's currency through a field of its own (docs/model-engine.md, Decimal places per
+    # currency); column=False keeps it out of the grid, since each amount already shows the code.
+    currency = Text(max_length=3, compute=parent.currency, stored=False, column=False)
+    item = Text(required=True, max_length=140, help_text='What was sold or done.')
+    qty = Decimal(scale=2, minimum='0.01', default='1', label='Quantity')
+    # A rate may be negative: a discount line.
+    rate = Currency(default='0.00', currency='currency')
+    amount = Currency(currency='currency', compute=F('qty') * F('rate'))
+
+
 class Invoice(Model):
     class Meta:
         description = "Keep each piece of work connected to a customer."
@@ -74,7 +86,14 @@ class Invoice(Model):
         status = 'payment_status'
         # A new invoice's form starts with the cursor in Customer, the field people fill in first.
         focus = 'customer'
+        # The lines' amounts, the total and the payment status are finite calculations (docs/finite-calculations.md):
+        # invoices are written through a Context and the HTTP routes, which calculate them.
+        calculation_language = 'finite-v1'
 
+    # A model with a Table states who may use it (an undeclared role gets nothing): the default roles, as for any
+    # model. app.py adds print for editors and the portal's own rule.
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'delete')),
+                   'viewer': Rule(('read',))}
     customer = Link(Customer, required=True)
     # Only projects of the invoice's customer. Changing the customer clears a project of another one,
     # with a note under the field; the server names the mismatch if one is saved anyway.
@@ -89,21 +108,26 @@ class Invoice(Model):
                      tooltip="Use the customer's purchase order number if they ask for one.",
                      # copy=False: Duplicate leaves the reference empty, since it is unique per invoice.
                      copy=False)
-    # The currency comes from the customer the invoice is for.
-    total = Currency(required=True, minimum="0.01", currency='customer.currency')
+    # The invoice's lines: a child Table (stored in invoice_lines). totals= shows the total under them.
+    lines = Table(InvoiceLine, required=True, label='Lines', totals=('total',))
+    # The currency comes from the customer the invoice is for; the lines read it through this virtual field.
+    currency = Text(max_length=3, compute=F('customer.currency'), stored=False, column=False)
+    # The sum of the lines, calculated as people type: nobody types it, and a total sent by a caller is refused
+    # (COMPUTED_FIELD_WRITE). Send lines instead.
+    total = Currency(currency='customer.currency', compute=lines.sum('amount'))
     posting_date = Date()
     status = Select(["draft", "sent"], required=True, default="draft")
     # suffix='%' puts a % box after the input, as Percent fields have.
     # panel=False: the list's side panel leaves the tax rate out; the full page shows it.
     # display_scale=2: stored with 4 places, read as 5% or 7.25% (at most 2 places, no trailing zeros).
     tax_rate = Decimal(scale=4, display_scale=2, minimum="0", maximum="100", default="0.0000", label="Tax rate", suffix="%",
-                       help_text="Recorded separately; this does not calculate the total.", panel=False)
+                       help_text="Recorded separately; the total is the sum of the lines.", panel=False)
     amount_paid = Currency(minimum="0", default="0.00", currency='customer.currency', label='Amount paid')
     # Calculated from the amount paid against the total, never set by hand. colors picks each badge colour:
     # unpaid is neutral, since every new draft starts unpaid and is not overdue yet.
     payment_status = Select(['unpaid', 'partly_paid', 'paid'], label='Payment status',
                             colors={'unpaid': 'slate', 'partly_paid': 'amber', 'paid': 'green'},
-                            compute="'paid' if amount_paid >= total else ('partly_paid' if amount_paid > 0 else 'unpaid')")
+                            compute=when(F('amount_paid') >= F('total'), 'paid', when(F('amount_paid') > 0, 'partly_paid', 'unpaid')))
 
     @action('Post to ledger')
     def post(self):
@@ -402,6 +426,8 @@ class Expense(Model):
         description = 'Expense claims: the form shows what the payment needs.'
         list_fields = ('title', 'payment', 'amount')
         layout = (Main(('title', 'amount', 'payment', 'card_last4', 'split_total')), Main('splits'), Main('receipts'))
+        # Its field and Table rules are finite-v1 expressions (docs/finite-calculations.md#two-formula-languages).
+        calculation_language = 'finite-v1'
 
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'delete')),
                    'viewer': Rule(('read',))}

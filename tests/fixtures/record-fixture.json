@@ -15,6 +15,7 @@
       }
     ],
     "total": 1,
+    "total_capped": false,
     "limit": 20,
     "offset": 0
   },

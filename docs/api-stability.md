@@ -25,6 +25,12 @@ production ready, but the rules below hold from 0.3 on.
   storage, jobs, routing and the application classes. Import them from `evlet`, not from the
   module that defines them. `AppDefinition(views=())` stays accepted for apps scaffolded
   before 0.4; a non-empty `views` or a `ui` registry is refused.
+- **`F` and `evlet.essentials`.** `F` is a root export (the same function as `evlet.calc.F`).
+  `evlet.essentials` re-exports the names a first app needs (its `__all__`) as the same objects
+  as the root; it never holds a name the
+  root does not, and every root name keeps working from `evlet`. `evlet.calc.CalculationLanguageWarning`
+  is the warning a root that is finite-v1 only because of an `F(...)` expression raises once without
+  `Meta.calculation_language` ([finite-calculations.md](finite-calculations.md#two-formula-languages)).
 - **Model scripts.** `Js`, the field keywords `on_change`, `tooltip=Js(...)`, `look` and
   `control`, `Meta.script`, `Meta.on_open`, `Main(custom=)` and `Section(..., custom=)`, and the
   browser API a script gets: the `evlet` global, `evlet.Model` with `model`, `id`, `is_new`,

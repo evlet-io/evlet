@@ -327,7 +327,8 @@ records, such as small forms that are not records.
 ### Rich text
 
 A `RichText` field (`type: "richtext"` in the schema) edits in `RichTextEditor`
-(`frontend/src/evlet/richtext/editor.ts`), Evlet's own editor with no dependencies. The design is in
+(`frontend/src/evlet/richtext/editor.ts`), Evlet's own editor with no dependencies; its toolbar, floating
+toolbar, @mention picker, image popover and shortcut keys are in `richtext/editor-tools.ts`. The design is in
 [internal/rich-text.md](internal/rich-text.md).
 
 ```ts
@@ -911,6 +912,7 @@ not part of the build.
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
 | `record-page.ts` | Record (doc) view and new records; moves and actions open their forms through `prompts.ts` |
+| `record-scope.ts`, `record-content.ts`, `record-actions.ts` | The record view's parts: the scope they share, the white card (primary area, "more information" rows, Tables and their row editor), and the decisions without DOM (why a move or action cannot run, which actions the role has, Delete, the More menu) |
 | `prompts.ts` | Prompts ([prompts.md](prompts.md)): the prompt modal on the record engine, `openService()` and `follow()` for outcomes |
 | `report-page.ts` | Reports ([reports.md](reports.md)): the index, one report's filters, rows, totals, chart, Export and Print |
 | `palette.ts` | Command palette (Cmd or Ctrl K), with the Explorer button at the end of its field |

@@ -10,6 +10,7 @@ from evlet import (Boolean, Child, Currency, Database, Date, DateTime, Decimal, 
 from evlet import framework
 from examples.playground.items import core_fields, item_fields
 from examples.playground.models import Customer, Invoice, Project
+from test_batch4_invoice_lines import raw_invoice
 
 # The currencies of the Playground at 0006, before 0019 added KWD and XCR.
 CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
@@ -23,7 +24,7 @@ def customer(api):
 
 
 def invoice(api, owner, reference, **values):
-    status, body, _ = api('POST', '/api/invoice', {'customer': owner, 'reference': reference, 'total': '100.00', **values})
+    status, body, _ = api('POST', '/api/invoice', {'customer': owner, 'reference': reference, 'children': {'lines': [{'item': 'Work', 'rate': '100.00'}]}, **values})
     assert status == 201, body
     return body
 
@@ -47,12 +48,14 @@ def test_new_invoices_are_numbered_from_the_posting_date_year(secured):
 def test_the_name_cannot_be_sent_on_create_and_edits_keep_it(secured):
     editor = client(secured, 'editor')
     owner = customer(editor)
-    status, body, _ = editor('POST', '/api/invoice', {'customer': owner, 'reference': 'PO-1', 'total': '10.00', 'name': 'MINE'})
+    status, body, _ = editor('POST', '/api/invoice', {'customer': owner, 'reference': 'PO-1', 'children': {'lines': [{'item': 'Work', 'rate': '10.00'}]}, 'name': 'MINE'})
     assert status == 422 and body['fields']['name'] == 'Assigned on save'
     created = invoice(editor, owner, 'PO-1', posting_date='2026-03-01')
     url = f"/api/invoice/{created['id']}"
     # The payment status is calculated, so an edit sends the record's ETag (If-Match).
-    status, edited, _ = editor('PATCH', url, {'total': '250.00', 'posting_date': '2027-02-01'},
+    line = created['children']['lines'][0]
+    status, edited, _ = editor('PATCH', url, {'children': {'lines': [{'id': line['id'], 'item': line['item'], 'rate': '250.00'}]},
+                                              'posting_date': '2027-02-01'},
                                headers={b'if-match': editor('GET', url)[2][b'etag']})
     assert status == 200, edited
     # Editing the invoice, even into another year, keeps its name.
@@ -72,7 +75,7 @@ def test_the_name_cannot_be_sent_on_create_and_edits_keep_it(secured):
 def test_permissions_and_the_schema(secured):
     viewer = client(secured, 'viewer')
     owner = customer(client(secured, 'editor'))
-    assert viewer('POST', '/api/invoice', {'customer': owner, 'reference': 'PO-1', 'total': '10.00'})[0] == 403
+    assert viewer('POST', '/api/invoice', {'customer': owner, 'reference': 'PO-1', 'children': {'lines': [{'item': 'Work', 'rate': '10.00'}]}})[0] == 403
     for role in ('admin', 'editor', 'viewer'):
         model = next(item for item in client(secured, role)('GET', '/api/schema')[1]['models'] if item['name'] == 'invoice')
         fields = {item['name']: item for item in model['fields']}
@@ -192,7 +195,8 @@ def test_an_upgraded_playground_keeps_invoice_numbers_as_names_and_continues_the
     assert current.migrate(migrations) == ['0007_employees', '0008_record_names', '0009_ledger', '0010_invoice_project', '0011_project_brief', '0012_invoice_payment_status', '0013_points',
                                               '0014_project_task_index', '0015_recognition',
                                               '0016_employee_profile', '0017_employee_skill_levels',
-                                              '0018_item_photo', '0019_more_currencies', '0020_project_state', '0021_project_docstate', '0022_expenses']
+                                              '0018_item_photo', '0019_more_currencies', '0020_project_state', '0021_project_docstate', '0022_expenses',
+                                              '0023_invoice_lines']
     assert '0003_record_names' in framework.upgrade(current)
     assert not framework.pending(current)
     assert {'name', 'title', 'customer_name'} <= set(columns(path, 'customer')) and 'number' not in Invoice.__fields__
@@ -206,9 +210,9 @@ def test_an_upgraded_playground_keeps_invoice_numbers_as_names_and_continues_the
     assert (project.title, project.name, project.docstate) == ('Fit-out', None, 'planned')
 
     # The series continues in the same counter: no name is issued twice.
-    created = current.create(Invoice, customer=owner.id, reference='NEW-1', total='20.00', posting_date='2026-06-01')
+    created = raw_invoice(current, customer=owner.id, reference='NEW-1', total='20.00', posting_date='2026-06-01')
     assert (created.name, created.title) == ('INV-2026-00003', 'INV-2026-00003')
-    assert current.create(Invoice, customer=owner.id, reference='NEW-2', total='20.00', posting_date='2027-01-05').name == 'INV-2027-00001'
+    assert raw_invoice(current, customer=owner.id, reference='NEW-2', total='20.00', posting_date='2027-01-05').name == 'INV-2027-00001'
     current.close()
 
 
@@ -227,5 +231,5 @@ def test_a_database_initialized_from_milestone_models_upgrades(tmp_path):
     assert '0008_record_names' in current.migrate(migrations)
     framework.upgrade(current)
     assert current.get(Customer, owner.id).title == 'Preserved'
-    created = current.create(Invoice, customer=owner.id, reference='NEW-1', total='20.00', posting_date='2026-06-01')
+    created = raw_invoice(current, customer=owner.id, reference='NEW-1', total='20.00', posting_date='2026-06-01')
     assert created.name == 'INV-2026-00001'

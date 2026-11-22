@@ -9,7 +9,7 @@ import re
 
 from . import qb, images, periods, sequences
 from .auth import AccessError, User, has_role
-from .database import ConflictError, ROW_LIMIT, conflict, ReadSession, insert, storage_columns, stored_values
+from .database import ConflictError, ROW_LIMIT, conflict, page_total, ReadSession, insert, storage_columns, stored_values
 from .declarations import Ref, Table
 from .fields import CurrentUser, MISSING, Link, Integer
 from .identity import RecordId
@@ -471,7 +471,9 @@ class Context:
         source = qb.table(business.registry.name_for(model), 'record')
         page = qb.select(source).where(where).order_by(*query.ordering(order_by)).limit(limit).offset(offset)
         rows = tx.connection.run(page).all()
-        total = tx.connection.run(qb.select(source, qb.count()).where(where)).value()
+        total = page_total(limit, offset, len(rows))  # a short page already tells the exact total
+        if total is None:
+            total = tx.connection.run(qb.select(source, qb.count()).where(where)).value()
         return {'rows': [Record(self, model, row) for row in business.policy.serialize_many(tx, self.user, [model._from_row(row) for row in rows])],
                 'total': total, 'limit': limit, 'offset': offset}
 
@@ -932,125 +934,186 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
     A collection is either a full list of rows (rows left out are removed) or a change set
     {create, update, delete, order} (rows left out are kept).
     """
-    business, tx, user = context._business, context._tx, context.user
-    def count(rows, slot):
-        # Stored rows (each once, draft side) and new submitted rows are bounded separately so
-        # a full document can still swap rows; load_draft checks the merged total.
-        if loaded is None: return
-        loaded[slot] += rows
-        if loaded[slot] > LIMITS['document_rows']:
-            raise ValidationError({'children': 'This document exceeds the owned row limit'})
+    load = _RowLoad(context, draft, old, record_id, preview, prefix, keys_seen, loaded, saved, targets, complete)
+    business = load.business
     if set(collections) - {child.name for child in business.children.values() if child.parent is model}:
         raise ValidationError({prefix + 'children': 'Unknown child collection'})
     for child in business.children.values():
-        if child.parent is not model: continue
-        max_rows = row_bounds(business, child)[1]
-        existing = saved.of(child, record_id) if record_id else []
-        count(len(existing), 0)
-        originals = {row.id: row for row in existing}
-        hidden = {row.id for row in existing if (child.model, row.id) in saved.hidden}
-        positioned = 'evlet_position' in child.model.__fields__
-        sectioned = sections.enabled(model, child.name)
-        headings = saved.sections_of(child, record_id) if record_id and sectioned else []
-        known = {item.id: item for item in headings}
+        if child.parent is model:
+            _load_collection(load, _Collection(load, child), collections)
 
-        def stored(row, owner, counter):
-            item = Draft(child.model, row._values, context=context, parent=owner, record_id=row.id)
-            load_rows(context, child.model, item, None, row.id, {}, True, prefix + child.name + '.' + item.key + '.', set(), counter, saved)
-            return item
-        if old is not None:
-            old._rows[child.name] = [stored(row, old, None if loaded is None else [0, 0]) for row in existing]
-            if sectioned: old._sections[child.name] = [item.copy() for item in headings]
-        if child.name not in collections:
-            draft._rows[child.name] = [stored(row, draft, loaded) for row in existing]
-            if sectioned: draft._sections[child.name] = [item.copy() for item in headings]
+
+class _RowLoad:
+    """What one load_rows call shares across its collections: the draft it fills, the saved rows, and the
+    document-wide row counters and new-row keys."""
+
+    def __init__(self, context, draft, old, record_id, preview, prefix, keys_seen, loaded, saved, targets, complete):
+        self.context, self.draft, self.old, self.record_id = context, draft, old, record_id
+        self.preview, self.prefix, self.keys_seen = preview, prefix, keys_seen
+        self.loaded, self.saved, self.targets, self.complete = loaded, saved, targets, complete
+        self.business, self.tx, self.user = context._business, context._tx, context.user
+
+    def count(self, rows, slot):
+        # Stored rows (each once, draft side) and new submitted rows are bounded separately so
+        # a full document can still swap rows; load_draft checks the merged total.
+        if self.loaded is None: return
+        self.loaded[slot] += rows
+        if self.loaded[slot] > LIMITS['document_rows']:
+            raise ValidationError({'children': 'This document exceeds the owned row limit'})
+
+    def counter(self):
+        """A separate counter for rows that are read but not part of this draft (old side, removed subtrees)."""
+        return None if self.loaded is None else [0, 0]
+
+
+class _Collection:
+    """One child collection of a load_rows call: its saved rows, hidden rows and section rows."""
+
+    def __init__(self, load, child):
+        business, saved, record_id = load.business, load.saved, load.record_id
+        self.load, self.child, self.where = load, child, load.prefix + child.name
+        self.max_rows = row_bounds(business, child)[1]
+        self.existing = saved.of(child, record_id) if record_id else []
+        load.count(len(self.existing), 0)
+        self.originals = {row.id: row for row in self.existing}
+        self.hidden = {row.id for row in self.existing if (child.model, row.id) in saved.hidden}
+        self.positioned = 'evlet_position' in child.model.__fields__
+        self.sectioned = sections.enabled(child.parent, child.name)  # child.parent is the loaded model
+        self.headings = saved.sections_of(child, record_id) if record_id and self.sectioned else []
+        self.known = {item.id: item for item in self.headings}
+
+    def stored(self, row, owner, counter):
+        """A saved row (and its subtree) as a Draft under owner."""
+        load, child = self.load, self.child
+        item = Draft(child.model, row._values, context=load.context, parent=owner, record_id=row.id)
+        load_rows(load.context, child.model, item, None, row.id, {}, True, self.where + '.' + item.key + '.', set(), counter, load.saved)
+        return item
+
+
+def _load_collection(load, rows, collections):
+    """Fill one collection of the draft (and of the old tree): saved rows as they are, or the submitted rows merged in."""
+    child, draft, old = rows.child, load.draft, load.old
+    if old is not None:
+        old._rows[child.name] = [rows.stored(row, old, load.counter()) for row in rows.existing]
+        if rows.sectioned: old._sections[child.name] = [item.copy() for item in rows.headings]
+    if child.name not in collections:
+        draft._rows[child.name] = [rows.stored(row, draft, load.loaded) for row in rows.existing]
+        if rows.sectioned: draft._sections[child.name] = [item.copy() for item in rows.headings]
+        return
+    entries = _collection_entries(load, rows, collections[child.name])
+    load.count(sum(1 for kind, value, _ in entries if kind == 'row' and isinstance(value, dict) and value.get('id') is None
+                   and not (rows.sectioned and sections.is_entry(value))), 1)
+    merged, kept, kept_sections = _merged_rows(load, rows, entries)
+    _check_removed(load, rows, kept, kept_sections)
+    _place_rows(load, rows, merged)
+
+
+def _collection_entries(load, rows, submitted):
+    """The submitted collection (a full list or a change set) as ordered (kind, value, placed) entries."""
+    child, sectioned, existing, hidden = rows.child, rows.sectioned, rows.existing, rows.hidden
+    listed = submitted if isinstance(submitted, list) else [*submitted.get('create', []), *submitted.get('update', [])] \
+        if isinstance(submitted, dict) and all(isinstance(submitted.get(key, []), list) for key in ('create', 'update')) else []
+    if not sectioned and 'section' not in child.model.__declared_fields__ and any(sections.is_entry(value) for value in listed):
+        raise ValidationError({rows.where: f'{child.label} has no section rows'})
+    # A Table with sections orders its rows and section rows together; section rows are never hidden.
+    everything = sections.combined(existing, rows.headings) if sectioned else existing
+    if isinstance(submitted, dict):
+        return row_changes(submitted, everything, hidden, rows.positioned, rows.where)
+    if isinstance(submitted, list) and sum(1 for value in submitted if not (sectioned and sections.is_entry(value))) <= rows.max_rows:
+        if len(existing) - len(hidden) > ROW_LIMIT and not load.complete:
+            # A detail embeds only the first ROW_LIMIT rows, so a full list from it would drop the rest.
+            raise ValidationError({rows.where: f'This collection has more than {ROW_LIMIT} rows; send a change set '
+                                               '{"create", "update", "delete", "order"} instead of the full list'})
+        return full_list(submitted, everything, hidden)
+    raise ValidationError({rows.where: f'Use at most {rows.max_rows} rows'})
+
+
+def _merged_rows(load, rows, entries):
+    """The collection's new row list from its entries, with the saved row ids and section ids it keeps."""
+    kept, keys, merged, kept_sections = set(), set(), [], set()
+    for kind, value, placed in entries:
+        if kind == 'keep':
+            if value in rows.known:
+                kept_sections.add(value)
+                merged.append(rows.known[value].copy())
+                continue
+            if value not in rows.hidden: kept.add(value)
+            merged.append(rows.stored(rows.originals[value], load.draft, load.loaded))
             continue
-        submitted = collections[child.name]
-        listed = submitted if isinstance(submitted, list) else [*submitted.get('create', []), *submitted.get('update', [])] \
-            if isinstance(submitted, dict) and all(isinstance(submitted.get(key, []), list) for key in ('create', 'update')) else []
-        if not sectioned and 'section' not in child.model.__declared_fields__ and any(sections.is_entry(value) for value in listed):
-            raise ValidationError({prefix + child.name: f'{child.label} has no section rows'})
-        # A Table with sections orders its rows and section rows together; section rows are never hidden.
-        everything = sections.combined(existing, headings) if sectioned else existing
-        if isinstance(submitted, dict):
-            entries = row_changes(submitted, everything, hidden, positioned, prefix + child.name)
-        elif isinstance(submitted, list) and sum(1 for value in submitted if not (sectioned and sections.is_entry(value))) <= max_rows:
-            if len(existing) - len(hidden) > ROW_LIMIT and not complete:
-                # A detail embeds only the first ROW_LIMIT rows, so a full list from it would drop the rest.
-                raise ValidationError({prefix + child.name: f'This collection has more than {ROW_LIMIT} rows; send a change set '
-                                                             '{"create", "update", "delete", "order"} instead of the full list'})
-            entries = full_list(submitted, everything, hidden)
-        else:
-            raise ValidationError({prefix + child.name: f'Use at most {max_rows} rows'})
-        count(sum(1 for kind, value, _ in entries if kind == 'row' and isinstance(value, dict) and value.get('id') is None
-                  and not (sectioned and sections.is_entry(value))), 1)
-        kept, keys, merged, kept_sections = set(), set(), [], set()
-        for kind, value, placed in entries:
-            if kind == 'keep':
-                if value in known:
-                    kept_sections.add(value)
-                    merged.append(known[value].copy())
-                    continue
-                if value not in hidden: kept.add(value)
-                merged.append(stored(originals[value], draft, loaded))
-                continue
-            if not isinstance(value, dict):
-                raise ValidationError({prefix + child.name: 'Each row must be an object'})
-            if sectioned and (sections.is_entry(value) or item_id(value.get('id')) in known):
-                merged.append(section_entry(business, user, child, value, known, kept_sections, originals, placed, preview,
-                                            prefix + child.name, keys_seen))
-                continue
-            value = dict(value)
-            row_id = value.pop('id', None)
-            if row_id is not None:
-                row_id = item_id(row_id) or row_id
-            temporary = value.pop('_key', None)
-            # New rows' keys map to IDs in one flat _row_ids object, so they are unique document-wide.
-            fresh = row_id is None
-            if temporary is not None and (not isinstance(temporary, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', temporary) or temporary in keys or fresh and temporary in keys_seen):
-                raise ValidationError({prefix + child.name: 'Row keys must be distinct (new rows: within the document) and use at most 64 letters, digits, hyphens or underscores'})
-            keys.add(temporary) if temporary is not None else None
-            keys_seen.add(temporary) if temporary is not None and fresh else None
-            value, nested = business.split_body(value)
-            computed_write(business, child.model, value, prefix + child.name + '.')
-            derived_write(child.model, value, nested, prefix + child.name + '.')
-            original = originals.get(row_id) if row_id is not None else None
-            drop_echoes(child.model, value, getattr(original, '_values', None), readable=business.policy.fields(user, child.model))
-            business.policy.check_values(tx, user, child.model, value, targets=targets)
-            if row_id is not None:
-                if not isinstance(row_id, RecordId) or row_id not in originals or row_id in kept or row_id in hidden:
-                    raise ValidationError({prefix + child.name: CHILD_ID})
-                # A row that is not hidden is inside this user's row scope, so the operation check is enough.
-                business.policy.require(user, child.model, 'read' if preview or not value else 'update')
-                kept.add(row_id)
-            elif not preview:
-                business.policy.require(user, child.model, 'create')
-            row = Draft(child.model, {**(dict(originals[row_id]._values) if row_id else {}), **value}, context=context, parent=draft, record_id=row_id)
-            object.__setattr__(row, '_submitted', frozenset(value))
-            object.__setattr__(row, '_placed', placed)
-            if temporary is not None: object.__setattr__(row, 'key', temporary)
-            load_rows(context, child.model, row, None, row_id, nested, preview, prefix + child.name + '.' + row.key + '.', keys_seen, loaded, saved, targets,
-                      complete=complete)
-            merged.append(row)
-        for row_id in originals.keys() - kept - hidden:
-            if not preview:
-                # Removing a row removes its whole subtree: every descendant must be deletable too.
-                for _, item in walk(stored(originals[row_id], draft, None if loaded is None else [0, 0])):
-                    if not business.policy.allows(user, item._definition, 'delete') or (item._definition, item.id) in saved.hidden:
-                        raise AccessError(403, 'You do not have permission for this operation')
-        if known.keys() - kept_sections and not preview:
-            business.policy.require(user, child.model, 'delete')
-        if sum(1 for row in merged if not isinstance(row, sections.SectionRow)) > max_rows:
-            raise ValidationError({prefix + child.name: f'Use at most {max_rows} rows'})
-        if positioned:
-            for row, position in zip(merged, positions(merged, hidden)):
-                row._values['evlet_position'] = position
-        if sectioned:
-            merged, found = sections.split(merged)
-            if len(found) > sections.MAX_SECTIONS:
-                raise ValidationError({prefix + child.name: f'Use at most {sections.MAX_SECTIONS} section rows'})
-            draft._sections[child.name] = found
-        draft._rows[child.name] = merged
+        if not isinstance(value, dict):
+            raise ValidationError({rows.where: 'Each row must be an object'})
+        if rows.sectioned and (sections.is_entry(value) or item_id(value.get('id')) in rows.known):
+            merged.append(section_entry(load.business, load.user, rows.child, value, rows.known, kept_sections, rows.originals, placed,
+                                        load.preview, rows.where, load.keys_seen))
+            continue
+        merged.append(_submitted_row(load, rows, value, placed, keys, kept))
+    return merged, kept, kept_sections
+
+
+def _submitted_row(load, rows, value, placed, keys, kept):
+    """A Draft for one submitted row (new, or an update of a saved one), its own collections loaded."""
+    business, user, child, originals = load.business, load.user, rows.child, rows.originals
+    value = dict(value)
+    row_id = value.pop('id', None)
+    if row_id is not None:
+        row_id = item_id(row_id) or row_id
+    temporary = value.pop('_key', None)
+    # New rows' keys map to IDs in one flat _row_ids object, so they are unique document-wide.
+    fresh = row_id is None
+    if temporary is not None and (not isinstance(temporary, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', temporary) or temporary in keys or fresh and temporary in load.keys_seen):
+        raise ValidationError({rows.where: 'Row keys must be distinct (new rows: within the document) and use at most 64 letters, digits, hyphens or underscores'})
+    keys.add(temporary) if temporary is not None else None
+    load.keys_seen.add(temporary) if temporary is not None and fresh else None
+    value, nested = business.split_body(value)
+    computed_write(business, child.model, value, rows.where + '.')
+    derived_write(child.model, value, nested, rows.where + '.')
+    original = originals.get(row_id) if row_id is not None else None
+    drop_echoes(child.model, value, getattr(original, '_values', None), readable=business.policy.fields(user, child.model))
+    business.policy.check_values(load.tx, user, child.model, value, targets=load.targets)
+    if row_id is not None:
+        if not isinstance(row_id, RecordId) or row_id not in originals or row_id in kept or row_id in rows.hidden:
+            raise ValidationError({rows.where: CHILD_ID})
+        # A row that is not hidden is inside this user's row scope, so the operation check is enough.
+        business.policy.require(user, child.model, 'read' if load.preview or not value else 'update')
+        kept.add(row_id)
+    elif not load.preview:
+        business.policy.require(user, child.model, 'create')
+    row = Draft(child.model, {**(dict(originals[row_id]._values) if row_id else {}), **value}, context=load.context, parent=load.draft, record_id=row_id)
+    object.__setattr__(row, '_submitted', frozenset(value))
+    object.__setattr__(row, '_placed', placed)
+    if temporary is not None: object.__setattr__(row, 'key', temporary)
+    load_rows(load.context, child.model, row, None, row_id, nested, load.preview, rows.where + '.' + row.key + '.', load.keys_seen, load.loaded,
+              load.saved, load.targets, complete=load.complete)
+    return row
+
+
+def _check_removed(load, rows, kept, kept_sections):
+    """Removing a saved row (or section row) needs delete permission on it and its whole subtree."""
+    business, user, child = load.business, load.user, rows.child
+    for row_id in rows.originals.keys() - kept - rows.hidden:
+        if not load.preview:
+            # Removing a row removes its whole subtree: every descendant must be deletable too.
+            for _, item in walk(rows.stored(rows.originals[row_id], load.draft, load.counter())):
+                if not business.policy.allows(user, item._definition, 'delete') or (item._definition, item.id) in load.saved.hidden:
+                    raise AccessError(403, 'You do not have permission for this operation')
+    if rows.known.keys() - kept_sections and not load.preview:
+        business.policy.require(user, child.model, 'delete')
+
+
+def _place_rows(load, rows, merged):
+    """Bound, position and split the merged rows, then set them (and their section rows) on the draft."""
+    child, draft = rows.child, load.draft
+    if sum(1 for row in merged if not isinstance(row, sections.SectionRow)) > rows.max_rows:
+        raise ValidationError({rows.where: f'Use at most {rows.max_rows} rows'})
+    if rows.positioned:
+        for row, position in zip(merged, positions(merged, rows.hidden)):
+            row._values['evlet_position'] = position
+    if rows.sectioned:
+        merged, found = sections.split(merged)
+        if len(found) > sections.MAX_SECTIONS:
+            raise ValidationError({rows.where: f'Use at most {sections.MAX_SECTIONS} section rows'})
+        draft._sections[child.name] = found
+    draft._rows[child.name] = merged
 
 
 def section_entry(business, user, child, value, known, kept, originals, placed, preview, where, keys_seen):
@@ -1731,69 +1794,82 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None,
     policy, user = context._business.policy, context.user
 
     def apply(item, row, prefix):
-        rules = document.rule_states(row.handle)
-        saved = document.locks.get(row.handle, {})
-        for name, state in rules.items():
-            if not state['locked']:
-                continue
-            decided = saved[name] if name in saved else document.decided(row, name, 'locked_when', None)
-            if decided is None and policy.expression_allowed(user, item._definition, name, 'locked_when'):
-                state['message'] = LOCKED_PENDING
-        object.__setattr__(item, '_rules', rules)
+        _settle_locks(document, policy, user, item, row)
         if not kept:
-            # A Table that does not apply keeps no rows: the calculations above already read it as empty.
-            for name, state in document.table_states(row.handle).items():
-                if not state['applies'] and (item._rows.get(name) or getattr(item, '_sections', {}).get(name)):
-                    for found in (errors, states):
-                        for key in [key for key in found if key.startswith(prefix + name + '.')]:
-                            del found[key]
-                    if sections.enabled(item._definition, name):
-                        item._sections[name] = []
-                        item._rows[name] = sections.TableRows([], [])
-                    else:
-                        item._rows[name] = []
+            _drop_unapplied_tables(document, item, row, prefix, errors, states)
         for field in fields.get(row.path, ()):
-            name = field['field']
-            if field.get('table'):
-                continue
-            if field.get('kind') in ('initial', 'applies_when'):
-                # Engine-written values: an initial suggestion or a field cleared because it does not apply.
-                value, current = row.values.get(name), item._values.get(name)
-                if value != current or type(value) is not type(current):
-                    try:
-                        item._values[name] = from_wire(item._definition.__declared_fields__[name], value)
-                    except ValueError as exc:
-                        errors[prefix + name] = str(exc)
-                continue
-            if field.get('kind'):
-                continue
-            result = document.results[row.handle, name]
-            definition = item._definition.__declared_fields__[name]
-            value = None
-            if result.state == 'ready' and result.value is not None:
-                if field['result_type'] == 'decimal':
-                    value = int(to_decimal(result.value)) if isinstance(definition, Integer) else to_decimal(result.value)
-                else:
-                    value = result.value
-                try:
-                    value = definition.validate(value)
-                except ValueError as exc:
-                    # Declared bounds on a result are a calculation error, reported like any other.
-                    item._values[name] = None
-                    states[prefix + name] = 'error'
-                    errors[prefix + name] = f'COMPUTE_RANGE_ERROR: {exc}'
-                    continue
-            item._values[name] = value
-            if result.state == 'ready':
-                continue
-            states[prefix + name] = 'missing-input' if result.state == 'pending' else 'error'
-            # Pending optional virtual results may stay pending; stored results and errors block saves.
-            if result.state == 'error' or complete and field['stored']:
-                errors[prefix + name] = f"{result.code}: {MESSAGES.get(result.code, 'The calculation failed')}"
+            if not field.get('table'):
+                _settle_field(document, item, row, field, prefix, errors, states, complete)
         for name, rows in item._rows.items():
             for child, child_row in zip(rows, row.children.get(name, [])):
                 apply(child, child_row, prefix + name + '.' + child.key + '.')
     apply(draft, document.root, '')
+
+
+def _settle_locks(document, policy, user, item, row):
+    """The row's field rule states on the item; a lock still pending on a rule this user may read says so."""
+    rules = document.rule_states(row.handle)
+    saved = document.locks.get(row.handle, {})
+    for name, state in rules.items():
+        if not state['locked']:
+            continue
+        decided = saved[name] if name in saved else document.decided(row, name, 'locked_when', None)
+        if decided is None and policy.expression_allowed(user, item._definition, name, 'locked_when'):
+            state['message'] = LOCKED_PENDING
+    object.__setattr__(item, '_rules', rules)
+
+
+def _drop_unapplied_tables(document, item, row, prefix, errors, states):
+    """A Table that does not apply keeps no rows: the calculations already read it as empty."""
+    for name, state in document.table_states(row.handle).items():
+        if not state['applies'] and (item._rows.get(name) or getattr(item, '_sections', {}).get(name)):
+            for found in (errors, states):
+                for key in [key for key in found if key.startswith(prefix + name + '.')]:
+                    del found[key]
+            if sections.enabled(item._definition, name):
+                item._sections[name] = []
+                item._rows[name] = sections.TableRows([], [])
+            else:
+                item._rows[name] = []
+
+
+def _settle_field(document, item, row, field, prefix, errors, states, complete):
+    """One planned field's engine value or calculated result onto the item, with its state and error."""
+    name = field['field']
+    if field.get('kind') in ('initial', 'applies_when'):
+        # Engine-written values: an initial suggestion or a field cleared because it does not apply.
+        value, current = row.values.get(name), item._values.get(name)
+        if value != current or type(value) is not type(current):
+            try:
+                item._values[name] = from_wire(item._definition.__declared_fields__[name], value)
+            except ValueError as exc:
+                errors[prefix + name] = str(exc)
+        return
+    if field.get('kind'):
+        return
+    result = document.results[row.handle, name]
+    definition = item._definition.__declared_fields__[name]
+    value = None
+    if result.state == 'ready' and result.value is not None:
+        if field['result_type'] == 'decimal':
+            value = int(to_decimal(result.value)) if isinstance(definition, Integer) else to_decimal(result.value)
+        else:
+            value = result.value
+        try:
+            value = definition.validate(value)
+        except ValueError as exc:
+            # Declared bounds on a result are a calculation error, reported like any other.
+            item._values[name] = None
+            states[prefix + name] = 'error'
+            errors[prefix + name] = f'COMPUTE_RANGE_ERROR: {exc}'
+            return
+    item._values[name] = value
+    if result.state == 'ready':
+        return
+    states[prefix + name] = 'missing-input' if result.state == 'pending' else 'error'
+    # Pending optional virtual results may stay pending; stored results and errors block saves.
+    if result.state == 'error' or complete and field['stored']:
+        errors[prefix + name] = f"{result.code}: {MESSAGES.get(result.code, 'The calculation failed')}"
 
 
 @contextmanager
@@ -1906,150 +1982,257 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     does not change until a rule moves it out. A move runs in the state manager's order: the rule, @state.exit,
     @release.exit, the new state, @state, settle (with @validate), @release, then the write and its activity entry.
     """
-    from . import guards, statemanager
-    business, tx, user = context._business, context._tx, context.user
+    w = _Write(context, model, record_id, remark)
+    person = _start_write(w, action, move)
+    approved = _load_write(w, values, move, restored)
+    if approved is not None:
+        return approved  # An approval level that is not the last.
+    _release_flags(w, ordinary=action is None and move is None)
+    prompted = _change(w, action, arguments)
+    if prompted is not None:
+        return prompted  # An action that answered with a prompt.
+    _check_plan(w)
+    numbers = _settle_write(w, person)
+    released = _release_step(w)
+    unchanged = _unchanged(w)
+    if unchanged is not None:
+        return unchanged
+    return _save_write(w, action, restored, numbers, released)
+
+
+class _Write:
+    """What one operate() call carries from phase to phase: the record, its saved and new versions, the move's
+    rule, approval level and remark, the release flags decided on the saved record, and the calculation plan."""
+
+    def __init__(self, context, model, record_id, remark):
+        self.context, self.model, self.record_id, self.remark = context, model, record_id, remark
+        self.business, self.tx, self.user = context._business, context._tx, context.user
+        self.draft = self.before = self.rule = self.level = self.outcome = self.plan = self.version = None
+        self.releases = ()
+        self.inside = self.within = self.entering = self.kept = self.locked_write = False
+
+
+def _start_write(w, action, move):
+    """Record the write under this context's user and take its Controls flag. Returns whether Controls apply."""
+    context, user = w.context, w.user
     # Two Contexts for different users may share one transaction: this write is recorded under this one.
     if actor_id(user) is not None:
-        tx.actor = actor_id(user)
+        w.tx.actor = actor_id(user)
     # Required fields and retired options set in Controls apply to what people send, not to app code.
-    person, context._person = context._person == (model, record_id) and action is None and move is None, None
-    if (action is not None or move is not None) and not record_id:
+    person, context._person = context._person == (w.model, w.record_id) and action is None and move is None, None
+    if (action is not None or move is not None) and not w.record_id:
         raise AccessError(404, 'Record not found')
-    rule = level = None
+    return person
+
+
+def _load_write(w, values, move, restored):
+    """Load the draft and its saved version; a move checks its rule first. Returns the result of an approval
+    level that is not the last (which writes nothing), else None."""
+    from . import statemanager
+    context, model, record_id = w.context, w.model, w.record_id
     if move is not None:
         # The rule is checked on the saved record before its values, so values never reveal which rules exist.
         draft, before = load_draft(context, model, record_id, {})
-        rule, remark, level = statemanager.begin_move(context, model, draft, before, move, remark)
-        if not statemanager.last_level(context, model, before, rule, level):
+        w.rule, w.remark, w.level = statemanager.begin_move(context, model, draft, before, move, w.remark)
+        if not statemanager.last_level(context, model, before, w.rule, w.level):
             # An approval level that is not the last is logged; the record stays as it is.
-            return statemanager.approve(context, model, before, rule, level, remark, values)
+            return statemanager.approve(context, model, before, w.rule, w.level, w.remark, values)
         if values:
-            statemanager.check_move_values(context, model, rule, values)
+            statemanager.check_move_values(context, model, w.rule, values)
             draft, before = load_draft(context, model, record_id, values)
     else:
         # Only a server-owned release snapshot is known to include every row. Ordinary clients keep the
         # partial-page full-list guard, and restore still runs all scope, field, size and lifecycle checks.
         draft, before = load_draft(context, model, record_id, values, complete=restored is not None)
-    statemanager.bind(draft, before)
-    ordinary = action is None and move is None
-    releases = model.__declared_fields__[model.__state__].releases if model.__state__ else ()
+    w.draft, w.before = draft, before
+    return None
+
+
+def _release_flags(w, *, ordinary):
+    """Decide on the saved record whether this write is inside, within or entering the released set and whether
+    it keeps saved results; check a recalculation request; take the model's calculation plan."""
+    from . import statemanager
+    context, model, before, rule, business = w.context, w.model, w.before, w.rule, w.business
+    statemanager.bind(w.draft, before)
+    w.releases = releases = model.__declared_fields__[model.__state__].releases if model.__state__ else ()
     # A move between two release steps (unpaid, overdue, paid) changes the process, not the document; a move into
     # the released set runs @release, and a move out of it @release.exit (states-actions.md).
-    inside = before is not None and before._values.get(model.__state__) in releases
-    within = rule is not None and inside and rule.to in releases
-    entering = rule is not None and not inside and rule.to in releases
+    w.inside = inside = before is not None and before._values.get(model.__state__) in releases
+    w.within = rule is not None and inside and rule.to in releases
+    w.entering = rule is not None and not inside and rule.to in releases
     kept_by = keeps_saved_results(context, model, before, ordinary=ordinary)
-    kept = bool(kept_by)
+    w.kept = bool(kept_by)
     # An ordinary write on a locked record changes only versioned=False fields and keeps saved results.
-    locked_write = ordinary and 'locked' in kept_by
-    if context._recalculate == (model, record_id) and before is not None:
+    w.locked_write = ordinary and 'locked' in kept_by
+    if context._recalculate == (model, w.record_id) and before is not None:
         if inside:
             raise AccessError(409, 'This record is released, so it keeps its saved results. To change its totals, move it out of the released set.')
-        if locked_write:
+        if w.locked_write:
             statemanager.check_recalculate(context, model, before)
-    plan = business.registry.plan_for(model)
-    version = business.registry.formula_hashes.get(business.registry.root_of(model))
-    outcome = None
-    if rule is not None:
-        previous = before._values.get(model.__state__)
-        if previous in releases and not within:
-            # Leaving the released set keeps the release's content first (the snapshot is taken once, lazily).
-            statemanager.diverge(context, model, before, draft, leaving=True)
-        statemanager.run_hooks(context, draft, 'exit', previous)
-        if previous in releases and not within:
-            statemanager.run_hooks(context, draft, 'release_exit')
-        draft._values[model.__state__] = rule.to
-        statemanager.run_hooks(context, draft, 'enter', rule.to)
+    w.plan = business.registry.plan_for(model)
+    w.version = business.registry.formula_hashes.get(business.registry.root_of(model))
+
+
+def _change(w, action, arguments):
+    """The move's hooks and new state, the action's handler, or an ordinary update's State lock check; then the
+    released-content check. Returns the result of an action that answered with a prompt (it writes nothing)."""
+    from . import statemanager
+    if w.rule is not None:
+        _enter_state(w)
     elif action is not None:
-        method = getattr(model, action, None)
-        declaration = getattr(method, '__action__', None)
-        if declaration is None or not has_role(user, declaration['roles']):
-            raise AccessError(403, 'Action is unavailable')
-        if declaration['inputs'] and not arguments and CALLER.get():
-            # Over HTTP an action with inputs answers its form first: a prompt whose submit() runs the action.
-            from .prompts import inputs_prompt
-            guards.action_available(context, model, method, declaration, before)
-            outcome = inputs_prompt(model, action)
-        else:
-            arguments = guards.action_arguments(context, model, method, declaration, arguments, before)
-            with trusted(), handler_context(context, draft):
-                outcome = method(draft, **arguments)
-        from .prompts import is_prompt
-        if is_prompt(outcome):
-            # An action that returns a prompt is checked and writes nothing: the prompt's submit() writes.
-            result = business.detail(tx, user, tx.get(model, record_id), row_limit=None)
-            add_outcome(result, outcome, business.registry)
-            return result
-    elif before is not None:
-        statemanager.check_state_lock(context, draft, before)
+        prompted = _run_action(w, action, arguments)
+        if prompted is not None:
+            return prompted
+    elif w.before is not None:
+        statemanager.check_state_lock(w.context, w.draft, w.before)
     # Inside the released set versioned content cannot change: a move within it or an action changes only
     # versioned=False fields (posted entries keep matching the document).
-    if inside and (within or action is not None):
-        statemanager.check_released(context, model, before, draft)
+    if w.inside and (w.within or action is not None):
+        statemanager.check_released(w.context, w.model, w.before, w.draft)
+    return None
+
+
+def _enter_state(w):
+    """A move's @state.exit and @release.exit hooks, the new state, then its @state hooks."""
+    from . import statemanager
+    context, model, before, draft, rule = w.context, w.model, w.before, w.draft, w.rule
+    previous = before._values.get(model.__state__)
+    if previous in w.releases and not w.within:
+        # Leaving the released set keeps the release's content first (the snapshot is taken once, lazily).
+        statemanager.diverge(context, model, before, draft, leaving=True)
+    statemanager.run_hooks(context, draft, 'exit', previous)
+    if previous in w.releases and not w.within:
+        statemanager.run_hooks(context, draft, 'release_exit')
+    draft._values[model.__state__] = rule.to
+    statemanager.run_hooks(context, draft, 'enter', rule.to)
+
+
+def _run_action(w, action, arguments):
+    """Run a declared @action on the draft, or answer its inputs form. Returns the result when the outcome is a
+    prompt, else None (the outcome stays on w)."""
+    from . import guards
+    context, model, user, before = w.context, w.model, w.user, w.before
+    method = getattr(model, action, None)
+    declaration = getattr(method, '__action__', None)
+    if declaration is None or not has_role(user, declaration['roles']):
+        raise AccessError(403, 'Action is unavailable')
+    if declaration['inputs'] and not arguments and CALLER.get():
+        # Over HTTP an action with inputs answers its form first: a prompt whose submit() runs the action.
+        from .prompts import inputs_prompt
+        guards.action_available(context, model, method, declaration, before)
+        w.outcome = inputs_prompt(model, action)
+    else:
+        arguments = guards.action_arguments(context, model, method, declaration, arguments, before)
+        with trusted(), handler_context(context, w.draft):
+            w.outcome = method(w.draft, **arguments)
+    from .prompts import is_prompt
+    if is_prompt(w.outcome):
+        # An action that returns a prompt is checked and writes nothing: the prompt's submit() writes.
+        result = w.business.detail(w.tx, user, w.tx.get(model, w.record_id), row_limit=None)
+        add_outcome(result, w.outcome, w.business.registry)
+        return result
+    return None
+
+
+def _check_plan(w):
+    """A write that keeps saved results drops the plan; otherwise the record's recorded formula version must be active."""
     # A write that keeps saved results does not recalculate, so it neither checks nor updates the recorded formula version.
-    if kept:
-        plan = None
-    if plan is not None and record_id:
-        row = tx.connection.run(qb.select('evlet_calculation_versions', 'plan_hash')
-                                .where(resource=business.registry.name_for(model), record_id=record_id)).one()
+    if w.kept:
+        w.plan = None
+    if w.plan is not None and w.record_id:
+        row = w.tx.connection.run(qb.select('evlet_calculation_versions', 'plan_hash')
+                                  .where(resource=w.business.registry.name_for(w.model), record_id=w.record_id)).one()
         # No recorded version (saved outside the pipeline or before tracking) adopts the active plan.
-        if row is not None and row[0] != version and context._recalculate != (model, record_id):
+        if row is not None and row[0] != w.version and w.context._recalculate != (w.model, w.record_id):
             raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this record was calculated with another plan; '
                                    'resubmit with "_calculation": {"model_schema_hash": <active>, "recalculate": true} to recalculate it')
+
+
+def _settle_write(w, person):
+    """Settle the draft (with @validate), apply the posted, locked and Controls checks, then assign document
+    numbers and the name. Returns the assigned (field, number) pairs."""
+    from . import guards, statemanager
+    context, model, draft, before, business = w.context, w.model, w.draft, w.before, w.business
     # Settling runs @validate on the document and each row (validate_tree), after every value is final.
-    settle(context, draft, complete=True, previous=before, kept=kept)
-    if inside and not locked_write:
+    settle(context, draft, complete=True, previous=before, kept=w.kept)
+    if w.inside and not w.locked_write:
         guards.check_posted(context, draft, before)
-    if locked_write:
+    if w.locked_write:
         statemanager.keep_saved(draft, before)
     if person:
         business.controls.custom.enforce(model, draft._values, before._values if before else None)
     # Document numbers and names are assigned on the settled draft, in this transaction.
-    numbers = sequences.assign(context, model, draft, before, rule)
+    numbers = sequences.assign(context, model, draft, before, w.rule)
+    _assign_name(w)
+    return numbers
+
+
+def _assign_name(w):
+    """A series or autoname assigns the name on the settled draft; a submitted name is refused until it has one."""
+    model, draft, before, business = w.model, w.draft, w.before, w.business
     rules = sequences.naming_rules(business.registry, model)
     if rules is not None and rules.field == 'name' and rules.system and (before is None or before._values.get('name') in (None, '')) \
             and draft._values.get('name') not in (None, ''):
         # A series or autoname assigns the name; people may change it once it has one.
         raise ValidationError({'name': 'Assigned on save'})
-    if sequences.name_due(rules, draft._values, created=before is None, move=rule):
-        draft._values[rules.field] = sequences.issue(tx.connection, business.registry, model, rules, draft._values, host_today(business),
-                                                     user.username, record=draft, context=context, record_id=draft.id)
+    if sequences.name_due(rules, draft._values, created=before is None, move=w.rule):
+        draft._values[rules.field] = sequences.issue(w.tx.connection, business.registry, model, rules, draft._values, host_today(business),
+                                                     w.user.username, record=draft, context=w.context, record_id=draft.id)
+
+
+def _release_step(w):
+    """@release and its second settle on a move into the released set, then the divergence of a record outside it.
+    Returns the new version number to record, or None."""
+    from . import statemanager
+    context, model, draft, before = w.context, w.model, w.draft, w.before
     # Every move into the released set runs @release, then calculations and field checks again; @validate ran
     # once above, before @release. It records a new version only when the versioned content changed since the last one.
     released = None
-    if entering:
+    if w.entering:
         last = statemanager.prepare_release(context, model, draft)
-        settle(context, draft, complete=True, previous=before, kept=kept, hooks=False)
-        if last is None or statemanager.digest(model, statemanager.tree(draft), business.registry) != last['hash']:
+        settle(context, draft, complete=True, previous=before, kept=w.kept, hooks=False)
+        if last is None or statemanager.digest(model, statemanager.tree(draft), w.business.registry) != last['hash']:
             released = 0 if last is None else last['number'] + 1
-    if not inside:
+    if not w.inside:
         statemanager.diverge(context, model, before, draft)
+    return released
+
+
+def _unchanged(w):
+    """The result of a write that changes nothing (no stored value, section or state), else None."""
+    before, draft, business, tx = w.before, w.draft, w.business, w.tx
     prior = before.stored_values() if before else None
     after = draft.stored_values()
-    if prior == after and rule is None and (before is None or sections.signature(before) == sections.signature(draft)):
-        if plan is not None:
-            record_plan(tx, business.registry.name_for(model), record_id, version)
+    if prior == after and w.rule is None and (before is None or sections.signature(before) == sections.signature(draft)):
+        if w.plan is not None:
+            record_plan(tx, business.registry.name_for(w.model), w.record_id, w.version)
         # Every readable row: the HTTP route derives its ETag from this and embeds the first page.
-        result = business.detail(tx, user, tx.get(model, record_id), row_limit=None)
-        add_outcome(result, outcome, business.registry)
+        result = business.detail(tx, w.user, tx.get(w.model, w.record_id), row_limit=None)
+        add_outcome(result, w.outcome, business.registry)
         return result
+    return None
+
+
+def _save_write(w, action, restored, numbers, released):
+    """The period check, the record and its rows, the release, the Activity entry, then the result."""
+    from . import activity, statemanager
+    context, model, draft, before, rule, business, tx, user = w.context, w.model, w.draft, w.before, w.rule, w.business, w.tx, w.user
     # A closed period (Meta.period) refuses the write whether the saved or the new date is in it.
-    if not within:  # A closed period protects content, not process.
+    if not w.within:  # A closed period protects content, not process.
         periods.check(tx, model, before=before._values if before is not None else None, after=draft._values)
     record = write_snapshot(tx, draft, before)
-    if plan is not None:
-        record_plan(tx, business.registry.name_for(model), record.id, version)
+    if w.plan is not None:
+        record_plan(tx, business.registry.name_for(model), record.id, w.version)
     context._active[-1] = (model, record.id)
     context.__dict__.pop('_stays', None)  # A write may end a stay's approvals (statemanager.stay).
     business.policy.record(tx, user, model, record.id, 'update' if before else 'create')
     keys = {}
     persist_rows(context, model, draft, before, record.id, keys)
     if released is not None:
-        statemanager.finish_release(context, model, record, draft, released, rule, remark)
+        statemanager.finish_release(context, model, record, draft, released, rule, w.remark)
     # The Activity entry of this write: `moved` for a move, otherwise `created` or `changed`.
-    from . import activity
     if rule is not None:
-        statemanager.moved(context, model, record, before._values.get(model.__state__), rule, remark, level, before, draft, released=released)
+        statemanager.moved(context, model, record, before._values.get(model.__state__), rule, w.remark, w.level, before, draft, released=released)
     else:
         activity.written(context, model, record.id, before, draft, action=action, restored=restored,
                         entering=statemanager.entering(context, model, record) if before is None else None)
@@ -2058,7 +2241,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     business.changed(tx, model, record.id)
     result = business.detail(tx, user, tx.get(model, record.id), row_limit=None)
     if keys: result['_row_ids'] = keys
-    add_outcome(result, outcome, business.registry)
+    add_outcome(result, w.outcome, business.registry)
     return result
 
 

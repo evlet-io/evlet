@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 from evlet import Currency, Integer, Link, Model, Registry, Text, ValidationError
-from examples.playground.models import Customer, Invoice, registry
+from examples.playground.models import Customer, Invoice, Payment, registry
 
 
 def test_defaults_inheritance_and_serialization():
@@ -49,7 +49,7 @@ def test_integer_validation(value):
 @pytest.mark.parametrize("value", ["NaN", "Infinity", "sNaN", "garbage", "1.0000001", 1.2, True, "1e100", "-0.01", "0"])
 def test_currency_rejects_invalid_or_lossy_values(value):
     with pytest.raises(ValidationError):
-        Invoice(customer=1, reference="INV-1", total=value)
+        Payment(invoice=1, reference="PAY-1", amount=value)
 
 
 def test_registry_is_explicit_and_schema_is_renderer_neutral():
