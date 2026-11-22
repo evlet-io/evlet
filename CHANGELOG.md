@@ -4,7 +4,31 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.20 (22-11-2026)
+
+### Upgrading to 0.4.20
+
+- **No migrations, no renamed names.** Apps keep working. A client that read derived or calculated values from an
+  outcome's `new.values` reads `new.calculated`; `new.values` is now what to send back to create the record. A
+  reverse proxy or gateway in front of the desk must let `/assets/evlet.webmanifest`, `/assets/evlet-sw.js`,
+  `/assets/evlet-offline.html` and the `/assets/evlet-icon-*.png` and `evlet-apple-touch-icon.png` icons through
+  without a sign-in, as it already does for the rest of `/assets`, and must not replace the pages'
+  Content-Security-Policy with one that leaves out `worker-src 'self'` and `manifest-src 'self'`.
+
+### Added
+
+- **The desk is an installable web app.** Every instance serves a web app manifest at
+  `/assets/evlet.webmanifest` with the application's name, the Evlet colours and 192, 512 and maskable 512 px
+  icons (plus a 180 px `apple-touch-icon` for iOS), opening `/` in a standalone window. Each desk page (`/`,
+  `/app`, sign-in, Docs, Settings) registers the `/assets/evlet-sw.js` service worker with scope `/`. It sends
+  page navigations to the network and shows the fixed public notice `/assets/evlet-offline.html` only when the
+  network fails; HTML, sessions, API responses, records and mutations are never cached, and it never touches
+  `/api`. The worker's caches carry a fingerprint of the build, so each release is a new worker that deletes the
+  caches of the one before once the old tabs close. When the browser offers installation, an "Install Evlet"
+  banner appears above the page; its close button hides it on that device, and on iOS it is a one-line Add to
+  Home Screen hint. The pages' Content-Security-Policy names `worker-src 'self'` and `manifest-src 'self'`. The
+  Appearance preference **Offline notice and static assets** now only controls the static-asset cache
+  ([docs/ui.md](docs/ui.md#installation-and-offline-notice)).
 
 ### Fixed
 
