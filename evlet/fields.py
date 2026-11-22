@@ -243,7 +243,16 @@ class Field:
             raise ValueError("derived must be True or False")
         self.derived = derived
         self.compute, self.stored, self.query, self.fetch = compute, stored, query, fetch
-        self.filters = dict(filters or {})
+        # A dict is one group of conditions that must all hold; a list of dicts holds when any group does.
+        # filter_groups is always the tuple of groups (empty without filters).
+        if isinstance(filters, (list, tuple)):
+            if not filters or not all(isinstance(group, dict) and group for group in filters):
+                raise ValueError('Link filters are a dict, or a list of non-empty dicts (any one of them may match)')
+            self.filters = [dict(group) for group in filters]
+            self.filter_groups = tuple(self.filters)
+        else:
+            self.filters = dict(filters or {})
+            self.filter_groups = (self.filters,) if self.filters else ()
         self.visible_if, self.required_if, self.read_only_if = visible_if, required_if, read_only_if
         if type(stored) is not bool or (not stored and (index or unique)):
             raise ValueError('Virtual fields cannot have database indexes')

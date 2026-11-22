@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from decimal import Decimal, localcontext, ROUND_HALF_EVEN
 
-from .declarations import Ref
+from .declarations import Ref, ref_path
 from .fields import Decimal as DecimalField, Integer
 from .calc import is_finite
 
@@ -69,6 +69,23 @@ def compile_expression(source):
 
 def serialized(value):
     return {'$expr': value.op, 'args': [serialized(item) for item in value.args]} if isinstance(value, Expression) else value
+
+
+def filter_groups(filters):
+    """The groups of a Link's planned filters: a dict is one group, a list holds several (any one may match)."""
+    return list(filters) if isinstance(filters, list) else [filters] if filters else []
+
+
+def map_filters(filters, function):
+    """The planned filters with function applied to each value, in the shape they were declared (dict or list)."""
+    groups = [{key: function(value) for key, value in group.items()} for group in filter_groups(filters)]
+    return groups if isinstance(filters, list) else groups[0]
+
+
+def filter_inputs(definition, parent, filters):
+    """The form paths a Link's planned filters read: a Ref through a Link reads the Link ("item" for "item.unit")."""
+    paths = set().union(*(references(value) for group in filter_groups(filters) for value in group.values()))
+    return {ref_path(definition, parent, path).form for path in paths}
 
 
 def references(value):
@@ -155,7 +172,9 @@ def plans(model, parent=None):
         if isinstance(field.default, Ref):
             entry['default_ref'] = Expression('ref', (field.default.path,))
         if field.filters:
-            entry['filters'] = {key: Expression('ref', (value.path,)) if isinstance(value, Ref) else value for key, value in field.filters.items()}
+            groups = [{key: Expression('ref', (value.path,)) if isinstance(value, Ref) else value for key, value in group.items()}
+                      for group in field.filter_groups]
+            entry['filters'] = groups if isinstance(field.filters, list) else groups[0]
         if field.query is not None:
             entry['query'] = True
         if field.fetch is not None:
@@ -192,7 +211,7 @@ def template(registry, model):
             entry = plans(definition, parent)[name]
             nodes[prefix + name] = entry
             paths = set().union(*(references(value) for key, value in entry.items() if key != 'filters'))
-            paths |= set().union(*(references(value) for value in entry.get('filters', {}).values()))
+            paths |= filter_inputs(definition, parent, entry.get('filters'))
             paths |= set(getattr(field.query, '__depends__', ()))
             if field.fetch: paths.add(field.fetch.split('.')[0])
             values = references(entry.get('compute')) | set(getattr(field.query, '__depends__', ()))

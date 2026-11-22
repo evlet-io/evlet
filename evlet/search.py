@@ -17,7 +17,11 @@ Link context. link=<model>.<field> names the Link the dropdown belongs to, on a 
 Its filters= apply as declared: a literal value as it is, a Ref("path") with the value the form sent in
 values= for that path. values= takes only the paths the Link reads (its filters and its option's where=), each
 readable by this person on that form. A Ref whose field the person can't read is skipped, as the list route
-always did; the save still checks the Link. A Ref the form left empty matches nothing.
+always did; the save still checks the Link. A Ref the form left empty matches nothing. filters= as a list of
+dicts matches a record that fits any one of them. A Ref of a Table column ("packs.unit") takes the list of the
+rows' values, unsaved rows included; a Ref through a Link ("item.unit", "item.packs.unit") takes the Link's
+value ({"item": "<id>"}) and the server reads the rest as this person (documents.linked_values), so a record,
+row or field they can't read gives nothing to match.
 
 Options. The title and subtext come from the Link's option=, else the target's Meta.option (declarations.Option).
 The record query returns the id and the parts' columns; a F("link.field") part reads the linked records in one
@@ -37,10 +41,12 @@ from . import qb
 from .auth import AccessError, allow
 from .calc import Expr
 from .database import Session
-from .declarations import Ref
+from .declarations import Ref, ref_path
+from .documents import linked_values
 from .fields import Boolean, Link, RichText, Text
 from .identity import RecordId
 from .models import ValidationError
+from .query import MAX_IN_VALUES
 
 LIMIT, MAX_LIMIT = 8, 20
 # Records read and ranked in Python for one fuzzy search, at most.
@@ -60,12 +66,7 @@ def route(business, scope, user, model):
         values = form_values(business, user, source, field, values)
     elif values:
         raise ValidationError({'values': 'Send values only with link='})
-    filters = None if field is None else link_filters(business, user, source, field, values)
-    if filters is None and field is not None:
-        return 200, {'items': []}, []
     children = business.children.values()
-    if filters:
-        policy.query_fields(user, model, filters, [], database=business.database, children=children)
     option = field.option if field is not None and field.option is not None else getattr(getattr(model, 'Meta', None), 'option', None)
     from .query import SqlQuery
     from .ui.metadata import view_for
@@ -73,11 +74,19 @@ def route(business, scope, user, model):
     readable = policy.fields(user, model)
     title = view['title_field'] if view['title_field'] in readable else 'id'
     compiler = SqlQuery(business.registry, model, children=children)
-    where = [item for item in (compiler.where(filters or {}), policy.scope(user, model)) if not qb.always(item)]
     table = qb.table(business.registry.name_for(model), 'record')
     declared = getattr(getattr(model, 'Meta', None), 'search_fields', None)
     with business.database._connection() as connection:
         connection.snapshot()
+        # The Link's filter groups with the form's values (any one group may match); none left matches nothing.
+        groups = [{}] if field is None or not field.filter_groups else link_filters(business, Session(connection, business.registry), user, source, field, values)
+        if not groups:
+            return 200, {'items': []}, []
+        for group in groups:
+            if group: policy.query_fields(user, model, group, [], database=connection, children=children)
+        matched = [compiler.where(group) for group in groups]
+        matched = qb.TRUE if any(qb.always(item) for item in matched) else matched[0] if len(matched) == 1 else qb.or_(*matched)
+        where = [item for item in (matched, policy.scope(user, model)) if not qb.always(item)]
         shown = [name for name in shown_fields(model, option) if name in readable]
         if text and declared is not None:
             columns = [name for name in dict.fromkeys((title, *declared)) if name != 'id' and name in readable]
@@ -112,8 +121,10 @@ def parameters(scope):
             raise ValueError()
         if link is not None and not re.fullmatch(r'[a-z][a-z0-9_]{0,62}\.[A-Za-z][A-Za-z0-9_]{0,62}', link):
             raise ValueError()
-        if not isinstance(values, dict) or len(values) > 16 or any(not isinstance(item, (str, int, bool)) and item is not None
-                                                                   or isinstance(item, str) and len(item) > MAX_VALUE for item in values.values()):
+        scalar = lambda item: item is None or isinstance(item, (str, int, bool)) and not (isinstance(item, str) and len(item) > MAX_VALUE)
+        if not isinstance(values, dict) or len(values) > 16 or any(
+                not (scalar(item) or isinstance(item, list) and len(item) <= MAX_IN_VALUES and all(map(scalar, item)))
+                for item in values.values()):
             raise ValueError()
     except (ValueError, UnicodeError, RecursionError):
         raise ValidationError({'query': f'Use q (at most {MAX_TEXT} characters), link=<model>.<field>, values={{path: value}} '
@@ -138,38 +149,67 @@ def link_field(business, user, target, link):
 
 
 def readable_path(business, user, source, path):
-    """Whether this person reads the form field a Ref path names: on the Link's row, or parent.<field> of a Table row."""
+    """Whether this person reads the form field a Ref path names: on the Link's row, parent.<field> of a Table row,
+    or <table>.<field>, a column of the form's own Table."""
     parts = path.split('.')
     if len(parts) == 1:
         return path in business.policy.fields(user, source)
     if len(parts) == 2 and parts[0] == 'parent':
         owner = next((child.parent for child in business.children.values() if child.model is source), None)
         return owner is not None and parts[1] in business.policy.fields(user, owner)
+    if len(parts) == 2 and parts[0] in source.__tables__:
+        child = business.children.get((source, parts[0]))
+        return (child is not None and business.policy.allows(user, child.model, 'read')
+                and parts[1] in business.policy.fields(user, child.model))
     return False
 
 
+def owner_of(business, source):
+    """The model whose Table rows `source` is, or None."""
+    return next((child.parent for child in business.children.values() if child.model is source), None)
+
+
 def form_values(business, user, source, field, values):
-    """The form values sent for the paths the Link reads; any other path, or one this person can't read, is a 400."""
-    declared = {value.path for value in field.filters.values() if isinstance(value, Ref)} | set(field.option.refs() if field.option else ())
-    for path in values:
+    """The form values sent for the paths the Link reads; any other path, or one this person can't read, is a 400.
+    A Table column ("packs.unit") is a list of the rows' values; every other path is one value."""
+    owner = owner_of(business, source)
+    refs = [value.path for group in field.filter_groups for value in group.values() if isinstance(value, Ref)]
+    # A Table column of the form takes the rows' values; a Link the Ref reads through takes its one value.
+    declared = {ref.form: ref.many and ref.link is None for ref in (ref_path(source, owner, path) for path in refs)}
+    declared.update({path: False for path in (field.option.refs() if field.option else ()) if path not in declared})
+    for path, value in values.items():
         if path not in declared or not readable_path(business, user, source, path):
             raise ValidationError({'values': f'{path} is not a form value this Link reads'})
-    return {path: value for path, value in values.items() if value not in (None, '')}
+        if isinstance(value, list) != (declared[path] and value is not None):
+            raise ValidationError({'values': f'{path} takes ' + ('a list of the rows\' values' if declared[path] else 'one value')})
+    return {path: [item for item in dict.fromkeys(value) if item not in (None, '')] if isinstance(value, list) else value
+            for path, value in values.items() if value not in (None, '')}
 
 
-def link_filters(business, user, source, field, values):
-    """The Link's filters with the form's values, or None when a Ref the form left empty means nothing can match."""
-    filters = {}
-    for key, declared in field.filters.items():
-        if not isinstance(declared, Ref):
-            filters[key] = declared
-        elif not readable_path(business, user, source, declared.path):
-            continue  # The person can't read the form field; the save still checks the Link.
-        elif declared.path in values:
-            filters[key] = values[declared.path]
+def link_filters(business, tx, user, source, field, values):
+    """The Link's filter groups with the form's values: a group whose Ref the form left empty, or whose Ref through
+    a Link reads nothing this person can read, is left out, since nothing can match it."""
+    owner, groups = owner_of(business, source), []
+    for group in field.filter_groups:
+        filters = {}
+        for key, declared in group.items():
+            if not isinstance(declared, Ref):
+                filters[key] = declared
+                continue
+            ref = ref_path(source, owner, declared.path)
+            if not readable_path(business, user, source, ref.form):
+                continue  # The person can't read the form field; the save still checks the Link.
+            current = values.get(ref.form)
+            if ref.link is not None and current not in (None, ''):
+                # Read through the Link as this person (evlet/documents.py linked_values), as the save does.
+                found = linked_values(business, tx, user, ref.link, current, ref.remote)
+                current = found if ref.many else (found[0] if found else None)
+            if current in (None, '') or current == []:
+                break
+            filters[key] = current
         else:
-            return None
-    return filters
+            groups.append(filters)
+    return groups
 
 
 # ---------- matching ----------

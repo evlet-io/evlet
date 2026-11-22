@@ -228,6 +228,13 @@ the target's own fields: `Link(Location, filters={"kind__ne": "transit"})` or
 checks them on the selected record on every save and every move, like an equality filter. An
 unknown field or operator fails when the registry is built.
 
+A list of dicts matches a record that fits any one of them, and a `Ref` may read a column of one of
+the form's Tables (`Ref("packs.unit")`, unsaved rows included, with `__in`) or read through a Link
+(`Ref("item.unit")`, `Ref("item.packs.unit")`) on the server, with the role's read permissions:
+`Link(Unit, filters=[{"id": Ref("item.unit")}, {"id__in": Ref("item.packs.unit")}])` offers a line
+only its item's units ([model-engine.md](model-engine.md#any-of-several-groups-table-columns-and-refs-through-a-link)).
+With several groups the error is general.
+
 The server checks the selected record on every preview and save, and reading it applies the
 role's row scope. A record that does not fit gives a field error that names the mismatch in
 plain words: "Port office is not in Summit Services." when the Link has one filter, that filter

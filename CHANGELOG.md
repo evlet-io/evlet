@@ -4,6 +4,18 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+- **Link filters: any of several groups, Table columns, and Refs through a Link.** `Link(filters=[{...}, {...}])`
+  matches a record that fits any one dict (a single dict is one group and keeps working). `Ref("packs.unit")`
+  reads a column of one of the form's Tables, unsaved rows included, compared with `__in`; `Ref("item.unit")` and
+  `Ref("item.packs.unit")` read through a Link on the form, on the server, with the person's read permissions.
+  `id` may be filtered. The picker and every save and move use the same groups. For "the item's own units":
+  `Link(Unit, filters=[{"id": Ref("unit")}, {"id__in": Ref("packs.unit")}])` on the item and
+  `Link(Unit, filters=[{"id": Ref("item.unit")}, {"id__in": Ref("item.packs.unit")}])` on a line
+  ([docs/model-engine.md](docs/model-engine.md#any-of-several-groups-table-columns-and-refs-through-a-link)).
+  For code that reads the schema: `behavior[field].filters` is a list when the Link declares a list.
+
 ## 0.4.18 (21-11-2026)
 
 ### Upgrading to 0.4.18

@@ -10,7 +10,7 @@ from .documents import Record, settle, walk
 from .permissions import trusted
 from .prompts import draft_values, form_draft
 from .ui.metadata import field_schema, source_schema
-from .reactivity import evaluate, plans, serialized
+from .reactivity import evaluate, map_filters, plans, serialized
 
 
 @dataclass(frozen=True)
@@ -111,7 +111,7 @@ def metadata(definition, name, source=None):
     title = getattr(definition, 'title', '')
     result = {'name': name, 'label': title if isinstance(title, str) and title else definition.__name__,
               'fields': [field_schema(field) for field in definition.__declared_fields__.values()],
-              'behavior': {key: {kind: {name: serialized(value) for name, value in entry.items()} if kind == 'filters' else serialized(entry)
+              'behavior': {key: {kind: map_filters(entry, serialized) if kind == 'filters' else serialized(entry)
                                 for kind, entry in value.items()} for key, value in fields.items()},
               'children': [], 'sources': source_schema(definition),
               'source_fields': [] if source is None else [field_schema(field) for field in source.__declared_fields__.values()]}

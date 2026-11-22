@@ -1017,7 +1017,8 @@ export class RecordStore {
     const id = field.value.peek(), target = field.meta.target;
     if (id === null || id === undefined || id === '' || !target) return;
     const scope = untrack(() => linkScope(field));
-    if (!scope) return;
+    // Several groups, a Table column or a Ref through a Link: the server checks the value on save.
+    if (!scope || scope.server) return;
     const ticket = (this.checks.get(field) ?? 0) + 1;
     this.checks.set(field, ticket);
     let fits: boolean | null = scope.missing.length ? false

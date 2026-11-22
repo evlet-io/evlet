@@ -389,7 +389,7 @@ def check(prompt):
 
 def schema(registry, prompt, name):
     """The prompt as the browser's record engine reads a model: fields, layout, Tables, rules and the finite plan."""
-    from .reactivity import plans, serialized as rule
+    from .reactivity import map_filters, plans, serialized as rule
     from .ui.metadata import field_schema
     title = option(prompt, 'title') or prompt.__name__
     blocks = check(prompt)
@@ -399,7 +399,7 @@ def schema(registry, prompt, name):
         'layout': [block['group'] for block in blocks if block['kind'] == 'section'],
         'record_layout': {'blocks': [{'kind': block['kind'], 'name': block['name'], 'main': block['main'],
                                       **({'label': block['name']} if block['kind'] == 'section' else {})} for block in blocks]},
-        'behavior': {key: {kind: {item: rule(value) for item, value in entry.items()} if kind == 'filters' else rule(entry)
+        'behavior': {key: {kind: map_filters(entry, rule) if kind == 'filters' else rule(entry)
                            for kind, entry in value.items()} for key, value in plans(prompt).items()},
         'children': [{'name': table, 'model': declared.child.__form_name__, 'label': declared.label or table.replace('_', ' ').capitalize(),
                       'row_changes': True, 'min_rows': declared.min_rows, 'max_rows': min(declared.max_rows, 100),

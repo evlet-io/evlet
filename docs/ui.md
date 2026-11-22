@@ -1378,6 +1378,11 @@ handled in the form with the values the person has entered, saved or not:
   chain such as company, branch, floor clears together. The browser decides from a record it
   already holds; otherwise it asks the list route (`id__in` and the filters), so the role's row and
   field permissions apply. When it cannot tell, the value stays and the save reports it.
+- Filters with several groups, a Table column (`Ref("packs.unit")`: the picker sends the values of the
+  rows, unsaved ones included) or a `Ref` through a Link (`Ref("item.unit")`: it sends the Link's value)
+  are applied by the server only. The picker still lists only what fits and asks "Choose Item first."
+  when every group waits on an empty field; a chosen value stays when the form changes, and the save
+  reports it if it no longer fits.
 
 The server still checks every Link on preview and save; the form only avoids keeping a stale value.
 

@@ -10,14 +10,14 @@ import re
 from . import qb
 from .auth import AccessError, User, has_role
 from .database import ConflictError, ROW_LIMIT, conflict
-from .declarations import Ref
+from .declarations import Ref, ref_path
 from .fields import CurrentUser, MISSING, Link
 from .identity import RecordId
 from .naming import drop_echoes
 from .permissions import CALLER, CHUNK, Policy, Rule, trusted
 from .models import ASSIGNED_ID, ValidationError, refuse_id
 from .query import SqlQuery
-from .reactivity import evaluate, graph, round_field, plans
+from .reactivity import evaluate, filter_groups, graph, round_field, plans
 from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal
 from . import sections
 
@@ -1178,29 +1178,24 @@ def submitted_links(business, model, collections):
 def link_mismatch(context, item, name, field, value, targets=None):
     """None when the Link's selected record satisfies its filters, else the message for the field.
 
-    Reading the record checks access. The message names both records only when the Link has one
-    filter, it compares a Link of the target with a Link on this form, and the role may read both
-    titles; otherwise it stays general, so it never reveals a record the role cannot read.
+    A list of filter groups is satisfied when any one group is. Reading the record checks access. The message
+    names both records only when the Link has one filter, it compares a Link of the target with a Link on this
+    form, and the role may read both titles; otherwise it stays general, so it never reveals a record the role
+    cannot read.
     """
     business = context._business
     target = targets.get(field.target, value) if targets is not None else business.policy.record(context._tx, context.user, field.target, value)
-    visible = business.policy.fields(context.user, field.target)
-    if {name.split('__', 1)[0] for name in field.filters} - visible: raise AccessError(403, 'A selection constraint is unavailable')
-    failed, compared = [], {}
-    for filter_name, expected in field.filters.items():
-        path = expected.path if isinstance(expected, Ref) else None
-        expected = item.read(path) if path else expected
-        if '__' in filter_name and not (path and expected is None):
-            compared[filter_name] = expected  # An operator ("kind__ne") is decided by the query below.
-        elif expected is None or getattr(target, filter_name) != expected: failed.append((filter_name, path, expected))
-    # The same filters the picker searches with, on the selected record, through the list query (no row scope: the
-    # record was read above as this person).
-    if compared and not failed and not context._tx.list(field.target, filters={'id': value, **compared}, limit=1):
-        failed.append((next(iter(compared)), None, None))
-    if not failed: return None
+    visible = {'id', *business.policy.fields(context.user, field.target)}
+    if {key.split('__', 1)[0] for group in field.filter_groups for key in group} - visible:
+        raise AccessError(403, 'A selection constraint is unavailable')
+    parent = getattr(getattr(item, 'parent', None), '_definition', None)
+    results = [group_mismatch(context, item, parent, field, group, target, value) for group in field.filter_groups]
+    if not results or not all(results): return None  # No filters, or a group that holds.
     general = f"This {field_label(item._definition, name) or 'selection'} doesn't fit the other values on this form."
-    if len(field.filters) != 1 or failed[0][1] is None: return general
+    failed = results[0]
+    if len(field.filter_groups) != 1 or len(field.filter_groups[0]) != 1 or failed[0][1] is None: return general
     filter_name, path, expected = failed[0]
+    if ref_path(item._definition, parent, path).link is not None: return general
     if expected is None:
         label = path_label(item, path)
         return f'Choose {label} first.' if label else general
@@ -1215,6 +1210,61 @@ def link_mismatch(context, item, name, field, value, targets=None):
               for record, model in ((target, field.target), (owner, compared.target))]
     if not all(isinstance(title, str) and title.strip() for title in titles): return general
     return f'{titles[0]} is not in {titles[1]}.'
+
+
+def group_mismatch(context, item, parent, field, group, target, value):
+    """The failed filters of one group, as (filter, Ref path or None, expected value); empty when the group holds."""
+    failed, compared = [], {}
+    for filter_name, expected in group.items():
+        path = expected.path if isinstance(expected, Ref) else None
+        if path:
+            expected = ref_value(context, item, parent, path)
+            if expected is None or expected == []:
+                failed.append((filter_name, path, None))  # An empty Ref matches nothing, as in the picker.
+                continue
+        if '__' in filter_name:
+            compared[filter_name] = expected  # An operator ("kind__ne", "id__in") is decided by the query below.
+        elif expected is None or getattr(target, filter_name) != expected: failed.append((filter_name, path, expected))
+    # The same filters the picker searches with, on the selected record, through the list query (no row scope: the
+    # record was read above as this person).
+    if compared and not failed and not context._tx.list(field.target, filters={'id': value, **compared}, limit=1):
+        failed.append((next(iter(compared)), None, None))
+    return failed
+
+
+def ref_value(context, item, parent, path):
+    """The value a Link filter's Ref reads on this form: one value, or a list for a Table column ("packs.unit",
+    unsaved rows included). Through a Link ("item.unit", "item.packs.unit") it reads the linked record as this
+    person, and nothing (None or []) when they can't read that record or field."""
+    ref = ref_path(item._definition, parent, path)
+    if ref.link is None:
+        current = item.read(path)
+        if not ref.many: return current
+        return list(dict.fromkeys(entry for entry in current or () if entry not in EMPTY))
+    linked = item.read(ref.form)
+    values = [] if linked in EMPTY else linked_values(context._business, context._tx, context.user, ref.link, linked, ref.remote)
+    return values if ref.many else (values[0] if values else None)
+
+
+def linked_values(business, tx, user, link, record_id, remote):
+    """The values of a field of the record a Link names (remote=("unit",)), or of a column of one of its Tables
+    (remote=("packs", "unit")), read as this person: row scope, field permissions and the rows they may read.
+    Empty when they can't read the record, the Table or the field."""
+    policy, target = business.policy, link.target
+    try:
+        record = policy.record(tx, user, target, record_id)
+    except (AccessError, ValueError, TypeError):
+        return []
+    if len(remote) == 1:
+        current = getattr(record, remote[0], None) if remote[0] in policy.fields(user, target) else None
+        return [] if current in EMPTY else [current]
+    child = business.children.get((target, remote[0]))
+    if child is None or not policy.allows(user, child.model, 'read') or remote[1] not in policy.fields(user, child.model):
+        return []
+    rows = tx.list(child.model, filters={child.link: record.id}, limit=ROW_LIMIT)
+    readable = policy.visible(tx, user, child.model, [row.id for row in rows])
+    return list(dict.fromkeys(getattr(row, remote[1], None) for row in rows
+                              if row.id in readable and getattr(row, remote[1], None) not in EMPTY))
 
 
 def field_label(definition, name):
@@ -1869,7 +1919,7 @@ def source_values(draft, allowed=None, behaviors=('compute',)):
             entry = plans(draft._definition)[name]
             # Record schemas expose only computes over sources; dialogs also use conditions and filters.
             expressions = [entry.get(key) for key in behaviors if key != 'filters']
-            expressions += list(entry.get('filters', {}).values()) if 'filters' in behaviors else []
+            expressions += [value for group in filter_groups(entry.get('filters')) for value in group.values()] if 'filters' in behaviors else []
             for path in set().union(*(references(expression) for expression in expressions)):
                 parts = path.split('.')
                 if len(parts) == 2 and parts[0] in sources and parts[1] in sources[parts[0]].fields:
