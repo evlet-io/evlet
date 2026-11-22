@@ -10,9 +10,9 @@ prune frontend/src/evlet/tests
 # The development Library imports this fixture; typechecking a source release needs it too.
 include frontend/src/evlet/tests/server.ts frontend/src/evlet/tests/api-fixture.json
 recursive-include frontend/scripts *.mjs
-recursive-include frontend/public *.svg *.html *.js *.webmanifest
+recursive-include frontend/public *.svg *.html *.js *.png
 recursive-include frontend/fonts *.woff2 *.txt
-recursive-include evlet/ui/static *.html *.js *.css *.svg *.webmanifest *.woff2 *-OFL.txt
+recursive-include evlet/ui/static *.html *.js *.css *.svg *.png *.woff2 *-OFL.txt
 recursive-include evlet *.pyi py.typed
 recursive-include evlet/resources *.tpl *.woff2 *-OFL.txt
 prune tests

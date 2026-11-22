@@ -16,31 +16,37 @@ from evlet import AddField, Application, Boolean, Currency, Database, LocalAuth,
 
 def check_pwa_package(sdist):
     """Check installed responses and both rebuildable sources and built assets in the release archive."""
-    from evlet.ui.serving import static_response
+    from evlet.ui.serving import manifest_response, static_response
     assets = Path(evlet.__file__).parent / 'ui/static/assets'
-    names = ('evlet.webmanifest', 'evlet-sw.js', 'evlet-offline.html')
+    # The manifest is answered per instance (evlet/ui/serving.py); its icons are bundled files.
+    status, content, headers = manifest_response('Package check')
+    assert status == 200 and dict(headers)[b'content-type'] == b'application/manifest+json'
+    manifest = json.loads(content.content)
+    assert manifest['name'] == 'Package check' and manifest['start_url'] == '/' and manifest['scope'] == '/'
+    icons = [icon['src'].removeprefix('/assets/') for icon in manifest['icons']] + ['evlet-apple-touch-icon.png']
+    for icon in icons:
+        response = static_response('/assets/' + icon)
+        assert response is not None, f'Installed wheel lacks PWA icon {icon}'
+        assert response[1].content == (assets / icon).read_bytes() and response[1].content.startswith(b'\x89PNG')
+    names = ('evlet-sw.js', 'evlet-offline.html')
     for name in names:
         response = static_response('/assets/' + name, {'private_value': 'must-not-cache', 'theme': 'dark'}, theme='dark')
         assert response is not None, f'Installed wheel lacks PWA asset {name}'
         status, content, headers = response
         assert status == 200 and content.content == (assets / name).read_bytes()
-        if name.endswith('.webmanifest'):
-            assert dict(headers)[b'content-type'] == b'application/manifest+json'
-            manifest = json.loads(content.content)
-            assert manifest['start_url'] == '/app' and manifest['scope'] == '/'
-            assert all(static_response(icon['src']) is not None for icon in manifest['icons'])
-        elif name.endswith('.js'):
+        if name.endswith('.js'):
             assert dict(headers)[b'service-worker-allowed'] == b'/'
             assert dict(headers)[b'cache-control'] == b'no-cache'
-            # vite build lists its fingerprinted files in the worker (frontend/vite.config.js).
+            # vite build lists its fingerprinted files and the build fingerprint in the worker (frontend/vite.config.js).
             assert b'evlet:build-assets' not in content.content and b'"/assets/index-' in content.content
+            assert b"/* evlet:build */'dev'" not in content.content
         else:
             assert b'evlet-config' not in content.content and b'must-not-cache' not in content.content
             assert b'data-theme' not in content.content
     with tarfile.open(sdist) as archive:
         prefix = f'evlet-{metadata.version("evlet")}/'
         for folder in ('frontend/public/assets', 'evlet/ui/static/assets'):
-            for name in names:
+            for name in names + tuple(icons):
                 path = f'{folder}/{name}'
                 try:
                     source = archive.extractfile(prefix + path)
@@ -48,7 +54,7 @@ def check_pwa_package(sdist):
                     raise RuntimeError(f'Source distribution lacks PWA asset {path}') from None
                 assert source is not None
                 if folder == 'frontend/public/assets' and name.endswith('.js'):
-                    # The worker's source keeps the marker that vite build replaces with the emitted files.
+                    # The worker's source keeps the markers that vite build replaces.
                     assert b'evlet:build-assets' in source.read()
                 else:
                     assert source.read() == (assets / name).read_bytes()

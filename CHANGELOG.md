@@ -4,7 +4,24 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## 0.4.21 (22-11-2026)
+
+### Upgrading to 0.4.21
+
+- **Use 0.4.21 instead of 0.4.20.** It is 0.4.20 with the install icons in the package; read the 0.4.20 notes
+  below. No migrations, no renamed names.
+
+### Fixed
+
+- **The package carries the install icons.** The wheel and source distribution of 0.4.20 left out the desk's PNG
+  icons (`evlet-icon-192.png`, `evlet-icon-512.png`, `evlet-icon-maskable-512.png` and
+  `evlet-apple-touch-icon.png`), so an installed Evlet's manifest named icons it could not serve and browsers
+  offered no Install. The package check now reads the per-instance manifest and fails when one of its icons is
+  missing from the wheel or the source distribution.
+
 ## 0.4.20 (22-11-2026)
+
+Tagged but not published; the package lacked the install icons. Use 0.4.21.
 
 ### Upgrading to 0.4.20
 
