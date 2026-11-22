@@ -177,11 +177,12 @@ export interface ModelSchema {
   /** Print designs the role may print a record of this model with, the default first. */
   prints?: PrintSchema[];
   /**
-   * Per-field behavior. `filters` are a Link's selection filters: a literal value, or
-   * `{"$expr": "ref", "args": ["company"]}` for another field of the form (`parent.company` from a
-   * row). `filters_blocked` means they read a field the role cannot, so only the server applies them.
+   * Per-field behavior. `filters` are a Link's selection filters: one group, or a list of groups any one of
+   * which may match. Each value is a literal, or `{"$expr": "ref", "args": ["company"]}` for another field of
+   * the form (`parent.company` from a row, `packs.unit` for a Table column, `item.unit` through a Link; see
+   * model/links.ts). `filters_blocked` means they read a field the role cannot, so only the server applies them.
    */
-  behavior?: Record<string, { filters?: Record<string, unknown>; filters_blocked?: boolean } & Record<string, unknown>>;
+  behavior?: Record<string, { filters?: Record<string, unknown> | Array<Record<string, unknown>>; filters_blocked?: boolean } & Record<string, unknown>>;
 }
 
 /** A filter condition of a layout block: [field, operator, value], where the value may be

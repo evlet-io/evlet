@@ -20,6 +20,37 @@ class Ref:
             raise ValueError('Use a declared field path')
 
 
+
+@dataclass(frozen=True)
+class RefPath:
+    """Where a Link filter's Ref("path") reads, on a model's form (`ref_path`).
+
+    form: the path the form holds, which the picker sends: "unit", "parent.unit", "packs.unit" (one value per
+    row of the form's Table, unsaved rows included) or "item" (a Link the rest of the path reads through).
+    link: that Link field when the path reads through it, else None. remote: the rest of the path on the
+    linked record: ("unit",) or ("packs", "unit") for a Table of it. many: whether it reads a Table column,
+    so a filter compares with it by `__in`."""
+    form: str
+    link: object = None
+    remote: tuple = ()
+    many: bool = False
+
+
+def ref_path(definition, parent, path):
+    """The RefPath of a Link filter's Ref on `definition` (a Table row model has its `parent` model)."""
+    from .fields import Link
+    parts, owner, prefix = path.split('.'), definition, ''
+    if parts[0] == 'parent' and parent is not None and len(parts) > 1:
+        owner, parts, prefix = parent, parts[1:], 'parent.'
+    head = parts[0]
+    if head in owner.__tables__ and len(parts) == 2:
+        return RefPath(path, many=True)
+    field = owner.__declared_fields__.get(head)
+    if isinstance(field, Link) and len(parts) > 1:
+        return RefPath(prefix + head, field, tuple(parts[1:]), many=len(parts) == 3)
+    return RefPath(path)
+
+
 # Rows one owned table may hold. Tables under legacy (non finite-v1) roots keep 100.
 MAX_TABLE_ROWS = 1000
 DEFAULT_TABLE_ROWS = 100

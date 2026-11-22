@@ -1072,6 +1072,52 @@ field and bound as SQL parameters. A `Ref` the form left empty matches nothing (
 "Choose Item first."). A `Ref` to a field the role cannot read is skipped, as before, and the save
 still checks the Link.
 
+#### Any of several groups, Table columns and Refs through a Link
+
+`filters` may be a list of dicts: each dict is a group whose conditions must all hold, and a record fits
+when any one group does. A single dict keeps working as one group. Two more kinds of `Ref` path read the
+form:
+
+- `Ref("packs.unit")` reads a column of one of the form's own Tables: the values of its rows, unsaved rows
+  included, without blanks or repeats. It holds several values, so compare it with `__in` (or `__nin`).
+- `Ref("item.unit")` reads through a Link on the form: the field of the linked record. `Ref("item.packs.unit")`
+  reads a column of a Table of the linked record. The browser sends only the Link's value
+  (`values={"item": "…"}`); the server reads the rest as the person choosing, with their row scope and
+  field permissions, so a record, Table, row or field they cannot read gives nothing to match and its
+  values never leave the server.
+
+The target's `id` may be filtered like any stored field. "The item's own units" (its base unit or the unit
+of one of its packs) on the item itself and on every document line:
+
+```python
+class Item(Model):
+    unit = Link(Unit)                       # the base unit
+
+    class Pack(Child):
+        unit = Link(Unit)
+
+    packs = Table(Pack)
+    sale_unit = Link(Unit, filters=[{"id": Ref("unit")}, {"id__in": Ref("packs.unit")}])
+
+
+class Order(Model):
+    class Line(Child):
+        item = Link(Item)
+        unit = Link(Unit, filters=[{"id": Ref("item.unit")}, {"id__in": Ref("item.packs.unit")}])
+
+    lines = Table(Line)
+```
+
+The picker (`GET /api/unit/search?link=order_lines.unit&values={"item": "…"}`) offers only the units of
+any group that fits, and every save and every move checks the selected record with the same groups, so the
+picker and the server agree. A group whose `Ref` is empty, or reads nothing the person may read, matches
+nothing; when every group waits on an empty field of the form, the dropdown asks for it ("Choose Item
+first."). The browser applies only one group of plain field `Ref`s itself: with several groups, a Table
+column or a `Ref` through a Link, it leaves a chosen value in place when the form changes and the save
+checks it. A Table that shows only part of its saved rows sends the column of the rows it holds; the save
+reads every row. The registry refuses a path through a Link that names no stored field of the linked record
+(or of a Table of it), and a Table column compared without `__in` or `__nin`.
+
 ### What each option shows
 
 `Option` declares an option's title and a muted line below it, the subtext, without Python. Declare it

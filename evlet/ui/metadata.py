@@ -856,16 +856,16 @@ def ui_schema(registry):
 
 
 def behavior(model, registry):
-    from ..reactivity import plans, serialized, graph
+    from ..reactivity import plans, serialized, graph, map_filters
     if not getattr(model, '__declaration_mode__', False):
         # A plain model still tells the form which other fields its Link filters read.
-        filters = {name: {'filters': {key: serialized(value) for key, value in entry['filters'].items()}}
+        filters = {name: {'filters': map_filters(entry['filters'], serialized)}
                    for name, entry in plans(model).items() if entry.get('filters')}
         return {'behavior': filters} if filters else {}
     nodes, order = ({}, []) if any(child.model is model for child in registry.children) else graph(registry, model)
     fields = plans(model)
     return {'document_version': 1, 'resource': getattr(model, '__resource_id__', registry.name_for(model)),
-            'behavior': {name: {key: {field: serialized(value) for field, value in item.items()} if key == 'filters' else serialized(item)
+            'behavior': {name: {key: map_filters(item, serialized) if key == 'filters' else serialized(item)
                                 for key, item in entry.items()} for name, entry in fields.items()},
             'order': order, 'sources': source_schema(model)}
 

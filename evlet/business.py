@@ -375,23 +375,19 @@ class Business:
             model = self.registry.models[entry['name']]
             readable, writable = self.policy.fields(user, model), self.policy.fields(user, model, write=True)
             if 'behavior' in entry:
-                from .reactivity import references, plans
+                from .reactivity import filter_inputs, references, plans
+                from .search import readable_path
                 available_behavior = {}
+                owner = next((child.parent for child in self.children.values() if child.model is model), None)
                 for name, behavior in entry['behavior'].items():
                     if name not in readable: continue
                     # References to protected inputs stay private, including defaults and conditions.
                     allowed = {}
                     for key, value in behavior.items():
                         original = plans(model)[name][key]
-                        dependencies = set().union(*(references(item) for item in original.values())) if key == 'filters' else references(original)
-                        def available(path):
-                            parts = path.split('.')
-                            if len(parts) == 1: return path in readable
-                            if len(parts) == 2 and parts[0] == 'parent':
-                                owner = next((child.parent for child in self.children.values() if child.model is model), None)
-                                return owner is not None and parts[1] in self.policy.fields(user, owner)
-                            return False
-                        if all(available(path) for path in dependencies):
+                        # A filter's Ref through a Link reads the Link on the form; the server reads the rest as this person.
+                        dependencies = filter_inputs(model, owner, original) if key == 'filters' else references(original)
+                        if all(readable_path(self, user, model, path) for path in dependencies):
                             allowed[key] = value
                         elif key == 'compute' and self.policy.derivation_allowed(user, model, name):
                             allowed[key] = value

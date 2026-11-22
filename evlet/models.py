@@ -742,16 +742,19 @@ def check_option(registry, model, option, where):
             raise ValueError(f'{where}: Sum needs a number field; {part.field} is a {related.__fields__[part.field].kind} field')
 
 
-def resolve_sources(registry, definition):
+def resolve_sources(registry, definition, parent=None):
     from .query import SqlQuery
     for field in definition.__declared_fields__.values():
         if isinstance(field, Link):
             field.target = registry.resolve(field.target)
-            for name, value in field.filters.items():
+            for name, value in (item for group in field.filter_groups for item in group.items()):
                 # "field" or "field__op" (the list route's operators): a stored field of the target, compared with a
                 # literal or with a value of this form (Ref).
-                if name.split('__', 1)[0] not in field.target.__fields__: raise ValueError('Link filters must name stored target fields')
-                if '__' in name: SqlQuery(registry, field.target).where({name: None if isinstance(value, Ref) else value})
+                if name.split('__', 1)[0] not in {'id', *field.target.__fields__}: raise ValueError('Link filters must name stored target fields')
+                if '__' in name:
+                    sample = ([] if name.endswith(('__in', '__nin')) else None) if isinstance(value, Ref) else value
+                    SqlQuery(registry, field.target).where({name: sample})
+                if isinstance(value, Ref): check_filter_ref(registry, definition, parent, field, name, value.path)
             if field.option is not None:
                 check_option(registry, field.target, field.option, f'{definition.__name__}.{field.name}: option')
         elif field.filters: raise ValueError('Selection filters require a Link field')
@@ -772,4 +775,22 @@ def resolve_sources(registry, definition):
     option = getattr(getattr(definition, 'Meta', None), 'option', None)
     if option is not None:
         check_option(registry, definition, option, f'{definition.__name__}.Meta.option')
-    for table in definition.__tables__.values(): resolve_sources(registry, table.child)
+    for table in definition.__tables__.values(): resolve_sources(registry, table.child, definition)
+
+
+def check_filter_ref(registry, definition, parent, field, name, path):
+    """A Link filter's Ref through a Link ("item.unit", "item.packs.unit") names a stored field of the linked
+    record or of a Table of it; one that reads a Table column ("packs.unit") compares by __in or __nin."""
+    from .declarations import ref_path
+    where = f'{definition.__name__}.{field.name}: Ref("{path}")'
+    ref = ref_path(definition, parent, path)
+    if ref.link is not None:
+        target = ref.link.target = registry.resolve(ref.link.target)
+        if len(ref.remote) == 2 and ref.remote[0] in target.__tables__:
+            target = target.__tables__[ref.remote[0]].child
+        elif len(ref.remote) != 1:
+            raise ValueError(f'{where} reads a field of the linked record or a column of one of its Tables')
+        if ref.remote[-1] not in target.__fields__:
+            raise ValueError(f'{where}: {target.__name__} has no stored field {ref.remote[-1]}')
+    if ref.many and name.rpartition('__')[2] not in ('in', 'nin'):
+        raise ValueError(f'{where} reads several values (one per row); compare it with {name.split("__", 1)[0]}__in')
