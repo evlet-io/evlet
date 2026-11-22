@@ -28,6 +28,7 @@ import { Board, BoardCard, BulkBar, PageHeader, Toolbar, type BoardColumn, type 
 import { StatusBadge, Tabs } from '../ui/doc';
 import { DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
 import { can, type FieldSchema } from '../model/schema';
+import { formatNumber } from '../model/format';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
@@ -182,6 +183,10 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   const rows = cell<RecordData[]>([], { name: `${name}.rows` });
   const total = cell<number | null>(null, { name: `${name}.total` });
+  // The server counts a list up to a cap (docs/performance.md#list-counts): past it, total is the cap and
+  // totalCapped is set, so the total reads "10,000+" and the pager keeps a next page.
+  const totalCapped = cell(false, { name: `${name}.total capped` });
+  const totalText = () => { const value = total.get(); return value === null ? '' : totalCapped.get() ? `${formatNumber(value, 0)}+` : String(value); };
   const loading = cell(true), failure = cell<string | null>(null);
   const reload = cell(0);
   let ticket = 0;
@@ -196,7 +201,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     loading.set(true);
     void api.list(name, request).then(result => {
       if (mine !== ticket) return;
-      batch(() => { rows.set(result.items); total.set(result.total); failure.set(null); loading.set(false); selection.set(new Set()); });
+      batch(() => { rows.set(result.items); total.set(result.total); totalCapped.set((result as { total_capped?: boolean }).total_capped === true); failure.set(null); loading.set(false); selection.set(new Set()); });
       // A page past the end (after deletes or a narrower filter) goes back to the last page.
       if (!board && !result.items.length && result.total > 0 && page.peek() > 1) page.set(Math.ceil(result.total / size));
     }, (error: unknown) => {
@@ -324,7 +329,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   // With list tabs each tab carries its own count (the active one at least), so the title has none: a number there
   // read as the total while it counted the open tab.
-  const header = PageHeader({ icon, tint, title: model.plural, count: tabSpec ? undefined : () => total.get(), actions: [
+  const header = PageHeader({ icon, tint, title: model.plural, count: tabSpec ? undefined : totalText, actions: [
     boarded ? SegmentedControl({ options: [{ value: 'list', label: 'List', icon: 'list' }, { value: 'board', label: 'Board', icon: 'kanban' }], value: view, label: 'View',
       onChange: next => batch(() => { view.set(next); selection.set(new Set()); }) }) : null,
     filters.fields.length ? filterButton : null,
@@ -386,7 +391,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   // Clearing goes back to the tab the list opens on.
   const clearAll = () => batch(() => { named = null; filters.clear(); q.set(''); tab.set(home.peek()); page.set(1); });
   const toolbar = Toolbar({ label: `${model.plural} tools`, left: [search, FilterChips(filters, ctx.links)],
-    right: [html`<span class="summary" aria-live="polite">${() => loading.get() ? 'Loading…' : total.get() === null ? '' : `${total.get()} ${total.get() === 1 ? model.label.toLowerCase() : model.plural.toLowerCase()}`}</span>`] });
+    right: [html`<span class="summary" aria-live="polite">${() => loading.get() ? 'Loading…' : total.get() === null ? '' : `${totalText()} ${total.get() === 1 && !totalCapped.get() ? model.label.toLowerCase() : model.plural.toLowerCase()}`}</span>`] });
 
   // Each measure is a card with an icon for its function, in its color= or else the next accent, with its trend line.
   const strip = declared.length ? when(() => measures.get() !== null, () => SummaryStrip(declared.slice(0, 4).map((measure, index) => ({
@@ -451,9 +456,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   const pages = derive(() => Math.max(1, Math.ceil((total.get() ?? 0) / size)));
   const pager = html`<nav class="ev-pager" aria-label="Pages" hidden=${() => (total.get() ?? 0) <= size}>
-    <span class="num">${() => { const from = (page.get() - 1) * size + 1; return `${from}–${Math.min(total.get() ?? 0, from + size - 1)} of ${total.get() ?? 0}`; }}</span>
+    <span class="num">${() => { const from = (page.get() - 1) * size + 1; return `${from}–${Math.min(totalCapped.get() ? from + rows.get().length - 1 : total.get() ?? 0, from + size - 1)} of ${totalText() || 0}`; }}</span>
     ${IconButton({ icon: 'chevron-left', tip: 'Previous page', disabled: () => page.get() <= 1, onClick: () => page.set(Math.max(1, page.peek() - 1)) })}
-    ${IconButton({ icon: 'chevron-right', tip: 'Next page', disabled: () => page.get() >= pages.get(), onClick: () => page.set(Math.min(pages.peek(), page.peek() + 1)) })}</nav>`;
+    ${IconButton({ icon: 'chevron-right', tip: 'Next page', disabled: () => !totalCapped.get() && page.get() >= pages.get(), onClick: () => page.set(totalCapped.peek() ? page.peek() + 1 : Math.min(pages.peek(), page.peek() + 1)) })}</nav>`;
 
   // ---------- board ----------
 
@@ -655,7 +660,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const content = html`<div class="ev-list-body" role=${tabs ? 'tabpanel' : null} id=${() => tabs ? `ev-${name}-views-${tab.get()}-panel` : null} aria-labelledby=${() => tabs ? `ev-${name}-views-${tab.get()}` : null}>
     ${match(mode, { error: () => body(), empty: () => body(), loading: () => loadingRows(), list: () => [table(), pager], narrow: () => [table(true), pager], compact: () => [compactRows(), pager], cards: () => [compactRows(true), pager],
       board: () => [state ? html`<p class="muted ev-note ev-board-note" hidden=${() => boardOnly.get() === 'all'}>${() => `Showing ${stepLabel(model, boardOnly.get()).toLowerCase()} ${model.plural.toLowerCase()} only. Choose All ${model.plural.toLowerCase()} to see every column.`}</p>` : null,
-        match(boardOnly, Object.fromEntries(['all', ...stateKeys].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${total.get()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
+        match(boardOnly, Object.fromEntries(['all', ...stateKeys].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${totalText()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
 
   const list = html`<div class="page ev-list" class:ev-list-narrow=${panelOpen} data-model=${name} aria-busy=${() => loading.get() ? 'true' : null}>${ctx.crumbBar?.()}${header}${when(() => !panelOpen.get(), () => strip)}<p class="muted ev-progress" role="status" hidden=${() => !progress.get()}>${progress}</p>
     <div class="ev-list-card" class:ev-list-card-board=${() => mode.get() === 'board'}>${tabs}${toolbar}${content}</div>${when(() => !panelOpen.get(), () => bulk)}</div>` as HTMLElement;

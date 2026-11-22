@@ -19,7 +19,7 @@ from .audit import actor_id, detail as audit_detail
 from .auth import ADMINISTRATOR, AccessError, allow, has_role, page_query
 from .identity import RecordId, checked as item_id, path_id
 from .naming import drop_echoes
-from .database import ROW_LIMIT, Session, using
+from .database import ROW_LIMIT, Session, page_count, using
 from .fields import Link, size_text
 from .ui.metadata import view_for
 from .models import ChildTable, ValidationError, identifier
@@ -1703,10 +1703,13 @@ class Business:
                 # Awaiting my approval: records whose waiting approval level this user may approve.
                 where.append(qb.in_('id', awaiting(Context(self, tx, user, readonly=True), model) or [0]))
             rows = connection.run(qb.select(table).where(*where).order_by(*ordering).limit(limit).offset(offset)).all()
-            total = connection.run(qb.select(table, qb.count()).where(*where)).value()
+            # A short page is its own total; otherwise count up to the cap, so a search or a large table is
+            # scanned once for the page and at most cap rows more for the count (docs/performance.md#list-counts).
+            total, capped = page_count(connection, qb.select(table, qb.col('record.id')).where(*where),
+                                       limit=limit, offset=offset, shown=len(rows), cap=self.database.count_cap)
             # One visibility check per Link target for the page, not per row.
             items = self.policy.serialize_many(tx, user, [model._from_row(row) for row in rows])
-        return 200, {'items': items, 'total': total, 'limit': limit, 'offset': offset}, []
+        return 200, {'items': items, 'total': total, 'total_capped': capped, 'limit': limit, 'offset': offset}, []
 
     def schedule_image_purge(self):
         """Held rich text images are purged on each upload; with jobs, also hourly by a framework schedule."""

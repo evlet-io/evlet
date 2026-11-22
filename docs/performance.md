@@ -102,6 +102,8 @@ retain a lazy boundary only while it gives a measurable benefit without changing
   `Database.page` skips the second, counting scan for it (the common case for a search with few
   matches). `Session.count(..., cap=n)` (and `Database.count`) counts at most `n` rows in one scan
   that stops there, for callers that show "n+" instead of an exact total.
+- List counts. The HTTP list route (`GET /api/{model}`) does the same and counts at most 10,000 matching
+  records; see [List counts](#list-counts).
 - Response encoding. JSON responses are encoded in the request's worker thread, not on the event
   loop, so a large detail or report page does not stall other connections or stream heartbeats.
 - Event streams share one poller per application (see [Jobs and realtime](jobs-realtime.md)).
@@ -520,6 +522,38 @@ the foreground, so the browser may have throttled timers; these are upper bounds
 The 1,000-line edit in the browser is near the 16 ms budget and over it in some runs, against
 8.8 ms in jsdom; the development build keeps its checks on. Scrolling at 60 fps was not
 measured: the pane gave no frame timing while it was hidden.
+
+## List counts
+
+`GET /api/{model}` reads one page of records and its total from one snapshot. A page with fewer rows
+than its `limit` is the last one, so its total is `offset` plus its rows and no count runs: a search
+with few or no matches scans the table once, not twice. A full page counts the matching records up to
+a cap, in one scan that stops there (`SELECT count(*) FROM (SELECT id ... LIMIT cap + 1)`). When more
+match, the answer has `"total": 10000, "total_capped": true` and the list reads "10,000+"; a page
+past the cap counts to its own end, so its total is at least `offset` plus its rows. Otherwise
+`total_capped` is false and `total` is exact, as before.
+
+- `EVLET_LIST_COUNT_CAP` sets the cap (default 10,000); `0` counts exactly. Anything but a whole number
+  from 0 to 999,999,999 stops the server at startup. `Database.count_cap` holds the value read.
+- The search itself (the text inside a search field, `instr(lower(...))`) still cannot use an index:
+  a full page stops after `limit` rows in list order, but a search that matches few rows reads the
+  whole table, once. An FTS5 trigram index would make that bounded; it is not built.
+- `Database.page` and `Context.list` (trusted code) keep their exact totals.
+
+`.venv/bin/python scripts/benchmark_list.py 100000`: 100,000 records with a title of three random
+words and a code, both search fields, through the HTTP route with an admin session, 20 requests each,
+in the cloud container (4 CPUs, shared with other work, so timings are noisy), 22-11-2026:
+
+| List | p50 before | p50 after |
+|---|---|---|
+| No search (100,000 records, "10,000+") | 2.3 ms | 2.5 ms |
+| Search, common text (`box`, 19,912 matches, "10,000+") | 39.8 ms | 21.2 ms |
+| Search, one match (`P-012345`) | 78.7 ms | 45.3 ms |
+| Search, no match (`zzz`) | 76.9 ms | 43.7 ms |
+| Sorted by title, third page | 10.8 ms | 11.8 ms |
+
+Without a filter SQLite counts a table quickly, so the cap matters most for filters, row scopes and
+searches over large tables; the halved search times come from the skipped second scan.
 
 ## Record search
 

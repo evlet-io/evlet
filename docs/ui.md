@@ -32,6 +32,9 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 - Generated model screens: lists, boards for models that name their State in `Meta.board` (`board = "docstate"`), record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves (with their remarks), child tables, measures, related records and
   files.
+- List totals. A list counts its matching records up to 10,000 (`EVLET_LIST_COUNT_CAP`); past that the title,
+  the summary and the pager read "10,000+" (the page answers `total_capped: true`) and Next stays available
+  page by page. Under the cap the total is exact ([performance.md](performance.md#list-counts)).
 - Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
   `/reports/<name>`, listed in the sidebar and in the Explorer. A text column that reads a Select field (its
   `source='model.field'`, or the report model's field of the same name) shows the choice's label, as the list
