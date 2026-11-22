@@ -15,6 +15,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `Link(Unit, filters=[{"id": Ref("item.unit")}, {"id__in": Ref("item.packs.unit")}])` on a line
   ([docs/model-engine.md](docs/model-engine.md#any-of-several-groups-table-columns-and-refs-through-a-link)).
   For code that reads the schema: `behavior[field].filters` is a list when the Link declares a list.
+- **A new record that starts from other values arrives calculated.** An action's `Outcome(new=(model, values))`
+  now answers the new record as `/api/_draft/<model>` works it out for the signed-in user: fetched fields read from
+  the linked record as it is now, `derive()` and the formulas, with the outcome's values kept and only fields the
+  user may read and write. Enquiry → New quotation shows each line's unit steps, rate and amount at once, so a
+  quantity typed next is no longer refused. More > Duplicate, and a new record the address fills in, send the copy
+  to `/api/_draft` once as they open on a model with `derive()`; a blank new record sends nothing. Duplicate no
+  longer copies fields fetched from a linked record (`initial=F("item.description")`): they are fetched again, so
+  a copy shows the item's current description, unit and price
+  ([docs/prompts.md](docs/prompts.md#outcome), [docs/ui.md](docs/ui.md#duplicate)). The answer of an outcome's
+  `new` now also lists the fields the calculation filled; empty fields are left out.
 
 ## 0.4.18 (21-11-2026)
 

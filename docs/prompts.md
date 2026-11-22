@@ -114,6 +114,18 @@ action's response, the prompt's `submit()` result in Python and over HTTP), as `
 unknown name fails there with `Unknown model: …`. So code that cannot import the model class (another app's
 model, or one that would import in a circle) names it.
 
+An outcome's new record arrives calculated. Where the outcome goes into the answer, the values are worked out for
+the signed-in user as `/api/_draft/<model>` works out a new record: fields fetched from a linked record
+(`initial=F('item.description')`, `fetch=`) are read from that record as it is now, the model's `derive()` runs
+(`derived=True` fields and Tables) and the formulas follow. The values the outcome gives are kept. So
+`new=('quotation', {'customer': c, 'lines': [{'item': i, 'qty': 24}]})` answers each line with its fetched
+description and rate, what `derive()` sets and its amount, and the browser, Eva, the connector and API callers all
+get the same complete record in one request. Leave a fetched field out to have it read from the link; give it to
+set it. The answer holds only the fields and rows this user may read; values this user may not write are left out,
+as the form would leave them. Empty fields are left out. A model the draft route does not evaluate, or one this
+user may not create, keeps the values as given (its save refuses them anyway). In Python, `record.note(...)` and
+other direct calls return the outcome as given; the calculation is part of the answer.
+
 The JSON answer is at most 64 KiB. `submit()` may also return `None` (the screen says it is done) or any other JSON value (a dict, a list, a number or a string), which the screen receives as data.
 
 ## Over HTTP

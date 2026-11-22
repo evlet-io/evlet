@@ -366,6 +366,10 @@ def outcome_of(business, context, value, *, origin=None, model=None, record_id=N
         return {}
     if isinstance(value, Outcome):
         value = value.resolve(business.registry)
+        if 'new' in value:
+            # The new record arrives calculated, as the form would show it after any edit (Business.calculated_new).
+            new = value['new']
+            new['values'] = business.calculated_new(context, business.registry.resolve(new['model']), new['values'])
     encoded = json.dumps(jsonable(value), allow_nan=False)
     if len(encoded) > RESULT_LIMIT:
         raise ValueError('An outcome exceeds 64 KiB')
