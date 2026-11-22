@@ -976,8 +976,7 @@ def route(business, scope, body, user, model, parts):
     """POST /api/{model}/{id}/restore ({version, remark}), GET .../versions, .../versions/{n} and .../versions/{a}/diff/{b or current}."""
     record_id = record_in(parts)
     if parts[4] == 'restore':
-        if len(parts) != 5 or scope['method'] != 'POST':
-            raise AccessError(405, 'Method not allowed')
+        allow(scope['method'] if len(parts) == 5 else None, 'POST')  # a longer path is a 405 too
         checked_body(body, {'remark', 'version'}, 'Send only a version and a remark')
         with business.context(user) as context:
             record = business.policy.record(context._tx, user, model, record_id, 'update')

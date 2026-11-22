@@ -11,7 +11,7 @@ import time
 
 from . import qb
 from .adapter import Column, TableDefinition
-from .auth import AccessError, allow
+from .auth import AccessError, allow, record_in
 from .identity import path_id
 from .models import ValidationError, checked_body
 from .database import Session
@@ -241,8 +241,8 @@ class Unsaved:
         if len(parts) != 5 or method not in ('GET', 'PUT', 'DELETE'):
             raise AccessError(404, 'Route not found')
         model = self.business.registry.models.get(parts[3])
-        record_id = path_id(parts[4])
-        if model is None or model in self.business.child_models or record_id is None:
+        record_id = record_in(parts, 4, 'Route not found')
+        if model is None or model in self.business.child_models:
             raise AccessError(404, 'Route not found')
         if not autosave(model):
             raise AccessError(404, "This model doesn't keep unsaved changes")
