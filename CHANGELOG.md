@@ -4,7 +4,14 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.19 (22-11-2026)
+
+### Upgrading to 0.4.19
+
+- **No migrations, no renamed names.** Apps keep working. A Link's `filters` may now be a list, and `Outcome(new=)`
+  and Duplicate now answer calculated records; read the bullets below if your app relies on either.
+
+### Added
 
 - **Link filters: any of several groups, Table columns, and Refs through a Link.** `Link(filters=[{...}, {...}])`
   matches a record that fits any one dict (a single dict is one group and keeps working). `Ref("packs.unit")`
@@ -15,6 +22,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `Link(Unit, filters=[{"id": Ref("item.unit")}, {"id__in": Ref("item.packs.unit")}])` on a line
   ([docs/model-engine.md](docs/model-engine.md#any-of-several-groups-table-columns-and-refs-through-a-link)).
   For code that reads the schema: `behavior[field].filters` is a list when the Link declares a list.
+
+### Changed
+
 - **A new record that starts from other values arrives calculated.** An action's `Outcome(new=(model, values))`
   now answers the new record as `/api/_draft/<model>` works it out for the signed-in user: fetched fields read from
   the linked record as it is now, `derive()` and the formulas, with the outcome's values kept and only fields the
@@ -25,6 +35,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   a copy shows the item's current description, unit and price
   ([docs/prompts.md](docs/prompts.md#outcome), [docs/ui.md](docs/ui.md#duplicate)). The answer of an outcome's
   `new` now also lists the fields the calculation filled; empty fields are left out.
+- **List and sidebar: search on the tab row, card corners and the switcher icon.** With list tabs, the search box
+  ends the tab row, after More, 240 px wide; on phones it comes first, on its own line above the tabs. The list card,
+  the title row's primary New button and the Workspace switcher have 6 px corners (`--r-card`) and a light shadow
+  (`--shadow-sm`); the sidebar's active item has the same corners and its border, with no shadow. The switcher shows
+  the current workspace's icon on a 20 px tile in its colour ([docs/ui.md](docs/ui.md)).
 
 ## 0.4.18 (21-11-2026)
 
