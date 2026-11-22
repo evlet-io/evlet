@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { defineConfig } from 'vitest/config'
@@ -16,8 +17,9 @@ const configure = proxy => proxy.on('proxyReq', request => {
 })
 const proxy = Object.fromEntries(['/api', '/health', '/_/mcp', '/_/oauth/register', '/_/oauth/token', '/_/oauth/revoke', '/.well-known', '/_dev/signin'].map(path => [path, { target: `http://127.0.0.1:${backendPort}`, changeOrigin: false, configure }]))
 // The service worker keeps cache-first only the fingerprinted files this build emits ([name]-[hash] in assets/),
-// listed into its copy in dist; an app's own /assets/ file with a similar name is never kept.
-const MARKER = '[/* evlet:build-assets */]'
+// listed into its copy in dist; an app's own /assets/ file with a similar name is never kept. The worker's cache
+// names carry a fingerprint of that list, so every release is a new worker that drops the caches of the one before.
+const MARKER = '[/* evlet:build-assets */]', BUILD = "/* evlet:build */'dev'"
 const workerAssets = () => {
   let outDir, built = []
   return {
@@ -28,8 +30,9 @@ const workerAssets = () => {
     },
     closeBundle: async () => {
       const file = resolve(outDir, 'assets/evlet-sw.js'), source = await readFile(file, 'utf8')
-      if (source.split(MARKER).length !== 2 || !built.length) throw new Error('evlet-sw.js needs exactly one build asset marker')
-      await writeFile(file, source.replace(MARKER, JSON.stringify(built)))
+      if (source.split(MARKER).length !== 2 || source.split(BUILD).length !== 2 || !built.length) throw new Error('evlet-sw.js needs exactly one build asset marker and one build marker')
+      const fingerprint = createHash('sha256').update(built.join('\n')).digest('hex').slice(0, 12)
+      await writeFile(file, source.replace(MARKER, JSON.stringify(built)).replace(BUILD, `'${fingerprint}'`))
     },
   }
 }

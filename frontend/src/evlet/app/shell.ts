@@ -27,6 +27,7 @@ import { openExplorer } from './explorer';
 import { SHELL_ICONS } from './nav-icons';
 import { openShortcutSheet } from './shortcuts';
 import { formatKeys, withShortcut } from '../ui/shortcuts';
+import { InstallOffer } from './pwa';
 
 /** At this width and under the sidebar is a drawer (ui/styles.css has the same breakpoint). */
 export const NAV_DRAWER = '(max-width: 1220px)';
@@ -302,7 +303,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const shell = html`<div class="app" class:collapsed=${collapsed} class:mobile-open=${mobileOpen} class:compact=${() => (ctx.me.get()?.prefs.density ?? prefs.density.get()) === 'compact'}
     class:large=${() => ctx.me.get()?.prefs.text === 'large'}>
     <a class="skip-link" href="#ev-view" on:click=${(event: Event) => { event.preventDefault(); document.getElementById('ev-view')?.focus(); }}>Skip to content</a>
-    ${topbar}${sidebar}${edge}<div class="main"><main class="view" id="ev-view" tabindex="-1">${view}</main></div>
+    ${topbar}${sidebar}${edge}<div class="main">${InstallOffer()}<main class="view" id="ev-view" tabindex="-1">${view}</main></div>
     <div class="scrim ev-side-scrim" class:show=${mobileOpen} on:click=${() => mobileOpen.set(false)}></div></div>` as HTMLElement;
   const menuButton = topbar.querySelector<HTMLButtonElement>('.nav-menu-btn button');
   menuButton?.setAttribute('aria-controls', 'ev-sidebar');

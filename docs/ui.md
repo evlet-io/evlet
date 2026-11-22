@@ -1290,28 +1290,58 @@ A save removes the saver's entry, and deleting a record removes everyone's, in t
 transaction. The format of `changes` is in
 [internal/unsaved-changes.md](internal/unsaved-changes.md).
 
-### Installation and optional offline notice
+### Installation and offline notice
 
-The bundled desk at `/app`, on HTTPS (or a secure localhost development origin), advertises
-an install manifest using the existing Evlet icon. Appearance includes the browser install
-prompt when supported and instructions for Add to Home Screen. Custom mounts, custom/public
-frontends and portal Settings are not claimed as installable by this manifest.
+The bundled desk (`/`, `/app`, sign-in, Docs and Settings), on HTTPS or a secure localhost
+development origin, is an installable web app. Custom mounts, custom or public frontends and
+portal Settings are not.
 
-**Offline notice and static assets** is an explicit device preference, off by default. It
-registers `/assets/evlet-sw.js` only after opt-in. The worker keeps a fixed public offline
-notice, the public icon and up to 64 of the fingerprinted JavaScript, CSS or font files of the
-Evlet build it ships with; `vite build` writes their names into the worker. Only those files are
-served cache-first. The icon is fetched from the network each time and its copy used only offline;
-any other `/assets/` file, such as an app's own script, is never cached. A new build's worker drops
-the files of earlier builds when it activates. Requests for these assets omit credentials. Successful navigation HTML, sessions, API responses,
-records and mutations are never cached, queued or replayed. An offline navigation shows only
-`/assets/evlet-offline.html`, without injected configuration or user data.
+**Manifest.** Every instance serves `/assets/evlet.webmanifest` (`application/manifest+json`,
+`Cache-Control: no-cache`). Its `name` is the application's name (`Application(name=)`), and
+its `short_name` is that name, or its first word when the name is longer than 12 characters.
+It opens `/` with scope `/` in a `standalone` window, with the Evlet colours (`theme_color`
+`#2563eb`, `background_color` `#f4f5f8`) and three PNG icons: 192 and 512 px, and a 512 px
+maskable one. The icons are the Evlet mark, unchanged and scaled onto a transparent background
+or, for the maskable and iOS icons, onto the page background. The page adds the manifest
+link, `apple-touch-icon` (180 px) and the `apple-mobile-web-app-*` tags for iOS.
 
-Updates wait for existing tabs to close; there is no automatic activation, reload or takeover
-of editors. Finish or keep work before closing tabs. Turning the feature off unregisters its
-worker and deletes its asset cache; a non-sensitive disabled marker prevents a restarted
-worker from recreating it. The worker reads that marker again when it is turned back on, so a
-worker still running since it was turned off resumes without a browser restart. Browser storage failures do not block ordinary online assets.
+**Worker.** Each desk page registers `/assets/evlet-sw.js` with scope `/` (it is served with
+`Service-Worker-Allowed: /` and `Cache-Control: no-cache`). It sends page navigations to the
+network first. When the network fails, it shows the fixed public notice
+`/assets/evlet-offline.html`, which carries no injected configuration or user data. Navigation
+HTML, sessions, API responses, records and mutations are never cached, queued or replayed, and
+the worker never touches `/api`.
+
+**Offline notice and static assets** (in Appearance) is an explicit device preference, off by
+default. Only when it is on does the worker keep up to 64 of the fingerprinted JavaScript, CSS
+or font files of the Evlet build it ships with, plus the public icon. `vite build` writes their
+names into the worker. Only those files are served cache-first. The icon is fetched from the
+network each time and its copy is used only offline. Any other `/assets/` file, such as an app's
+own script, is never cached. Requests for these assets omit credentials. Turning the preference
+off deletes the asset cache and leaves the worker for the offline notice. A non-sensitive
+disabled marker stops a restarted worker from recreating the cache. The worker reads that
+marker again when the preference is turned back on, so a worker still running since it was
+turned off resumes without a browser restart. Browser storage failures do not block ordinary
+online assets.
+
+**Updates.** `vite build` also writes a fingerprint of the build into the worker, so each release
+is a new worker with its own cache names. When it activates, it deletes the caches of earlier
+builds. Updates wait for existing tabs to close: there is no automatic activation, reload or
+takeover of editors. Finish or keep your work before closing tabs. Until then, the old worker
+still sends pages to the network, and the new pages' files are not in its list, so a release
+never serves a previous release's assets.
+
+**Install offer.** When the browser offers installation (`beforeinstallprompt`), a small
+"Install Evlet" banner appears above the page. **Install** opens the browser's own prompt, and
+the close button hides the banner on this device (`evlet.install-offer` in localStorage). The
+banner never shows in an installed window (`display-mode: standalone`) or after `appinstalled`.
+iOS has no prompt. There, the banner is a one-line "Tap Share, then Add to Home Screen" hint that
+can be dismissed the same way. Appearance keeps its **Install** button too.
+
+**Security.** The manifest, worker, offline notice and icons are public bundled assets under
+`/assets`, like the rest of the build, because browsers fetch them without credentials. Nothing
+else becomes reachable before sign-in. The pages' Content-Security-Policy names
+`worker-src 'self'` and `manifest-src 'self'`, the same as its `default-src 'self'`.
 Installation itself does not enable offline business workflows.
 
 ### Keyboard shortcuts

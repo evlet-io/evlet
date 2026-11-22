@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const stops: Array<() => void> = [];
 afterEach(() => {
   stops.splice(0).forEach(stop => stop()); document.body.innerHTML = '';
-  document.head.querySelectorAll('link[rel="manifest"]').forEach(link => link.remove());
+  document.head.querySelectorAll('link[rel="manifest"],link[rel="apple-touch-icon"],meta[name$="web-app-capable"],meta[name^="apple-"]').forEach(link => link.remove());
   delete (navigator as any).serviceWorker; localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals();
 });
 
@@ -23,10 +23,14 @@ async function page() {
 }
 
 describe('optional device settings', () => {
-  it('adds manifest metadata without registering a worker before explicit opt-in', async () => {
+  it('adds manifest and iOS metadata and registers the worker without turning on the asset cache', async () => {
     const made = await page(); made.pwa.startPwa();
     expect(document.querySelector('link[rel="manifest"]')?.getAttribute('href')).toBe('/assets/evlet.webmanifest');
-    expect(made.serviceWorker.register).not.toHaveBeenCalled();
+    expect(document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href')).toBe('/assets/evlet-apple-touch-icon.png');
+    expect(document.querySelector('meta[name="apple-mobile-web-app-capable"]')?.getAttribute('content')).toBe('yes');
+    expect(made.serviceWorker.register).toHaveBeenCalledExactlyOnceWith('/assets/evlet-sw.js', { scope: '/', updateViaCache: 'none' });
+    expect(made.marker.size).toBe(0); expect(localStorage.getItem('evlet.static-cache')).toBeNull();
+    expect(made.toggle().getAttribute('aria-checked')).toBe('false');
     expect(made.pwa.supportsInstall({ frontend: 'evlet.desk', realm: 'desk', base: '/another' } as any)).toBe(false);
     expect(made.pwa.supportsInstall({ frontend: 'evlet.settings', realm: 'portal', base: '/app' } as any)).toBe(false);
   });
@@ -39,7 +43,7 @@ describe('optional device settings', () => {
     expect(made.toggle()).not.toBeNull(); expect(document.querySelector('link[rel="manifest"]')).not.toBeNull();
     expect(made.pwa.supportsInstall({ frontend: 'evlet.settings', realm: 'portal', base: '/app' } as any)).toBe(false);
     expect(made.pwa.supportsInstall({ frontend: 'custom.frontend', realm: 'desk', base: '/app' } as any)).toBe(false);
-    expect(made.serviceWorker.register).not.toHaveBeenCalled();
+    expect(made.serviceWorker.register).toHaveBeenCalledOnce(); expect(made.marker.size).toBe(0);
   });
 
   it('does not install a worker when the device cannot persist explicit opt-in', async () => {
@@ -63,7 +67,7 @@ describe('optional device settings', () => {
     expect(await made.marker.get('/assets/evlet-cache-state')!.text()).toBe('disabled');
   });
 
-  it('serializes toggles and keeps a durable opt-out marker while unregistering only its worker', async () => {
+  it('serializes toggles and keeps a durable opt-out marker, keeping the worker for the offline notice', async () => {
     const made = await page(); let finish!: (value: unknown) => void;
     made.serviceWorker.register.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
     made.toggle().click();
@@ -76,7 +80,8 @@ describe('optional device settings', () => {
     made.toggle().click();
     await vi.waitFor(() => expect(made.toggle().getAttribute('aria-checked')).toBe('false'));
     expect(await made.marker.get('/assets/evlet-cache-state')!.text()).toBe('disabled');
-    expect(made.registration.unregister).toHaveBeenCalledOnce();
+    expect(made.registration.active.postMessage).toHaveBeenLastCalledWith({ type: 'EVLET_DISABLE_STATIC_CACHE' });
+    expect(made.registration.unregister).not.toHaveBeenCalled();
     expect(made.caches.delete).toHaveBeenCalledExactlyOnceWith('evlet-static-v1');
     expect(localStorage.getItem('evlet.static-cache')).toBeNull();
   });

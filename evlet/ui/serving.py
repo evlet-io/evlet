@@ -25,7 +25,7 @@ def content_policy(image_origins=None):
         images = " ".join(origins)
     sources = " ".join(part for part in ("'self'", images, "data:") if part)
     return (f"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src {sources}; connect-src 'self'; "
-            "frame-src 'self' blob:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+            "frame-src 'self' blob:; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
 
 
 CSP = content_policy(os.environ.get("EVLET_IMAGE_ORIGINS"))
@@ -126,6 +126,26 @@ def static_response(path, config=None, theme=None):
     if path == '/assets/evlet-sw.js':
         response[2].extend([(b'service-worker-allowed', b'/'), (b'cache-control', b'no-cache')])
     return response
+
+
+MANIFEST = "/assets/evlet.webmanifest"
+# The existing Evlet colours: the page background and the brand blue of the icon.
+BACKGROUND, THEME = "#f4f5f8", "#2563eb"
+
+
+def manifest_response(name):
+    """The web app manifest of the bundled desk: the instance's name, the Evlet icons, standalone from /.
+
+    Browsers fetch it without credentials, so it says nothing more than the page title already does."""
+    name = " ".join(str(name or "").split())[:45] or "Evlet"
+    short = name if len(name) <= 12 else name.split(" ")[0][:12]
+    icons = [{"src": f"/assets/evlet-icon-{size}.png", "sizes": f"{size}x{size}", "type": "image/png", "purpose": "any"}
+             for size in (192, 512)]
+    icons.append({"src": "/assets/evlet-icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"})
+    body = {"id": "/", "name": name, "short_name": short, "start_url": "/", "scope": "/", "display": "standalone",
+            "background_color": BACKGROUND, "theme_color": THEME, "icons": icons}
+    status, content, headers = page(json.dumps(body, indent=1).encode(), TYPES[".webmanifest"])
+    return status, content, headers + [(b"cache-control", b"no-cache")]
 
 
 def _file(folder, relative):

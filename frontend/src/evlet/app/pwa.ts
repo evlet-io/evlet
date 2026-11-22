@@ -1,14 +1,16 @@
-// Install metadata and a device-local, explicit opt-in for public static assets only.
+// Install metadata, the worker with its offline notice, the install offer, and a device-local, explicit opt-in
+// for public static assets only (docs/ui.md#installation-and-offline-notice).
 import { html } from '../dom';
 import { cell, onCleanup } from '../reactive';
-import { Button, Switch } from '../ui/base';
+import { Button, IconButton, StateBanner, Switch } from '../ui/base';
 import { safeStorage } from './prefs';
 import { readConfig, type RuntimeConfig } from './config';
 
-const WORKER = '/assets/evlet-sw.js', OPT_IN = 'evlet.static-cache';
+const WORKER = '/assets/evlet-sw.js', OPT_IN = 'evlet.static-cache', DISMISSED = 'evlet.install-offer';
 const CONTROL = 'evlet-static-control', STATE = '/assets/evlet-cache-state';
 interface InstallEvent extends Event { prompt(): Promise<void>; userChoice: Promise<{ outcome: string }> }
 const install = cell<InstallEvent | null>(null), cacheOn = cell(false), busy = cell(false), problem = cell('');
+const standalone = cell(false), dismissed = cell(false);
 let started = false;
 
 export const supportsInstall = (config: RuntimeConfig = readConfig()) =>
@@ -17,10 +19,26 @@ export const supportsInstall = (config: RuntimeConfig = readConfig()) =>
 export function startPwa(config: RuntimeConfig = readConfig()): void {
   if (started || !supportsInstall(config)) return;
   started = true;
-  const link = document.createElement('link');
-  link.rel = 'manifest'; link.href = '/assets/evlet.webmanifest'; document.head.append(link);
+  // The manifest, and for iOS (which reads no manifest icons) the home-screen icon and standalone launch.
+  for (const [tag, attributes] of [['link', { rel: 'manifest', href: '/assets/evlet.webmanifest' }],
+    ['link', { rel: 'apple-touch-icon', href: '/assets/evlet-apple-touch-icon.png' }],
+    ['meta', { name: 'mobile-web-app-capable', content: 'yes' }], ['meta', { name: 'apple-mobile-web-app-capable', content: 'yes' }],
+    ['meta', { name: 'apple-mobile-web-app-status-bar-style', content: 'default' }]] as const) {
+    const element = document.createElement(tag);
+    for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, value);
+    document.head.append(element);
+  }
   window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); install.set(event as InstallEvent); });
-  window.addEventListener('appinstalled', () => install.set(null));
+  window.addEventListener('appinstalled', () => { install.set(null); standalone.set(true); });
+  try {
+    const query = window.matchMedia?.('(display-mode: standalone)');
+    standalone.set(Boolean(query?.matches || (navigator as { standalone?: boolean }).standalone));
+    query?.addEventListener?.('change', event => standalone.set(event.matches || standalone.peek()));
+  } catch { /* An old browser without display-mode simply shows the offer. */ }
+  try { dismissed.set(safeStorage()?.getItem(DISMISSED) === 'dismissed'); } catch { /* Blocked storage shows the offer again. */ }
+  // The worker gives navigations an offline notice and is what browsers look for before offering to install. Its
+  // static-asset cache stays off until the device setting below turns it on.
+  if ('serviceWorker' in navigator) void navigator.serviceWorker.register(WORKER, { scope: '/', updateViaCache: 'none' }).catch(() => {});
   try {
     if (safeStorage()?.getItem(OPT_IN) === 'yes') void (async () => {
       try { if (await (await (await caches.open(CONTROL)).match(STATE))?.text() === 'enabled') await setStaticCache(true); } catch { /* Optional storage may be blocked. */ }
@@ -47,11 +65,11 @@ async function setStaticCache(on: boolean): Promise<void> {
     } else {
       await (await caches.open(CONTROL)).put(STATE, new Response('disabled'));
       try { safeStorage()?.removeItem(OPT_IN); } catch { /* The durable disabled marker still prevents startup opt-in. */ }
+      // The worker stays for the offline notice and installation; it only stops keeping assets.
       for (const registration of await navigator.serviceWorker.getRegistrations()) {
         const workers = [registration.active, registration.waiting, registration.installing].filter(Boolean) as ServiceWorker[];
         if (!workers.some(worker => new URL(worker.scriptURL).pathname === WORKER)) continue;
         workers.forEach(worker => worker.postMessage({ type: 'EVLET_DISABLE_STATIC_CACHE' }));
-        await registration.unregister();
       }
       if ('caches' in window) for (const name of await caches.keys()) if (name.startsWith('evlet-static-') && name !== CONTROL) await caches.delete(name);
     }
@@ -101,4 +119,40 @@ export function PwaSettings(): Node | null {
       <div class="set-row-c">${Switch({ on: cacheOn, disabled: busy, ariaLabel: 'Offline notice and static assets', onChange: value => void setStaticCache(value) })}</div></div></div>
     <div class="set-sec-b"><p class="set-p">Updates take effect after you close existing Evlet tabs. Finish or keep your work first.</p>
     ${() => problem.get() ? html`<p class="set-p" role="alert">${problem}</p>` : null}</div></section>`;
+}
+
+export type InstallOfferKind = 'install' | 'ios' | null;
+
+/** Which install offer the shell shows: the browser's own prompt where it has one, a one-line Add to Home Screen
+ * hint on iOS (which has none), and nothing once dismissed on this device or when Evlet already runs installed. */
+export function installOffer(state: { prompt: boolean; standalone: boolean; dismissed: boolean; ios: boolean }): InstallOfferKind {
+  if (state.standalone || state.dismissed) return null;
+  if (state.prompt) return 'install';
+  return state.ios ? 'ios' : null;
+}
+
+export const isIos = (agent = navigator.userAgent, touch = navigator.maxTouchPoints) =>
+  /iPad|iPhone|iPod/.test(agent) || (/Macintosh/.test(agent) && touch > 1);
+
+/** The small "Install Evlet" offer at the top of the desk; dismissing it is remembered on this device. */
+export function InstallOffer(): Node | null {
+  if (!supportsInstall()) return null;
+  const ios = isIos();
+  const dismiss = () => {
+    dismissed.set(true);
+    try { safeStorage()?.setItem(DISMISSED, 'dismissed'); } catch { /* Hidden for this visit only. */ }
+  };
+  const close = IconButton({ icon: 'x', tip: 'Dismiss', size: 'small', onClick: dismiss });
+  return html`<div class="ev-install">${() => {
+    const kind = installOffer({ prompt: Boolean(install.get()), standalone: standalone.get(), dismissed: dismissed.get(), ios });
+    if (kind === null) return null;
+    if (kind === 'ios') return StateBanner({ tone: 'info', icon: 'download', title: 'Install Evlet', text: 'Tap Share, then Add to Home Screen.', actions: [close] });
+    return StateBanner({ tone: 'info', icon: 'download', title: 'Install Evlet', text: 'Open it in its own window from your desktop or home screen.', actions: [
+      Button({ label: 'Install', variant: 'primary', size: 'small', onClick: async () => {
+        const event = install.peek(); if (!event) return;
+        try { await event.prompt(); await event.userChoice; } catch { /* The browser menu still installs. */ }
+        // A prompt can be shown once; the browser offers a new one on a later visit if Evlet was not installed.
+        install.set(null);
+      } }), close] });
+  }}</div>`;
 }
