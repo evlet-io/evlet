@@ -210,10 +210,46 @@ function trackTab() {
   document.addEventListener('focusin', () => { tabbing = null; });
 }
 
-/** Lines of a record: an editable grid with live totals that locks with the record. */
+/** Lines of a record: an editable grid with live totals that locks with the record. Each part below takes what the
+ * parts before it made (columns, section rows, cell editing, row operations, focus view, the row editor, the rows'
+ * views) and the grid is drawn and wired last. */
 export function ChildTable(props: ChildTableProps): HTMLElement {
-  const { table } = props, model = table.model, record = table.owner.record;
   trackTab();
+  const base = gridBase(props);
+  const g1 = { ...base, ...gridSections(base) };
+  const g2 = { ...g1, ...cellEditing(g1) };
+  const g3 = { ...g2, ...rowOperations(g2) };
+  const g4 = { ...g3, ...focusView(g3) };
+  const g5 = { ...g4, ...rowEditor(g4) };
+  const g = { ...g5, ...rowViews(g5) };
+  props.controls?.({ focused: g.focused, toggleFocus: () => g.focused.peek() ? g.leaveFocus() : g.enterFocus(), columns: anchor => g.columnsMenu(anchor), sectioned: g.sectioned,
+    addSection: g.addSection, add: g.add, selected: derive(() => g.selection.get().size), editable: derive(() => !g.readOnly.get()), duplicateSelected: g.duplicateSelected, deleteSelected: g.deleteSelected });
+  const grid = gridView(g);
+  wireGrid(g);
+  gridKeys(g);
+  gridPointer(g);
+  return grid;
+}
+
+/** The cell or row editor's state the parts share and change: the grid and its scroller once drawn, the control of the
+ * cell being edited and what it started with. */
+interface GridRefs {
+  scroller: HTMLElement;
+  grid: HTMLElement;
+  control: Control | null;
+  /** The value of the cell being edited when its editing began. */
+  before: unknown;
+  /** The text the cell's input started with, so a cell passed through untouched never traps focus. */
+  startText: string | null;
+  /** The cell a choice (dropdown, link, picker) just committed: Enter there goes to the cell below. */
+  landed: Spot;
+  /** Whether opening the row editor took the table into focus view. */
+  focusedForEditor: boolean;
+}
+
+/** The columns (arranged, fitted to the room, pinned), the lock, the totals and the selection and editing cells. */
+function gridBase(props: ChildTableProps) {
+  const { table } = props, model = table.model, record = table.owner.record;
   const prefs = props.prefs ?? cell(props.columns ? emptyPrefs() : gridPrefs(model.fields), { name: `${table.name} (columns)` });
   const metas = new Map(model.fields.map(meta => [meta.name, meta]));
   const allColumns: ChildColumn[] = (props.columns ?? model.fields.filter(meta => !meta.hidden).map(meta => meta.name)).map(name => {
@@ -271,27 +307,32 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // Table(totals=...): the owner's fields as a stack, in the declared order, in place of the inferred totals. A field
   // the person may edit is edited in its line; one hidden by its applies_when or visible_when has no line.
   const declared = (table.meta.totals ?? []).map(name => table.owner.fields.get(name)).filter((field): field is Field => Boolean(field));
-  const totalLine = (field: Field, last: boolean) => html`<div class="g-tl" class:gt=${last} class:invalid=${() => Boolean(field.error.get())}
-    hidden=${() => !field.rules.get().visible} data-field=${field.name}><span>${field.label}</span>${when(() => field.editable.get(),
-      () => FieldControl(field, { label: field.label, links: props.links }).element, () => html`<b class="num">${displayValue(field, { links: props.links })}</b>`)}<span
-      class="err" role="alert">${() => field.error.get() ?? ''}</span></div>`;
 
   const rows = table.rows;
   const selection = cell(new Set<string>(), { name: `${table.name} (selection)` });
   const editing = cell<Spot>(null, { name: `${table.name} (editing)`, equals: sameSpot });
   const active = cell<Spot>(null, { name: `${table.name} (active cell)`, equals: sameSpot });
-  // Whether opening the row editor took the table into focus view.
-  let focusedForEditor = false;
   const focused = cell(false, { name: `${table.name} (focus view)` });
   const indexOf = (key: string) => untrack(() => rows.get()).findIndex(row => row.key === key);
   const view = virtualWindow({
     count: () => rows.get().length, rowHeight: ROW, header: HEADER, fallback: props.height ?? 560,
   });
   const visible = derive(() => { const { start, end } = view.range.get(); return rows.get().slice(start, end); }, { name: `${table.name} (visible rows)` });
+  const refs: GridRefs = { scroller: null as unknown as HTMLElement, grid: null as unknown as HTMLElement, control: null, before: null, startText: null, landed: null, focusedForEditor: false };
+  return { props, table, model, record, prefs, allColumns, narrow, derived, ctl, baseWidth, room, sums, expanded, fullColumns, columns, hiddenToFit,
+    widthOf, totalWidth, pin, locked, readOnly, summaryShown, declared, rows, selection, editing, active, focused, indexOf, view, visible, refs };
+}
+type GridBase = ReturnType<typeof gridBase>;
 
-  // ---------- section rows ----------
-  // A table whose schema has sections ("sections": true) groups its lines under section rows. With any section, every
-  // row is drawn (a sectioned table is a document's lines, not thousands of rows), and a closed section hides its lines.
+// ---------- section rows ----------
+// A table whose schema has sections ("sections": true) groups its lines under section rows. With any section, every
+// row is drawn (a sectioned table is a document's lines, not thousands of rows), and a closed section hides its lines.
+type Entry = { kind: 'row'; row: Row } | { kind: 'section'; section: TableSection } | { kind: 'add'; section: string };
+/** Rows and section rows in the order they are drawn (each section just before the line it starts at). */
+type Token = { row: Row; section?: undefined } | { section: TableSection; row?: undefined };
+
+function gridSections(g: GridBase) {
+  const { table, rows, readOnly, visible, sums } = g;
   const sectioned = Boolean(table.meta.sections);
   const hasSections = derive(() => sectioned && table.sections.get().length > 0, { name: `${table.name} (has sections)` });
   const closedSections = cell(new Set<string>(), { name: `${table.name} (closed sections)` });
@@ -312,7 +353,6 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   const canAdd = derive(() => !readOnly.get() && (typeof maxRows !== 'number' || rows.get().length < maxRows), { name: `${table.name} (can add)` });
   // Each open section but the last ends with its own Add row placeholder; the table's last placeholder (after the
   // rows) adds to the end of the last section.
-  type Entry = { kind: 'row'; row: Row } | { kind: 'section'; section: TableSection } | { kind: 'add'; section: string };
   const entries = derive<Entry[]>(() => {
     if (!hasSections.get()) return visible.get().map(row => ({ kind: 'row' as const, row }));
     const out: Entry[] = [], sections = table.sections.get(), closed = closedSections.get(), list = rows.get(), adding = canAdd.get();
@@ -330,8 +370,6 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     for (const section of sections) if (section.before === null || !list.some(row => row.key === section.before)) open(section);
     return out;
   }, { name: `${table.name} (entries)` });
-  /** Rows and section rows in the order they are drawn (each section just before the line it starts at). */
-  type Token = { row: Row; section?: undefined } | { section: TableSection; row?: undefined };
   const sequence = (): Token[] => {
     const out: Token[] = [], sections = table.sections.peek(), list = rows.peek();
     for (const row of list) {
@@ -397,25 +435,32 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     if (next.has(key)) next.delete(key); else next.add(key);
     closedSections.set(next);
   };
-  let scroller!: HTMLElement, grid!: HTMLElement, control: Control | null = null, before: unknown = null;
-  // The text the cell's input started with, so a cell passed through untouched never traps focus.
-  let startText: string | null = null;
-  // The cell a choice (dropdown, link, picker) just committed: Enter there goes to the cell below.
-  let landed: Spot = null;
+  return { sectioned, hasSections, closedSections, renaming, sectionLines, canAdd, entries, sequence, arrangeAs, endOf, sectionOf, sectionSums, sumOf, addSection, toggleSection };
+}
+type GridSections = GridBase & ReturnType<typeof gridSections>;
 
-  // ---------- editing ----------
+// ---------- editing ----------
 
+/** Editing a cell: which can be edited, starting, committing and cancelling it, and the cell Tab, Enter and the arrows
+ * go to. */
+function cellEditing(g: GridSections) {
+  const { allColumns, expanded, readOnly, rows, columns, view, indexOf, active, editing, refs } = g;
   const editable = (row: Row, col: string) => {
     if (untrack(() => expanded.get()) !== null) return false;
     const column = allColumns.find(item => item.key === col);
     return Boolean(column) && !column!.calculated && !untrack(() => readOnly.get()) && untrack(() => row.field(col).editable.get());
   };
   const cellAt = (spot: NonNullable<Spot>) => {
-    const row = byKey(scroller, 'tr', spot.key);
+    const row = byKey(refs.scroller, 'tr', spot.key);
     return row ? [...row.querySelectorAll<HTMLElement>('td[data-col]')].find(td => td.dataset.col === spot.col) ?? null : null;
   };
   const focusCell = (spot: Spot) => { if (spot) cellAt(spot)?.focus(); };
-  const reveal = (key: string) => { const index = indexOf(key); if (index >= 0) view.reveal(scroller, index); };
+  const reveal = (key: string) => { const index = indexOf(key); if (index >= 0) view.reveal(refs.scroller, index); };
+  const textIn = () => {
+    const control = refs.control;
+    const input = control?.element.matches('input, textarea') ? control.element as HTMLInputElement : control?.element.querySelector<HTMLInputElement>('input, textarea');
+    return input ? input.value : null;
+  };
   // open: a click, Enter or F2 also opens the cell's picker (a Link search, a list, a date); typing does not.
   const startEdit = (spot: NonNullable<Spot>, typed?: string, open = false) => {
     const row = untrack(() => rows.get()).find(item => item.key === spot.key);
@@ -428,29 +473,26 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       (drawn.shadowRoot?.querySelector<HTMLElement>('input, select, textarea, button, [tabindex]') ?? cellAt(spot))?.focus();
       return true;
     }
-    before = untrack(() => row.field(spot.col).value.get());
-    landed = null;
+    refs.before = untrack(() => row.field(spot.col).value.get());
+    refs.landed = null;
     batch(() => { active.set(spot); editing.set(spot); });
+    const control = refs.control;
     if (control) {
       control.focus();
       const input = control.element.matches('input') ? control.element as HTMLInputElement : control.element.querySelector('input');
-      startText = textIn();
+      refs.startText = textIn();
       if (typed !== undefined && control.type) control.type(typed);
       else if (typed !== undefined && input) { input.value = typed; input.setSelectionRange?.(typed.length, typed.length); }
-      else if (open && control.open) { const opening = control; setTimeout(() => { if (control === opening && opening.element.isConnected) opening.open!(); }); }
+      else if (open && control.open) { const opening = control; setTimeout(() => { if (refs.control === opening && opening.element.isConnected) opening.open!(); }); }
     }
     return true;
   };
   const stopEdit = (focus = true) => {
     const spot = editing.peek();
     editing.set(null);
-    control = null;
-    startText = null;
+    refs.control = null;
+    refs.startText = null;
     if (focus && spot) focusCell(spot);
-  };
-  const textIn = () => {
-    const input = control?.element.matches('input, textarea') ? control.element as HTMLInputElement : control?.element.querySelector<HTMLInputElement>('input, textarea');
-    return input ? input.value : null;
   };
   const editedField = () => {
     const spot = editing.peek();
@@ -459,23 +501,23 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // Commits the cell being edited. A cell the user passed through without changing it (an
   // empty required cell, say) never blocks moving on: the record checks it when it is saved.
   const commit = (): boolean => {
-    if (!control || control.commit()) return true;
+    if (!refs.control || refs.control.commit()) return true;
     const field = editedField();
-    if (startText !== null && textIn() === startText && field
-      && JSON.stringify(untrack(() => field.value.get()) ?? null) === JSON.stringify(before ?? null)) { field.error.set(null); return true; }
+    if (refs.startText !== null && textIn() === refs.startText && field
+      && JSON.stringify(untrack(() => field.value.get()) ?? null) === JSON.stringify(refs.before ?? null)) { field.error.set(null); return true; }
     return false;
   };
   // A cell that could not be committed keeps editing, and keeps the focus.
-  const refocus = () => { if (control && !control.element.contains(document.activeElement)) control.focus(); };
+  const refocus = () => { if (refs.control && !refs.control.element.contains(document.activeElement)) refs.control.focus(); };
   // The first control after the table, for Tab past its last cell.
-  const after = () => grid.querySelector<HTMLButtonElement>('tr.g-addrow-end .g-add');
+  const after = () => refs.grid.querySelector<HTMLButtonElement>('tr.g-addrow-end .g-add');
   const cancel = () => {
     const spot = editing.peek();
     if (!spot) return;
     const row = untrack(() => rows.get()).find(item => item.key === spot.key);
     const field = row?.field(spot.col);
-    if (field && JSON.stringify(untrack(() => field.value.get()) ?? null) !== JSON.stringify(before ?? null)) {
-      try { field.set(before); } catch { /* keep the record's value */ }
+    if (field && JSON.stringify(untrack(() => field.value.get()) ?? null) !== JSON.stringify(refs.before ?? null)) {
+      try { field.set(refs.before); } catch { /* keep the record's value */ }
     }
     field?.error.set(null);
     stopEdit();
@@ -503,7 +545,6 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     active.set(spot);
     focusCell(spot);
   };
-
   // The first (or, going back, the last) editable cell of the table.
   const edge = (direction: 1 | -1): Spot => {
     const list = untrack(() => rows.get()), cols = untrack(() => columns.get()).map(column => column.key);
@@ -526,6 +567,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   };
   // Leave the table for the control before it (back) or after it, past its bar and row controls.
   const leave = (back: boolean): boolean => {
+    const grid = refs.grid;
     const all = [...document.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex],[contenteditable="true"]')]
       .filter(element => !grid.contains(element) && element.tabIndex >= 0 && !(element as HTMLButtonElement).disabled
         && !element.closest('[hidden],[inert],.pop') && (typeof element.checkVisibility !== 'function' || element.checkVisibility()));
@@ -535,9 +577,15 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     target.focus();
     return true;
   };
+  return { editable, cellAt, reveal, startEdit, stopEdit, commit, refocus, after, cancel, step, below, moveActive, edge, enter, leave };
+}
+type GridEditing = GridSections & ReturnType<typeof cellEditing>;
 
-  // ---------- rows ----------
+// ---------- rows ----------
 
+/** Adding, copying, moving and deleting rows (with Undo), and the selection. */
+function rowOperations(g: GridEditing) {
+  const { table, rows, readOnly, locked, record, canAdd, closedSections, columns, selection, expanded } = g;
   // A row's own values and its rows of rows, as new rows for table.add().
   const copyValues = (row: Row): Record<string, unknown> => {
     const values: Record<string, unknown> = Object.fromEntries([...row.fields.values()].filter(field => !field.calculated).map(field => [field.name, untrack(() => field.value.get())]));
@@ -545,7 +593,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     return values;
   };
   // Why rows can't change now, or null.
-  const blocked = () => readOnly.peek() ? (locked.peek() ? 'The lines are locked, so the rows can\u2019t come back.' : 'The record is still loading. Try Undo again in a moment.')
+  const blocked = () => readOnly.peek() ? (locked.peek() ? 'The lines are locked, so the rows can’t come back.' : 'The record is still loading. Try Undo again in a moment.')
     : record.saving.peek() ? 'The record is being saved. Try Undo again in a moment.' : null;
   /** Add a row at the end of a section's lines (by default the last section; the end without sections), open that
    * section, and start editing the new row's first editable cell. */
@@ -554,27 +602,25 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const row = batch(() => {
       const added = table.add();
       if (key && table.sections.peek().some(section => section.key === key)) {
-        const seq = sequence().filter(token => token.row !== added);
-        seq.splice(endOf(seq, key), 0, { row: added });
-        arrangeAs(seq);
-        if (closedSections.peek().has(key)) toggleSection(key);
+        const seq = g.sequence().filter(token => token.row !== added);
+        seq.splice(g.endOf(seq, key), 0, { row: added });
+        g.arrangeAs(seq);
+        if (closedSections.peek().has(key)) g.toggleSection(key);
       }
       return added;
     });
-    const first = untrack(() => columns.get()).find(column => editable(row, column.key));
-    reveal(row.key);
-    if (first) startEdit({ key: row.key, col: first.key });
+    const first = untrack(() => columns.get()).find(column => g.editable(row, column.key));
+    g.reveal(row.key);
+    if (first) g.startEdit({ key: row.key, col: first.key });
     return row;
   };
   const add = () => { addTo(); };
-  const counted = (rowCount: number, sectionCount: number) => [rowCount ? (rowCount === 1 ? '1 row' : `${rowCount} rows`) : '',
-    sectionCount ? (sectionCount === 1 ? '1 section' : `${sectionCount} sections`) : ''].filter(Boolean).join(' and ');
   /** Copies of the selected rows, without their ids, directly after the last one selected. A selected section comes
    * with its lines, and the copies then go after the lines of the section the last selected item is in. */
   const duplicate = (list: Row[], sectionKeys: string[] = []) => {
     // A copy is a new row: not past max_rows (a prompt Table load() filled takes none).
     if (readOnly.peek() || (!list.length && !sectionKeys.length) || (list.length > 0 && !canAdd.peek())) return;
-    const seq = sequence(), picked = new Set<Row>(list), whole = new Set(sectionKeys);
+    const seq = g.sequence(), picked = new Set<Row>(list), whole = new Set(sectionKeys);
     const copied: Token[] = [];
     let current: string | null = null, last = -1;
     seq.forEach((token, at) => {
@@ -593,7 +639,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     batch(() => {
       const fresh: Token[] = copied.map(token => token.row ? { row: table.add(copyValues(token.row)) } : { section: table.addSection(token.section!.label, null) });
       seq.splice(at, 0, ...fresh);
-      arrangeAs(seq);
+      g.arrangeAs(seq);
     });
     const rowCount = copied.filter(token => token.row).length;
     toast(`Duplicated ${counted(rowCount, copied.length - rowCount)}`, { icon: 'copy' });
@@ -624,7 +670,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const at = untrack(() => rows.get()).indexOf(row), to = at + direction;
     if (to < 0 || to >= untrack(() => rows.get()).length) return;
     table.move(row, to);
-    reveal(row.key);
+    g.reveal(row.key);
   };
   const selectedRows = () => rows.get().filter(row => selection.get().has(row.key));
   /** The selected section rows (selected as s:<key>), in order. A section's checkbox selects the section alone. */
@@ -633,7 +679,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // After a delete the focus stays in the table: on its first cell, or on Add row once it has no rows.
   const keepFocus = () => {
     const first = untrack(() => rows.get())[0], col = untrack(() => columns.get())[0]?.key;
-    if (first && col) moveActive({ key: first.key, col }); else after()?.focus();
+    if (first && col) g.moveActive({ key: first.key, col }); else g.after()?.focus();
   };
   // Deleting the selection asks first (its main action has the focus, so Enter answers); Undo in the toast still brings rows back.
   const deleteSelected = () => {
@@ -645,9 +691,155 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       footer: close => DialogFooter({ cancel: () => { close(); back?.focus(); }, submit: { label: 'Delete', variant: 'danger', onClick: () => { close(); remove(list, sectionKeys); keepFocus(); } } }) });
   };
   const toggle = (key: string, on: boolean) => { const next = new Set(selection.peek()); if (on) next.add(key); else next.delete(key); selection.set(next); };
+  /** A line or section moved by its drag handle to before item `before` (a line key, s:<section key>, or null for the end). */
+  const moveLine = (id: string, before: string | null) => {
+    if (readOnly.peek()) return;
+    const list = rows.peek(), sections = table.sections.peek();
+    const anchorOf = (target: string | null): string | null => target === null ? null : target.startsWith('s:') ? sections.find(section => section.key === target.slice(2))?.before ?? null : target;
+    if (id.startsWith('s:')) { table.moveSection(id.slice(2), anchorOf(before), before?.startsWith('s:') ? before.slice(2) : undefined); return; }
+    const row = list.find(item => item.key === id);
+    if (!row || before === id) return;
+    batch(() => {
+      // Sections that started at this line start at the next one; dropped on a section's first line, the line joins it.
+      const next = list[list.indexOf(row) + 1]?.key ?? null;
+      for (const section of sections) if (section.before === row.key) table.moveSection(section.key, next);
+      const target = anchorOf(before), rest = list.filter(item => item !== row);
+      table.move(row, target === null ? rest.length : Math.max(0, rest.findIndex(item => item.key === target)));
+      if (before && !before.startsWith('s:')) for (const section of table.sections.peek()) if (section.before === before) table.moveSection(section.key, row.key);
+    });
+  };
+  return { addTo, add, remove, moveRow, selectedRows, duplicateSelected, deleteSelected, toggle, moveLine };
+}
+type GridRows = GridEditing & ReturnType<typeof rowOperations>;
 
-  // ---------- views ----------
+/** "2 rows and 1 section". */
+const counted = (rowCount: number, sectionCount: number) => [rowCount ? (rowCount === 1 ? '1 row' : `${rowCount} rows`) : '',
+  sectionCount ? (sectionCount === 1 ? '1 section' : `${sectionCount} sections`) : ''].filter(Boolean).join(' and ');
 
+/** Focus view (the table takes the content area) and the Columns menu. */
+function focusView(g: GridRows) {
+  const { props, allColumns, prefs, model, baseWidth, ctl, focused, expanded, refs } = g;
+  const columnsMenu = (anchor: HTMLElement) => openPopover(anchor, () => ColumnsMenu({ columns: allColumns, prefs, pinned: 1,
+    reset: () => props.columns ? emptyPrefs() : gridPrefs(model.fields),
+    widthOf: key => baseWidth(allColumns.find(column => column.key === key)!), viewWidth: () => refs.scroller.clientWidth - ctl() }),
+  { role: 'dialog', label: 'Columns', className: 'cols-pop' });
+  const enterFocus = () => {
+    const grid = refs.grid;
+    const container = grid.closest('.view') ?? document.querySelector('.view');
+    const box = container?.getBoundingClientRect();
+    grid.style.top = `${box?.top ?? 0}px`;
+    grid.style.left = `${box?.left ?? 0}px`;
+    focused.set(true);
+  };
+  const leaveFocus = () => { expanded.set(null); refs.focusedForEditor = false; focused.set(false); refs.grid.style.top = ''; refs.grid.style.left = ''; };
+  return { columnsMenu, enterFocus, leaveFocus };
+}
+type GridFocus = GridRows & ReturnType<typeof focusView>;
+
+// ---------- the row editor ----------
+
+// A row opened in the row editor follows the table: a locked or loading table shows its values
+// read only, as the cells do. A view over the field, so writes and recordOf() still reach it.
+const rowField = (g: GridBase, field: Field): FieldLike => Object.create(field, {
+  editable: { value: derive(() => !g.readOnly.get() && field.editable.get()) },
+  // Locked lines say so once, under the table, not beside each field of the row editor.
+  recordLocked: { value: g.locked },
+  rules: { value: derive(() => { const rules = field.rules.get(); return g.locked.get() && !rules.locked ? { ...rules, locked: true } : rules; }) },
+  set: { value: (value: unknown) => field.set(value) },
+  touched: { get: () => field.touched, set: (value: boolean) => { field.touched = value; } },
+}) as FieldLike;
+
+/** Opening, stepping through and closing the row editor: the row's fields as one card beside the table. */
+function rowEditor(g: GridFocus) {
+  const { props, table, rows, fullColumns, expanded, focused, closedSections, canAdd, refs } = g;
+  // A row's title: its first column as text, a Link as the linked record's title (never its id).
+  const rowTitle = (row: Row) => {
+    const first = fullColumns.get()[0];
+    if (!first) return 'New row';
+    const value = row.field(first.key).value.get();
+    if (first.meta.type === 'link' && value !== null && value !== undefined && value !== '') {
+      const title = props.links && first.meta.target ? props.links.title(first.meta.target, String(value)).get() : null;
+      return title || 'Loading';
+    }
+    return kindOf(first.meta.type).format(value, first.meta) || 'New row';
+  };
+  const openEditor = (key: string) => {
+    if (!focused.peek()) { refs.focusedForEditor = true; g.enterFocus(); }
+    expanded.set(key);
+  };
+  const closeEditor = (leave = refs.focusedForEditor) => {
+    const key = expanded.peek();
+    expanded.set(null);
+    if (leave) { refs.focusedForEditor = false; g.leaveFocus(); }
+    if (key) queueMicrotask(() => { g.reveal(key); byKey(refs.scroller, 'tr', key)?.querySelector<HTMLElement>('.g-exp')?.focus(); });
+  };
+  /** A row's title or Edit: opens the row in the editor, and on the row already open closes the editor. */
+  const pick = (key: string) => { if (expanded.peek() === key) closeEditor(); else openEditor(key); };
+  const stepEditor = (direction: 1 | -1) => {
+    const list = rows.peek(), at = list.findIndex(row => row.key === expanded.peek()) + direction;
+    if (at < 0 || at >= list.length) return;
+    // A row in a closed section opens it, so the list shows the row being edited.
+    const section = g.sectionOf(list[at]);
+    if (section && closedSections.peek().has(section)) g.toggleSection(section);
+    expanded.set(list[at].key);
+  };
+  const insertBelow = (row: Row) => {
+    if (!canAdd.peek()) return;
+    const added = table.add();
+    table.move(added, untrack(() => rows.get()).indexOf(row) + 1);
+    expanded.set(added.key);
+  };
+  const deleteLine = (row: Row) => {
+    const list = rows.peek(), at = list.indexOf(row);
+    const next = list[at + 1] ?? list[at - 1] ?? null;
+    g.remove([row]);
+    if (next) expanded.set(next.key); else closeEditor();
+  };
+  // The row's fields as one card beside the table, which is cut down to its first column while the card is open.
+  const editorView = () => {
+    // The card follows the row the editor is on.
+    const main = () => {
+      const key = expanded.get();
+      const row = key ? untrack(() => rows.get()).find(item => item.key === key) : undefined;
+      return row ? untrack(() => editorMain(row)) : null;
+    };
+    return html`<div class="g-ed" role="region" aria-label=${() => `${props.title ?? table.meta.label}: row editor`}>${main}</div>` as HTMLElement;
+  };
+  const editorMain = (row: Row) => {
+    const index = () => rows.get().indexOf(row);
+    // Empty inputs of the row editor say "Not set".
+    const field = (name: string) => {
+      const view = rowField(g, row.field(name)), meta = view.meta;
+      return meta.placeholder ? view : Object.create(view, { meta: { value: { ...meta, placeholder: 'Not set' } } }) as FieldLike;
+    };
+    const form = props.rowForm ? props.rowForm(row, field)
+      : html`<div class="g-x-f">${g.allColumns.map(column => html`<div class=${column.meta.type === 'longtext' ? 'wide' : ''}>${BaseField({ field: field(column.key), links: props.links })}</div>`)}</div>`;
+    return html`<div class="g-ed-main" role="group" aria-label=${() => `Row ${index() + 1}: ${rowTitle(row)}`}>
+        <div class="g-ed-h"><span class="g-ed-badge num">${() => String(index() + 1)}</span>
+          <div class="g-ed-ttl"><b>${() => rowTitle(row)}</b><span class="g-ed-sum">${() => { rows.get(); return rowSummary(row, fullColumns.get(), props.links); }}</span></div>
+          ${IconButton({ icon: 'chevron-left', tip: 'Previous row', size: 'small', disabled: () => index() <= 0, onClick: () => stepEditor(-1) })}
+          <span class="g-ed-pos num">${() => `${index() + 1} of ${rows.get().length}`}</span>
+          ${IconButton({ icon: 'chevron-right', tip: 'Next row', size: 'small', disabled: () => index() >= rows.get().length - 1, onClick: () => stepEditor(1) })}
+          ${IconButton({ icon: 'x', tip: 'Close (Esc)', size: 'small', onClick: () => closeEditor() })}</div>
+        <div class="g-ed-body">${form}
+          ${[...row.tables.values()].map(nested => html`<div class="g-x-nested" hidden=${() => !nested.rules.get().visible}>${ChildTable({ table: nested, locked: props.locked, links: props.links, height: 228,
+            lockedText: props.lockedText, icon: 'rows-3', tint: props.tint })}</div>`)}</div>
+        <div class="g-ed-f">${when(() => !g.readOnly.get(), () => [
+          Button({ icon: 'trash-2', label: 'Delete line', variant: 'ghost', size: 'small', className: 'g-ed-del', onClick: () => deleteLine(row) }),
+          Button({ icon: 'plus', label: 'Insert below', size: 'small', onClick: () => insertBelow(row) })])}
+          <span class="grow"></span>${Button({ label: 'Done', variant: 'primary', size: 'small', onClick: () => closeEditor() })}</div>
+      </div>` as HTMLElement;
+  };
+  return { openEditor, closeEditor, pick, stepEditor, editorView };
+}
+type GridEditor = GridFocus & ReturnType<typeof rowEditor>;
+
+// ---------- views ----------
+
+/** The header cells, the cells, rows, section rows and Add row placeholders. */
+function rowViews(g: GridEditor) {
+  const { props, table, prefs, pin, widthOf, expanded, readOnly, editing, active, selection, rows, columns, hasSections, view, derived,
+    sectionLines, closedSections, renaming, sectionSums, sectioned, indexOf, refs } = g;
   const pinStyle = (column: () => ChildColumn) => () => { const at = pin(column().key).get(); return at ? `${at.left}px` : null; };
   const isPinned = (column: () => ChildColumn) => () => Boolean(pin(column().key).get());
   const isLastPin = (column: () => ChildColumn) => () => Boolean(pin(column().key).get()?.last);
@@ -655,7 +847,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   const header = (column: () => ChildColumn) => {
     const th = html`<th scope="col" role="columnheader" data-key=${column().key} class=${column().align === 'right' ? 'r' : ''} class:stk=${isPinned(column)} class:s2=${isLastPin(column)}
       style:left=${pinStyle(column)}><span>${column().label}</span>${column().calculated ? Icon('lock', { size: 'xs', className: 'g-lk', label: 'Calculated' }) : null}</th>` as HTMLElement;
-    th.append(resizeHandle(column().key, prefs, { current: () => th.offsetWidth || widthOf(column()), host: () => grid }));
+    th.append(resizeHandle(column().key, prefs, { current: () => th.offsetWidth || widthOf(column()), host: () => refs.grid }));
     return th;
   };
 
@@ -684,107 +876,15 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)} class:editing=${() => rowEdit() === key} class:active=${() => rowSpot() === key}
       class:invalid=${() => Boolean(field.error.get())} class:noted=${() => !field.error.get() && Boolean(field.note.get())} aria-invalid=${() => field.error.get() ? 'true' : null} aria-readonly=${() => canEdit() ? null : 'true'}
       tabindex=${() => rowActive() === key ? '0' : '-1'} data-look=${look}>${drawn ?? when(() => rowEdit() === key, () => {
-        control = FieldControl(field, {
+        const control = refs.control = FieldControl(field, {
           commitOn: 'manual', links: props.links, label: `${meta.label}, row ${indexOf(row.key) + 1}`,
           // A choice commits the cell and returns the focus to it, ready for Tab or Enter.
-          onCommit: !kind.control || kind.control === 'textarea' ? undefined : () => { const spot = editing.peek(); stopEdit(); landed = spot; },
+          onCommit: !kind.control || kind.control === 'textarea' ? undefined : () => { const spot = editing.peek(); g.stopEdit(); refs.landed = spot; },
         });
         return control.element;
       }, display)}</td>` as HTMLElement;
     tooltip(td, () => field.error.get() ?? field.note.get() ?? tip?.() ?? null);
     return td;
-  };
-
-  // A row opened in the row editor follows the table: a locked or loading table shows its values
-  // read only, as the cells do. A view over the field, so writes and recordOf() still reach it.
-  const rowField = (field: Field): FieldLike => Object.create(field, {
-    editable: { value: derive(() => !readOnly.get() && field.editable.get()) },
-    // Locked lines say so once, under the table, not beside each field of the row editor.
-    recordLocked: { value: locked },
-    rules: { value: derive(() => { const rules = field.rules.get(); return locked.get() && !rules.locked ? { ...rules, locked: true } : rules; }) },
-    set: { value: (value: unknown) => field.set(value) },
-    touched: { get: () => field.touched, set: (value: boolean) => { field.touched = value; } },
-  }) as FieldLike;
-
-  // ---------- the row editor ----------
-
-  // A row's title: its first column as text, a Link as the linked record's title (never its id).
-  const rowTitle = (row: Row) => {
-    const first = fullColumns.get()[0];
-    if (!first) return 'New row';
-    const value = row.field(first.key).value.get();
-    if (first.meta.type === 'link' && value !== null && value !== undefined && value !== '') {
-      const title = props.links && first.meta.target ? props.links.title(first.meta.target, String(value)).get() : null;
-      return title || 'Loading';
-    }
-    return kindOf(first.meta.type).format(value, first.meta) || 'New row';
-  };
-  const openEditor = (key: string) => {
-    if (!focused.peek()) { focusedForEditor = true; enterFocus(); }
-    expanded.set(key);
-  };
-  const closeEditor = (leave = focusedForEditor) => {
-    const key = expanded.peek();
-    expanded.set(null);
-    if (leave) { focusedForEditor = false; leaveFocus(); }
-    if (key) queueMicrotask(() => { reveal(key); byKey(scroller, 'tr', key)?.querySelector<HTMLElement>('.g-exp')?.focus(); });
-  };
-  /** A row's title or Edit: opens the row in the editor, and on the row already open closes the editor. */
-  const pick = (key: string) => { if (expanded.peek() === key) closeEditor(); else openEditor(key); };
-  const stepEditor = (direction: 1 | -1) => {
-    const list = rows.peek(), at = list.findIndex(row => row.key === expanded.peek()) + direction;
-    if (at < 0 || at >= list.length) return;
-    // A row in a closed section opens it, so the list shows the row being edited.
-    const section = sectionOf(list[at]);
-    if (section && closedSections.peek().has(section)) toggleSection(section);
-    expanded.set(list[at].key);
-  };
-  const insertBelow = (row: Row) => {
-    if (!canAdd.peek()) return;
-    const added = table.add();
-    table.move(added, untrack(() => rows.get()).indexOf(row) + 1);
-    expanded.set(added.key);
-  };
-  const deleteLine = (row: Row) => {
-    const list = rows.peek(), at = list.indexOf(row);
-    const next = list[at + 1] ?? list[at - 1] ?? null;
-    remove([row]);
-    if (next) expanded.set(next.key); else closeEditor();
-  };
-  // The row's fields as one card beside the table, which is cut down to its first column while the card is open.
-  const editorView = () => {
-    // The card follows the row the editor is on.
-    const main = () => {
-      const key = expanded.get();
-      const row = key ? untrack(() => rows.get()).find(item => item.key === key) : undefined;
-      return row ? untrack(() => editorMain(row)) : null;
-    };
-    return html`<div class="g-ed" role="region" aria-label=${() => `${props.title ?? table.meta.label}: row editor`}>${main}</div>` as HTMLElement;
-  };
-  const editorMain = (row: Row) => {
-    const index = () => rows.get().indexOf(row);
-    // Empty inputs of the row editor say "Not set".
-    const field = (name: string) => {
-      const view = rowField(row.field(name)), meta = view.meta;
-      return meta.placeholder ? view : Object.create(view, { meta: { value: { ...meta, placeholder: 'Not set' } } }) as FieldLike;
-    };
-    const form = props.rowForm ? props.rowForm(row, field)
-      : html`<div class="g-x-f">${allColumns.map(column => html`<div class=${column.meta.type === 'longtext' ? 'wide' : ''}>${BaseField({ field: field(column.key), links: props.links })}</div>`)}</div>`;
-    return html`<div class="g-ed-main" role="group" aria-label=${() => `Row ${index() + 1}: ${rowTitle(row)}`}>
-        <div class="g-ed-h"><span class="g-ed-badge num">${() => String(index() + 1)}</span>
-          <div class="g-ed-ttl"><b>${() => rowTitle(row)}</b><span class="g-ed-sum">${() => { rows.get(); return rowSummary(row, fullColumns.get(), props.links); }}</span></div>
-          ${IconButton({ icon: 'chevron-left', tip: 'Previous row', size: 'small', disabled: () => index() <= 0, onClick: () => stepEditor(-1) })}
-          <span class="g-ed-pos num">${() => `${index() + 1} of ${rows.get().length}`}</span>
-          ${IconButton({ icon: 'chevron-right', tip: 'Next row', size: 'small', disabled: () => index() >= rows.get().length - 1, onClick: () => stepEditor(1) })}
-          ${IconButton({ icon: 'x', tip: 'Close (Esc)', size: 'small', onClick: () => closeEditor() })}</div>
-        <div class="g-ed-body">${form}
-          ${[...row.tables.values()].map(nested => html`<div class="g-x-nested" hidden=${() => !nested.rules.get().visible}>${ChildTable({ table: nested, locked: props.locked, links: props.links, height: 228,
-            lockedText: props.lockedText, icon: 'rows-3', tint: props.tint })}</div>`)}</div>
-        <div class="g-ed-f">${when(() => !readOnly.get(), () => [
-          Button({ icon: 'trash-2', label: 'Delete line', variant: 'ghost', size: 'small', className: 'g-ed-del', onClick: () => deleteLine(row) }),
-          Button({ icon: 'plus', label: 'Insert below', size: 'small', onClick: () => insertBelow(row) })])}
-          <span class="grow"></span>${Button({ label: 'Done', variant: 'primary', size: 'small', onClick: () => closeEditor() })}</div>
-      </div>` as HTMLElement;
   };
 
   const rowView = (item: () => Row, index: () => number) => {
@@ -795,10 +895,10 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const rowActive = derive(() => active.get() ? rowSpot.get() : number() === 1 ? columns.get()[0]?.key ?? null : null);
     const tr = html`<tr role="row" data-key=${row.key} class:sel=${() => selection.get().has(row.key)} class:open=${() => expanded.get() === row.key} data-drag-item="line" data-drag-id=${row.key}
       aria-rowindex=${() => String(number() + 1)} aria-selected=${() => String(selection.get().has(row.key))}>
-      <td class="g-ctl stk" style="left:0" role="gridcell">${derived ? html`<div class="g-ci g-ci-n"><span class="num muted">${() => String(number())}</span></div>` : html`<div class="g-ci">${Checkbox({ checked: () => selection.get().has(row.key), onChange: on => toggle(row.key, on), ariaLabel: () => `Select row ${number()}` })}
+      <td class="g-ctl stk" style="left:0" role="gridcell">${derived ? html`<div class="g-ci g-ci-n"><span class="num muted">${() => String(number())}</span></div>` : html`<div class="g-ci">${Checkbox({ checked: () => selection.get().has(row.key), onChange: on => g.toggle(row.key, on), ariaLabel: () => `Select row ${number()}` })}
         <button type="button" class="g-drag" data-drag-handle="line" aria-label=${() => `Move row ${number()}`} aria-roledescription="draggable row" disabled=${() => readOnly.get()}>${Icon('grip-vertical', { size: 'xs' })}</button>
         <button type="button" class="g-exp" aria-label=${() => `Edit row ${number()}`} title="Edit" aria-pressed=${() => expanded.get() === row.key ? 'true' : null}
-          on:click=${() => pick(row.key)}><span class="num">${() => String(number())}</span>${Icon('pencil', { size: 'xs' })}</button></div>`}</td>
+          on:click=${() => g.pick(row.key)}><span class="num">${() => String(number())}</span>${Icon('pencil', { size: 'xs' })}</button></div>`}</td>
       ${each(columns, column => column.key, column => cellView(row, column, () => rowEdit.get(), () => rowActive.get(), () => rowSpot.get()))}</tr>`;
     return tr;
   };
@@ -811,9 +911,9 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const open = () => !closedSections.get().has(key);
     const label = () => {
       // A locked or confirmed record refuses section edits: the label is plain text then.
-      if (readOnly.get()) return html`<button type="button" class="g-sec-name" aria-expanded=${() => String(open())} on:click=${() => toggleSection(key)}><b>${() => item().label}</b></button>`;
+      if (readOnly.get()) return html`<button type="button" class="g-sec-name" aria-expanded=${() => String(open())} on:click=${() => g.toggleSection(key)}><b>${() => item().label}</b></button>`;
       if (renaming.get() !== key) return html`<button type="button" class="g-sec-name" title="Show or hide its lines. Double-click to rename." aria-expanded=${() => String(open())}
-        on:click=${() => toggleSection(key)} on:dblclick=${(event: MouseEvent) => { event.preventDefault(); if (!closedSections.peek().has(key)) renaming.set(key); else { toggleSection(key); renaming.set(key); } }}
+        on:click=${() => g.toggleSection(key)} on:dblclick=${(event: MouseEvent) => { event.preventDefault(); if (!closedSections.peek().has(key)) renaming.set(key); else { g.toggleSection(key); renaming.set(key); } }}
         on:keydown=${(event: KeyboardEvent) => { if (event.key === 'F2') { event.preventDefault(); renaming.set(key); } }}><b>${() => item().label}</b></button>`;
       const input = html`<input class="input g-sec-input" aria-label="Section name" value=${untrack(() => item().label)}>` as HTMLInputElement;
       const done = (keep: boolean) => { if (renaming.peek() !== key) return; const text = input.value.trim(); renaming.set(null); if (keep && text && text !== untrack(() => item().label)) table.renameSection(key, text); };
@@ -827,132 +927,140 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     };
     return html`<tr class="g-sec" role="row" data-key=${`s:${key}`} class:sel=${() => selection.get().has(`s:${key}`)} data-drag-item="line" data-drag-id=${`s:${key}`}>
       <td class="g-ctl stk" style="left:0" role="gridcell"><div class="g-ci">
-        ${derived ? null : Checkbox({ checked: () => selection.get().has(`s:${key}`), onChange: on => toggle(`s:${key}`, on), ariaLabel: () => `Select section ${item().label}` })}
+        ${derived ? null : Checkbox({ checked: () => selection.get().has(`s:${key}`), onChange: on => g.toggle(`s:${key}`, on), ariaLabel: () => `Select section ${item().label}` })}
         ${when(() => !readOnly.get() && !derived, () => html`<button type="button" class="g-drag" data-drag-handle="line" aria-label=${() => `Move section ${item().label}`} aria-roledescription="draggable section">${Icon('grip-vertical', { size: 'xs' })}</button>`)}
         <button type="button" class="g-sec-tog" aria-expanded=${() => String(open())} aria-label=${() => `${open() ? 'Hide' : 'Show'} the lines of ${item().label}`}
-          on:click=${() => toggleSection(key)}>${Icon('chevron-down', { size: 'xs' })}</button></div></td>
+          on:click=${() => g.toggleSection(key)}>${Icon('chevron-down', { size: 'xs' })}</button></div></td>
       ${each(columns, column => column.key, (column, index) => html`<td role="gridcell" class=${column().align === 'right' ? 'r num' : ''} class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)}>${() => index() === 0
         ? html`<span class="g-sec-l">${label}<span class="muted g-sec-n">${() => `${lines().length} ${lines().length === 1 ? 'line' : 'lines'}`}</span>${when(() => !readOnly.get(), () => IconButton({ icon: 'trash-2', tip: () => `Delete section ${item().label} (its lines stay)`, size: 'small', onClick: () => table.removeSection(key) }))}</span>`
-        : sectionSums.has(column().key) ? sumOf(lines(), column()) : ''}</td>`)}</tr>`;
+        : sectionSums.has(column().key) ? g.sumOf(lines(), column()) : ''}</td>`)}</tr>`;
   };
   /** A quiet Add row placeholder: a muted plus, "Add row" in the first column and, on the table's last one of a table with
    * sections, "or add a section" in the next. A section's own one adds at the end of its lines; the last one at the end
    * of the last section (else of the table). */
   const addRowView = (section: string | null, end: boolean) => {
-    const addSec = () => html`<button type="button" class="g-add-sec" on:click=${addSection}>or add a section</button>`;
+    const addSec = () => html`<button type="button" class="g-add-sec" on:click=${g.addSection}>or add a section</button>`;
     const tr = html`<tr class="g-addrow" class:g-addrow-end=${end} role="row" data-add=${section ?? ''}>
       <td class="g-ctl stk" style="left:0" role="gridcell"><span class="g-addrow-plus" aria-hidden="true">${Icon('plus', { size: 'xs' })}</span></td>
       ${each(columns, column => column.key, (column, index) => html`<td role="gridcell" class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)}>${() => index() === 0
         ? html`<button type="button" class="g-add" aria-label=${section && !end ? () => `Add row to ${table.sections.get().find(item => item.key === section)?.label ?? 'section'}` : 'Add row'}
-            on:click=${() => addTo(section ?? undefined)}>Add row</button>${end && sectioned && columns.get().length === 1 ? addSec() : null}`
+            on:click=${() => g.addTo(section ?? undefined)}>Add row</button>${end && sectioned && columns.get().length === 1 ? addSec() : null}`
         : index() === 1 && end && sectioned ? addSec() : ''}</td>`)}</tr>` as HTMLElement;
     // A click anywhere on the placeholder but "or add a section" adds the row.
     tr.addEventListener('click', event => {
       if ((event.target as Element).closest('button')) return;
-      addTo(section ?? undefined);
+      g.addTo(section ?? undefined);
     });
     return tr;
   };
-  /** A line or section moved by its drag handle to before item `before` (a line key, s:<section key>, or null for the end). */
-  const moveLine = (id: string, before: string | null) => {
-    if (readOnly.peek()) return;
-    const list = rows.peek(), sections = table.sections.peek();
-    const anchorOf = (target: string | null): string | null => target === null ? null : target.startsWith('s:') ? sections.find(section => section.key === target.slice(2))?.before ?? null : target;
-    if (id.startsWith('s:')) { table.moveSection(id.slice(2), anchorOf(before), before?.startsWith('s:') ? before.slice(2) : undefined); return; }
-    const row = list.find(item => item.key === id);
-    if (!row || before === id) return;
-    batch(() => {
-      // Sections that started at this line start at the next one; dropped on a section's first line, the line joins it.
-      const next = list[list.indexOf(row) + 1]?.key ?? null;
-      for (const section of sections) if (section.before === row.key) table.moveSection(section.key, next);
-      const target = anchorOf(before), rest = list.filter(item => item !== row);
-      table.move(row, target === null ? rest.length : Math.max(0, rest.findIndex(item => item.key === target)));
-      if (before && !before.startsWith('s:')) for (const section of table.sections.peek()) if (section.before === before) table.moveSection(section.key, row.key);
-    });
-  };
+  return { pinStyle, isPinned, isLastPin, header, rowView, sectionView, addRowView };
+}
+type Grid = GridEditor & ReturnType<typeof rowViews>;
 
-  const columnsMenu = (anchor: HTMLElement) => openPopover(anchor, () => ColumnsMenu({ columns: allColumns, prefs, pinned: 1,
-    reset: () => props.columns ? emptyPrefs() : gridPrefs(model.fields),
-    widthOf: key => baseWidth(allColumns.find(column => column.key === key)!), viewWidth: () => scroller.clientWidth - ctl() }),
-  { role: 'dialog', label: 'Columns', className: 'cols-pop' });
+// Focus view keeps the record's header above the table (it does not scroll with the rows).
+const focusHead = (g: Grid, heading: FocusHeading) => html`<header class="g-rec" aria-label=${() => `${heading.type} ${read(heading.title) ?? ''}`}>
+  ${heading.mark ? html`<span class="g-rec-mark">${heading.mark()}</span>` : null}
+  <span class="g-rec-type">${heading.icon ? Icon(heading.icon, { size: 'xs' }) : null}${heading.type}</span>
+  <b class="g-rec-title">${heading.title}</b>${heading.number ? html`<span class="g-rec-no mono">${heading.number}</span>` : null}
+  <span class="grow"></span>${Button({ icon: 'arrow-left', label: 'Back to form', variant: 'ghost', size: 'small', hideLabelOnPhone: true, onClick: () => { g.leaveFocus(); g.refs.grid.querySelector<HTMLElement>('.g-bar [aria-pressed]')?.focus(); } })}</header>`;
 
-  const enterFocus = () => {
-    const container = grid.closest('.view') ?? document.querySelector('.view');
-    const box = container?.getBoundingClientRect();
-    grid.style.top = `${box?.top ?? 0}px`;
-    grid.style.left = `${box?.left ?? 0}px`;
-    focused.set(true);
-  };
-  const leaveFocus = () => { expanded.set(null); focusedForEditor = false; focused.set(false); grid.style.top = ''; grid.style.left = ''; };
+function focusButton(g: Grid) {
+  const { focused, expanded } = g;
+  const button = html`<button type="button" class="btn sm g-focb" class:primary=${() => focused.get() && expanded.get() === null} aria-pressed=${() => String(focused.get())}
+    on:click=${() => focused.peek() ? g.leaveFocus() : g.enterFocus()}>${() => Icon(focused.get() ? 'minimize-2' : 'maximize-2', { size: 'sm' })}<span class="hide-sm">${() => focused.get() ? 'Exit focus' : 'Focus'}</span></button>` as HTMLElement;
+  tooltip(button, () => focused.get() ? 'Back to record (Esc)' : 'Focus view');
+  return button;
+}
 
-  // Focus view keeps the record's header above the table (it does not scroll with the rows).
-  const focusHead = (heading: FocusHeading) => html`<header class="g-rec" aria-label=${() => `${heading.type} ${read(heading.title) ?? ''}`}>
-    ${heading.mark ? html`<span class="g-rec-mark">${heading.mark()}</span>` : null}
-    <span class="g-rec-type">${heading.icon ? Icon(heading.icon, { size: 'xs' }) : null}${heading.type}</span>
-    <b class="g-rec-title">${heading.title}</b>${heading.number ? html`<span class="g-rec-no mono">${heading.number}</span>` : null}
-    <span class="grow"></span>${Button({ icon: 'arrow-left', label: 'Back to form', variant: 'ghost', size: 'small', hideLabelOnPhone: true, onClick: () => { leaveFocus(); grid.querySelector<HTMLElement>('.g-bar [aria-pressed]')?.focus(); } })}</header>`;
-
-  props.controls?.({ focused, toggleFocus: () => focused.peek() ? leaveFocus() : enterFocus(), columns: anchor => columnsMenu(anchor), sectioned, addSection,
-    add, selected: derive(() => selection.get().size), editable: derive(() => !readOnly.get()), duplicateSelected, deleteSelected });
-  const focusButton = () => {
-    const button = html`<button type="button" class="btn sm g-focb" class:primary=${() => focused.get() && expanded.get() === null} aria-pressed=${() => String(focused.get())}
-      on:click=${() => focused.peek() ? leaveFocus() : enterFocus()}>${() => Icon(focused.get() ? 'minimize-2' : 'maximize-2', { size: 'sm' })}<span class="hide-sm">${() => focused.get() ? 'Exit focus' : 'Focus'}</span></button>` as HTMLElement;
-    tooltip(button, () => focused.get() ? 'Back to record (Esc)' : 'Focus view');
-    return button;
-  };
-  const titleId = uid('ct');
-  grid = html`<div class="grid" class:max=${focused} class:g-editing=${() => expanded.get() !== null} data-table=${table.name}>
-    ${props.heading ? when(() => focused.get() && expanded.get() === null, () => focusHead(props.heading!)) : null}
-    <div class="g-bar">
+/** The bar over the table: in focus view the crumb, the title and row count, the selection's Duplicate and Delete, the
+ * columns hidden to fit, Columns and Focus. */
+function gridBar(g: Grid, titleId: string) {
+  const { props, table, rows, selection, readOnly, focused, expanded, hiddenToFit } = g;
+  return html`<div class="g-bar">
       ${props.heading ? null : when(() => focused.get() && expanded.get() === null, () => html`<span class="g-crumb">${props.crumb ?? ''}${Icon('chevron-right', { size: 'xs' })}</span>`)}
       <div class="g-t" id=${titleId}>${IconTile(props.icon ?? 'table-2', { tint: props.tint ?? 'blue', size: 26 })}${props.title ?? table.meta.label}<span class="n num" aria-label=${() => `${rows.get().length} rows`}>${() => String(rows.get().length)}</span></div>
       ${when(() => selection.get().size > 0 && !readOnly.get(), () => html`<span class="g-selinfo" role="status">${() => `${selection.get().size} selected`}</span>
-        ${Button({ icon: 'copy', label: 'Duplicate', variant: 'ghost', size: 'small', onClick: duplicateSelected })}
-        ${Button({ icon: 'trash-2', label: 'Delete', variant: 'soft-danger', size: 'small', onClick: deleteSelected })}`)}
+        ${Button({ icon: 'copy', label: 'Duplicate', variant: 'ghost', size: 'small', onClick: g.duplicateSelected })}
+        ${Button({ icon: 'trash-2', label: 'Delete', variant: 'soft-danger', size: 'small', onClick: g.deleteSelected })}`)}
       <span class="grow"></span>
       ${when(() => hiddenToFit.get().length > 0 && rows.get().length > 0 && expanded.get() === null, () => {
-        const more = html`<button type="button" class="g-more link-q" on:click=${() => openEditor((rows.peek()[0]).key)}>${() => {
+        const more = html`<button type="button" class="g-more link-q" on:click=${() => g.openEditor((rows.peek()[0]).key)}>${() => {
           const count = hiddenToFit.get().length; return `${count} more ${count === 1 ? 'column' : 'columns'}`; }}</button>` as HTMLElement;
         tooltip(more, () => `Hidden to fit: ${hiddenToFit.get().map(column => column.label).join(', ')}. Open a row to see every field.`);
         return more;
       })}
-      ${(() => { const button = Button({ icon: 'columns-3', label: 'Columns', size: 'small', hideLabelOnPhone: true, className: 'g-colb', onClick: () => columnsMenu(button) }); button.setAttribute('aria-haspopup', 'dialog'); tooltip(button, 'Columns'); return button; })()}
-      ${focusButton()}
-    </div>
-    <div class="g-body">
-    <div class="g-scroll" tabindex="-1">
-      <table class="g" role="grid" aria-labelledby=${titleId} aria-rowcount=${() => String(rows.get().length + 1)} aria-colcount=${() => String(columns.get().length + 1)}
+      ${(() => { const button = Button({ icon: 'columns-3', label: 'Columns', size: 'small', hideLabelOnPhone: true, className: 'g-colb', onClick: () => g.columnsMenu(button) }); button.setAttribute('aria-haspopup', 'dialog'); tooltip(button, 'Columns'); return button; })()}
+      ${focusButton(g)}
+    </div>`;
+}
+
+/** The table itself: column widths, the header with Select all, the rows between the virtual window's spacers, the
+ * last Add row placeholder and the total line. */
+function gridTable(g: Grid, titleId: string) {
+  const { props, rows, columns, readOnly, expanded, totalWidth, ctl, widthOf, derived, selection, hasSections, view, entries, canAdd, sums } = g;
+  return html`<table class="g" role="grid" aria-labelledby=${titleId} aria-rowcount=${() => String(rows.get().length + 1)} aria-colcount=${() => String(columns.get().length + 1)}
         aria-readonly=${() => readOnly.get() ? 'true' : null} style:width=${() => expanded.get() !== null ? '100%' : `${totalWidth.get()}px`}>
         <colgroup><col style:width=${() => `${ctl()}px`}>${each(columns, column => column.key, column => html`<col style:width=${() => expanded.get() !== null ? null : `${widthOf(column())}px`}>`)}</colgroup>
-        <thead><tr role="row" aria-rowindex="1"><th class="g-ctl stk" style="left:0" scope="col">${derived ? html`<span class="sr-only">Row</span>` : Checkbox({ checked: () => rows.get().length > 0 && selectedRows().length === rows.get().length,
-          mixed: () => selectedRows().length > 0 && selectedRows().length < rows.get().length, ariaLabel: 'Select all rows',
-          onChange: on => selection.set(on ? new Set(rows.peek().map(row => row.key)) : new Set()) })}</th>${each(columns, column => column.key, header)}</tr></thead>
+        <thead><tr role="row" aria-rowindex="1"><th class="g-ctl stk" style="left:0" scope="col">${derived ? html`<span class="sr-only">Row</span>` : Checkbox({ checked: () => rows.get().length > 0 && g.selectedRows().length === rows.get().length,
+          mixed: () => g.selectedRows().length > 0 && g.selectedRows().length < rows.get().length, ariaLabel: 'Select all rows',
+          onChange: on => selection.set(on ? new Set(rows.peek().map(row => row.key)) : new Set()) })}</th>${each(columns, column => column.key, g.header)}</tr></thead>
         <tbody data-drop-zone="line" data-zone="lines">
           <tr class="spacer" aria-hidden="true"><td colspan=${() => String(columns.get().length + 1)} style="padding:0;border:0" style:height=${() => `${hasSections.get() ? 0 : view.range.get().before}px`}></td></tr>
           ${each(entries, entry => entry.kind === 'row' ? entry.row.key : entry.kind === 'add' ? `a:${entry.section}` : `s:${entry.section.key}`, (entry, index) => entry().kind === 'row'
-            ? rowView(() => (entry() as { row: Row }).row, index) : entry().kind === 'add' ? addRowView((entry() as { section: string }).section, false)
-              : sectionView(() => (entry() as { section: TableSection }).section), { fallback: () => when(() => !canAdd.get(),
+            ? g.rowView(() => (entry() as { row: Row }).row, index) : entry().kind === 'add' ? g.addRowView((entry() as { section: string }).section, false)
+              : g.sectionView(() => (entry() as { section: TableSection }).section), { fallback: () => when(() => !canAdd.get(),
                 // A table that can take rows starts from its Add row placeholder; one that can't says it is empty.
                 () => html`<tr><td colspan=${() => String(columns.get().length + 1)} class="g-empty"><div class="g-empty-in">${Icon(props.icon ?? 'table-2', { size: 'lg', className: 'muted' })}<span>No rows yet</span></div></td></tr>`) })}
           <tr class="spacer" aria-hidden="true"><td colspan=${() => String(columns.get().length + 1)} style="padding:0;border:0" style:height=${() => `${hasSections.get() ? 0 : view.range.get().after}px`}></td></tr>
-          ${when(canAdd, () => addRowView(null, true))}
+          ${when(canAdd, () => g.addRowView(null, true))}
         </tbody>
         ${when(() => rows.get().length > 0 && Object.keys(sums).length > 0, () => html`<tfoot><tr role="row"><td class="g-ctl stk" style="left:0"></td>${each(columns, column => column.key, (column, index) => html`<td
-          class=${column().align === 'right' ? 'r num' : 'num'} class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)}>${() => sums[column().key]
+          class=${column().align === 'right' ? 'r num' : 'num'} class:stk=${g.isPinned(column)} class:s2=${g.isLastPin(column)} style:left=${g.pinStyle(column)}>${() => sums[column().key]
             ? valueText(sums[column().key]) : index() === 0 ? `Total · ${rows.get().length} ${rows.get().length === 1 ? 'line' : 'lines'}` : ''}</td>`)}</tr></tfoot>`)}
-      </table>
-    </div>
-    ${when(() => expanded.get() !== null, editorView)}
-    </div>
-    <div class="g-under">${when(locked, () => derived && !read(props.lockedText ?? '') ? null : html`<span class="g-lock">${Icon('lock', { size: 'xs' })}${() => read(props.lockedText ?? 'Locked. Lines can’t change after the record is issued.')}</span>`,
+      </table>`;
+}
+
+/** Under the table: the lock or the keys, and the totals (Table(totals=...) as a stack, else the sums not in the
+ * total line). */
+function gridUnder(g: Grid) {
+  const { props, locked, derived, declared, rows, summaryShown } = g;
+  const totalLine = (field: Field, last: boolean) => html`<div class="g-tl" class:gt=${last} class:invalid=${() => Boolean(field.error.get())}
+    hidden=${() => !field.rules.get().visible} data-field=${field.name}><span>${field.label}</span>${when(() => field.editable.get(),
+      () => FieldControl(field, { label: field.label, links: props.links }).element, () => html`<b class="num">${displayValue(field, { links: props.links })}</b>`)}<span
+      class="err" role="alert">${() => field.error.get() ?? ''}</span></div>`;
+  return html`<div class="g-under">${when(locked, () => derived && !read(props.lockedText ?? '') ? null : html`<span class="g-lock">${Icon('lock', { size: 'xs' })}${() => read(props.lockedText ?? 'Locked. Lines can’t change after the record is issued.')}</span>`,
       () => html`<span class="muted hide-sm g-keys">${Key('Tab')} next cell · ${Key('Enter')} cell below · ${Key('Esc')} cancel</span>`)}
       <span class="grow"></span>${declared.length ? when(() => rows.get().length > 0, () => html`<div class="g-totals">${declared.map((field, index) => totalLine(field, index === declared.length - 1))}</div>`)
-        : when(() => summaryShown.get().length > 0, () => html`<div class="g-sum">${each(summaryShown, item => item.label, item => html`<div class:gt=${Boolean(item().grand)}><span>${item().label}</span><b class="num">${item().value}</b></div>`)}</div>`)}</div>
+        : when(() => summaryShown.get().length > 0, () => html`<div class="g-sum">${each(summaryShown, item => item.label, item => html`<div class:gt=${Boolean(item().grand)}><span>${item().label}</span><b class="num">${item().value}</b></div>`)}</div>`)}</div>`;
+}
+
+/** The whole grid: focus view's record heading, the bar, the table and the row editor beside it, what goes under it,
+ * and in focus view the form's save bar. */
+function gridView(g: Grid): HTMLElement {
+  const { props, table, focused, expanded, refs } = g;
+  const titleId = uid('ct');
+  const grid = refs.grid = html`<div class="grid" class:max=${focused} class:g-editing=${() => expanded.get() !== null} data-table=${table.name}>
+    ${props.heading ? when(() => focused.get() && expanded.get() === null, () => focusHead(g, props.heading!)) : null}
+    ${gridBar(g, titleId)}
+    <div class="g-body">
+    <div class="g-scroll" tabindex="-1">
+      ${gridTable(g, titleId)}
+    </div>
+    ${when(() => expanded.get() !== null, g.editorView)}
+    </div>
+    ${gridUnder(g)}
     ${props.heading?.footer ? when(focused, () => html`<div class="g-foot">${props.heading!.footer!()}</div>`) : null}
   </div>` as HTMLElement;
-  scroller = grid.querySelector('.g-scroll') as HTMLElement;
+  refs.scroller = grid.querySelector('.g-scroll') as HTMLElement;
+  return grid;
+}
+
+/** Dragging lines and sections, the virtual window, the phone width and the room the columns have. */
+function wireGrid(g: Grid) {
+  const { table, rows, view, narrow, room, refs } = g;
+  const { grid, scroller } = refs;
   // Lines and section rows move by their drag handle: mouse, touch, or Space and the arrow keys.
-  onCleanup(dragList(grid, { kind: 'line', move: (id, _zone, before) => moveLine(id, before),
+  onCleanup(dragList(grid, { kind: 'line', move: (id, _zone, before) => g.moveLine(id, before),
     label: id => id.startsWith('s:') ? `Section ${table.sections.peek().find(section => section.key === id.slice(2))?.label ?? ''}` : `Row ${rows.peek().findIndex(row => row.key === id) + 1}` }));
   view.attach(scroller);
   const media = (() => { try { return window.matchMedia?.(NARROW) ?? null; } catch { return null; } })();
@@ -969,59 +1077,111 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   queueMicrotask(measure);
   onCleanup(() => { sizer?.disconnect(); window.removeEventListener('resize', measure); });
   scroller.addEventListener('scroll', () => grid.classList.toggle('scrolled', scroller.scrollLeft > 0), { passive: true });
+}
 
-  // ---------- keyboard ----------
+// ---------- keyboard ----------
 
-  grid.addEventListener('keydown', event => {
+/** Keys while a cell is being edited: Esc cancels, Tab and Shift Tab commit and go to the next editable cell, Enter to
+ * the cell below (adding a row after a new last row). True when the key was handled here. */
+function editingKey(g: Grid, event: KeyboardEvent, editingNow: NonNullable<Spot>) {
+  const { rows, canAdd, refs } = g;
+  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); g.cancel(); return; }
+  if (event.key === 'Tab') {
+    event.preventDefault();
+    if (!g.commit()) { g.refocus(); return; }
+    const next = g.step(editingNow, event.shiftKey ? -1 : 1);
+    // Past the last cell, Tab leaves the table for Add row; before the first, Shift Tab leaves it.
+    const out = !next && !event.shiftKey ? g.after() : null;
+    g.stopEdit(!next && !out);
+    if (next) g.startEdit(next);
+    else if (out) out.focus();
+    else g.leave(event.shiftKey);
+    return;
+  }
+  if (event.key === 'Enter' && !event.shiftKey && !(event.target as Element).matches('textarea')) {
+    event.preventDefault();
+    if (!g.commit()) { g.refocus(); return; }
+    const next = g.below(editingNow);
+    // Enter after typing in a new last row adds the next row, for keying in lines one after another.
+    const row = untrack(() => rows.get()).find(item => item.key === editingNow.key);
+    const typed = row ? JSON.stringify(untrack(() => row.field(editingNow.col).value.get()) ?? null) !== JSON.stringify(refs.before ?? null) : false;
+    if (!next && row?.isNew && typed && untrack(() => canAdd.get())) { g.stopEdit(false); g.addTo(g.sectionOf(row) ?? undefined); return; }
+    g.stopEdit(!next);
+    if (next && !g.startEdit(next)) g.moveActive(next);
+  }
+}
+
+/** Keys on a cell that is not being edited: the arrows, Home and End, Tab, Enter and F2, Delete, Alt and an arrow to move
+ * the row, and typing to start editing. */
+function cellKey(g: Grid, event: KeyboardEvent, spot: NonNullable<Spot>, tr: HTMLElement | null, chosen: Spot) {
+  const { rows, columns, expanded, refs } = g;
+  const row = untrack(() => rows.get()).find(item => item.key === spot.key)!;
+  const cols = untrack(() => columns.get()).map(column => column.key), at = cols.indexOf(spot.col);
+  if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) { event.preventDefault(); g.moveRow(row, event.key === 'ArrowUp' ? -1 : 1); queueMicrotask(() => g.moveActive(spot)); return; }
+  const moves: Record<string, Spot> = {
+    ArrowRight: at < cols.length - 1 ? { key: spot.key, col: cols[at + 1] } : null,
+    ArrowLeft: at > 0 ? { key: spot.key, col: cols[at - 1] } : null,
+    ArrowDown: g.below(spot), ArrowUp: g.below(spot, -1),
+    Home: { key: spot.key, col: cols[0] }, End: { key: spot.key, col: cols[cols.length - 1] },
+  };
+  // ← from the first column reaches the row's controls (select, move, edit); ↑ from the first row the header's Select all.
+  const rowCtl = (tr?.querySelector('.g-ctl [role="checkbox"]') ?? tr?.querySelector('.g-ctl .g-exp')) as HTMLElement | null | undefined;
+  const allCtl = refs.grid.querySelector<HTMLElement>('thead .g-ctl [role="checkbox"]');
+  if (event.key === 'ArrowLeft' && at === 0 && rowCtl) { event.preventDefault(); rowCtl.focus(); return; }
+  if (event.key === 'ArrowUp' && !moves.ArrowUp && allCtl) { event.preventDefault(); allCtl.focus(); return; }
+  if (event.key in moves) { event.preventDefault(); g.moveActive(moves[event.key]); return; }
+  // Tab and Shift Tab edit the next editable cell; past the last one Tab goes to Add row, and Shift Tab
+  // before the first leaves the table, past its row controls.
+  if (event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+    const next = g.step(spot, event.shiftKey ? -1 : 1);
+    if (next) { event.preventDefault(); g.startEdit(next); return; }
+    const out = event.shiftKey ? null : g.after();
+    if (out) { event.preventDefault(); out.focus(); return; }
+    if (g.leave(event.shiftKey)) event.preventDefault();
+    return;
+  }
+  // Enter on a cell a choice just committed goes to the cell below, as it does while editing.
+  if (event.key === 'Enter' && sameSpot(chosen, spot)) {
+    event.preventDefault();
+    const next = g.below(spot);
+    if (next && !g.startEdit(next)) g.moveActive(next);
+    return;
+  }
+  if (event.key === 'Enter' && expanded.peek() !== null) { event.preventDefault(); g.pick(spot.key); return; }
+  if (event.key === 'Enter' || event.key === 'F2') { event.preventDefault(); g.startEdit(spot, undefined, true); return; }
+  if ((event.key === 'Delete' || event.key === 'Backspace') && g.editable(row, spot.col)) { event.preventDefault(); writeValue(row.field(spot.col), null); return; }
+  if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey && event.key !== ' ') {
+    const kind = kindOf(row.field(spot.col).meta.type);
+    if (!kind.control || kind.control === 'textarea' || kind.control === 'link') { event.preventDefault(); g.startEdit(spot, event.key); }
+  }
+}
+
+function gridKeys(g: Grid) {
+  const { rows, columns, editing, expanded, focused, selection, readOnly, refs } = g;
+  refs.grid.addEventListener('keydown', event => {
     // Keys typed in an input a model script draws (control=) belong to it; the grid keeps Tab and Shift Tab only.
     if ((event.target as Element).closest?.('.ev-script') && event.key !== 'Tab') return;
     // With rows selected, Enter (outside a cell being edited and the row editor) is Delete, which asks first.
     if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && !editing.peek() && expanded.peek() === null
-      && untrack(() => selection.get().size) > 0 && !readOnly.peek()) { event.preventDefault(); event.stopPropagation(); deleteSelected(); return; }
+      && untrack(() => selection.get().size) > 0 && !readOnly.peek()) { event.preventDefault(); event.stopPropagation(); g.deleteSelected(); return; }
     const td = (event.target as Element).closest?.('td[data-col]') as HTMLElement | null;
     const tr = td?.closest('tr[data-key]') as HTMLElement | null;
     const spot: Spot = td && tr ? { key: tr.dataset.key!, col: td.dataset.col! } : null;
-    const editingNow = editing.peek(), chosen = landed;
-    landed = null;
-    if (editingNow) {
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); cancel(); return; }
-      if (event.key === 'Tab') {
-        event.preventDefault();
-        if (!commit()) { refocus(); return; }
-        const next = step(editingNow, event.shiftKey ? -1 : 1);
-        // Past the last cell, Tab leaves the table for Add row; before the first, Shift Tab leaves it.
-        const out = !next && !event.shiftKey ? after() : null;
-        stopEdit(!next && !out);
-        if (next) startEdit(next);
-        else if (out) out.focus();
-        else leave(event.shiftKey);
-        return;
-      }
-      if (event.key === 'Enter' && !event.shiftKey && !(event.target as Element).matches('textarea')) {
-        event.preventDefault();
-        if (!commit()) { refocus(); return; }
-        const next = below(editingNow);
-        // Enter after typing in a new last row adds the next row, for keying in lines one after another.
-        const row = untrack(() => rows.get()).find(item => item.key === editingNow.key);
-        const typed = row ? JSON.stringify(untrack(() => row.field(editingNow.col).value.get()) ?? null) !== JSON.stringify(before ?? null) : false;
-        if (!next && row?.isNew && typed && untrack(() => canAdd.get())) { stopEdit(false); addTo(sectionOf(row) ?? undefined); return; }
-        stopEdit(!next);
-        if (next && !startEdit(next)) moveActive(next);
-      }
-      return;
-    }
+    const editingNow = editing.peek(), chosen = refs.landed;
+    refs.landed = null;
+    if (editingNow) { editingKey(g, event, editingNow); return; }
     // Esc closes the row editor first, then focus view.
-    if (event.key === 'Escape' && expanded.peek() && !(event.target as Element).closest?.('.pop')) { event.preventDefault(); event.stopPropagation(); closeEditor(); return; }
-    if (event.key === 'Escape' && focused.peek()) { event.preventDefault(); event.stopPropagation(); leaveFocus(); return; }
+    if (event.key === 'Escape' && expanded.peek() && !(event.target as Element).closest?.('.pop')) { event.preventDefault(); event.stopPropagation(); g.closeEditor(); return; }
+    if (event.key === 'Escape' && focused.peek()) { event.preventDefault(); event.stopPropagation(); g.leaveFocus(); return; }
     // In the row editor, Alt and an arrow go to the previous or next row.
     if (expanded.peek() && event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown') && (event.target as Element).closest?.('.g-ed-main')) {
-      event.preventDefault(); stepEditor(event.key === 'ArrowUp' ? -1 : 1); return;
+      event.preventDefault(); g.stepEditor(event.key === 'ArrowUp' ? -1 : 1); return;
     }
     const target = event.target as Element;
     // Shift Tab from Add row goes back to the last editable cell.
-    if (event.key === 'Tab' && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && target === after()) {
-      const last = edge(-1);
-      if (last) { event.preventDefault(); startEdit(last); }
+    if (event.key === 'Tab' && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && target === g.after()) {
+      const last = g.edge(-1);
+      if (last) { event.preventDefault(); g.startEdit(last); }
       return;
     }
     // From a row's controls (its checkbox, its Edit button), → goes back to its first cell; ↓ from the header's checkbox to the first row.
@@ -1029,50 +1189,18 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     if (ctl && (target.matches('.g-exp') || target.matches('[role="checkbox"]'))) {
       const key = (ctl.closest('tr[data-key]') as HTMLElement | null)?.dataset.key ?? (event.key === 'ArrowDown' && ctl.closest('thead') ? untrack(() => rows.get())[0]?.key : undefined);
       const col = untrack(() => columns.get())[0]?.key;
-      if (key && col && (event.key === 'ArrowRight' || (event.key === 'ArrowDown' && ctl.closest('thead')))) { event.preventDefault(); moveActive({ key, col }); }
+      if (key && col && (event.key === 'ArrowRight' || (event.key === 'ArrowDown' && ctl.closest('thead')))) { event.preventDefault(); g.moveActive({ key, col }); }
       return;
     }
     if (!spot) return;
-    const row = untrack(() => rows.get()).find(item => item.key === spot.key)!;
-    const cols = untrack(() => columns.get()).map(column => column.key), at = cols.indexOf(spot.col);
-    if (event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) { event.preventDefault(); moveRow(row, event.key === 'ArrowUp' ? -1 : 1); queueMicrotask(() => moveActive(spot)); return; }
-    const moves: Record<string, Spot> = {
-      ArrowRight: at < cols.length - 1 ? { key: spot.key, col: cols[at + 1] } : null,
-      ArrowLeft: at > 0 ? { key: spot.key, col: cols[at - 1] } : null,
-      ArrowDown: below(spot), ArrowUp: below(spot, -1),
-      Home: { key: spot.key, col: cols[0] }, End: { key: spot.key, col: cols[cols.length - 1] },
-    };
-    // ← from the first column reaches the row's controls (select, move, edit); ↑ from the first row the header's Select all.
-    const rowCtl = (tr?.querySelector('.g-ctl [role="checkbox"]') ?? tr?.querySelector('.g-ctl .g-exp')) as HTMLElement | null | undefined;
-    const allCtl = grid.querySelector<HTMLElement>('thead .g-ctl [role="checkbox"]');
-    if (event.key === 'ArrowLeft' && at === 0 && rowCtl) { event.preventDefault(); rowCtl.focus(); return; }
-    if (event.key === 'ArrowUp' && !moves.ArrowUp && allCtl) { event.preventDefault(); allCtl.focus(); return; }
-    if (event.key in moves) { event.preventDefault(); moveActive(moves[event.key]); return; }
-    // Tab and Shift Tab edit the next editable cell; past the last one Tab goes to Add row, and Shift Tab
-    // before the first leaves the table, past its row controls.
-    if (event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey) {
-      const next = step(spot, event.shiftKey ? -1 : 1);
-      if (next) { event.preventDefault(); startEdit(next); return; }
-      const out = event.shiftKey ? null : after();
-      if (out) { event.preventDefault(); out.focus(); return; }
-      if (leave(event.shiftKey)) event.preventDefault();
-      return;
-    }
-    // Enter on a cell a choice just committed goes to the cell below, as it does while editing.
-    if (event.key === 'Enter' && sameSpot(chosen, spot)) {
-      event.preventDefault();
-      const next = below(spot);
-      if (next && !startEdit(next)) moveActive(next);
-      return;
-    }
-    if (event.key === 'Enter' && expanded.peek() !== null) { event.preventDefault(); pick(spot.key); return; }
-    if (event.key === 'Enter' || event.key === 'F2') { event.preventDefault(); startEdit(spot, undefined, true); return; }
-    if ((event.key === 'Delete' || event.key === 'Backspace') && editable(row, spot.col)) { event.preventDefault(); writeValue(row.field(spot.col), null); return; }
-    if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey && event.key !== ' ') {
-      const kind = kindOf(row.field(spot.col).meta.type);
-      if (!kind.control || kind.control === 'textarea' || kind.control === 'link') { event.preventDefault(); startEdit(spot, event.key); }
-    }
+    cellKey(g, event, spot, tr, chosen);
   });
+}
+
+/** Clicks, focus coming in and going out, Mod+S while editing, and what a vanished row or a lock stops. */
+function gridPointer(g: Grid) {
+  const { rows, table, editing, expanded, active, selection, readOnly, refs } = g;
+  const grid = refs.grid;
   grid.addEventListener('click', event => {
     const td = (event.target as Element).closest?.('td[data-col]') as HTMLElement | null;
     const tr = td?.closest('tr[data-key]') as HTMLElement | null;
@@ -1082,11 +1210,11 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     // The ↗ arrow of a Link cell opens its record; it does not start editing the cell.
     if ((event.target as Element).closest?.('.link-go')) return;
     const spot = { key: tr.dataset.key!, col: td.dataset.col! };
-    landed = null;
+    refs.landed = null;
     // With the row editor open, a row's title opens that row (and the open row's closes the editor).
-    if (expanded.peek() !== null) { active.set(spot); pick(spot.key); return; }
-    if (editing.peek()) { if (!commit()) { refocus(); return; } stopEdit(false); }
-    if (!startEdit(spot, undefined, true)) moveActive(spot);
+    if (expanded.peek() !== null) { active.set(spot); g.pick(spot.key); return; }
+    if (editing.peek()) { if (!g.commit()) { g.refocus(); return; } g.stopEdit(false); }
+    if (!g.startEdit(spot, undefined, true)) g.moveActive(spot);
   });
   // A cell that takes the focus (a click, a tap) becomes the active cell, so the active cell and
   // the focus never part. While a cell is being edited, the click that follows decides.
@@ -1096,7 +1224,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     if (tabbing && !(from && (from === grid || grid.contains(from) || from.matches('.pop')))) {
       const back = tabbing.back;
       tabbing = null;
-      if (enter(back)) return;
+      if (g.enter(back)) return;
     }
     const td = event.target as HTMLElement;
     if (editing.peek() || !td.matches?.('td[data-col]')) return;
@@ -1106,21 +1234,21 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // Leaving the cell being edited commits it (a popover opened from the cell does not count).
   grid.addEventListener('focusout', event => {
     const spot = editing.peek(), next = event.relatedTarget as Element | null;
-    if (!spot || (next && (cellAt(spot)?.contains(next) || next.closest?.('.pop')))) return;
+    if (!spot || (next && (g.cellAt(spot)?.contains(next) || next.closest?.('.pop')))) return;
     queueMicrotask(() => {
       if (!sameSpot(editing.peek(), spot)) return;
       const now = document.activeElement;
-      if (now && (cellAt(spot)?.contains(now) || now.closest?.('.pop'))) return;
-      if (commit()) stopEdit(false);
+      if (now && (g.cellAt(spot)?.contains(now) || now.closest?.('.pop'))) return;
+      if (g.commit()) g.stopEdit(false);
       // A cell that can't be left keeps the focus while it stays in the table.
-      else if (now && grid.contains(now)) refocus();
+      else if (now && grid.contains(now)) g.refocus();
     });
   });
   // Mod+S while a cell is being edited commits it first, as leaving it would (ui/shortcuts.ts, commitTyped).
   commitWithin(grid, () => {
     if (!editing.peek()) return undefined;
-    if (!commit()) { refocus(); return false; }
-    stopEdit();
+    if (!g.commit()) { g.refocus(); return false; }
+    g.stopEdit();
     return true;
   });
   // A row that disappears (removed, or the record reloaded) cannot stay selected or open.
@@ -1130,10 +1258,9 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       if ([...selection.peek()].some(key => !keys.has(key))) selection.set(new Set([...selection.peek()].filter(key => keys.has(key))));
       if (expanded.peek() && !keys.has(expanded.peek()!)) expanded.set(null);
       const spot = editing.peek();
-      if (spot && !keys.has(spot.key)) { editing.set(null); control = null; }
+      if (spot && !keys.has(spot.key)) { editing.set(null); refs.control = null; }
     });
   });
   // A locked table stops editing.
-  effect(() => { if (readOnly.get() && untrack(() => editing.get())) untrack(() => { editing.set(null); control = null; }); });
-  return grid;
+  effect(() => { if (readOnly.get() && untrack(() => editing.get())) untrack(() => { editing.set(null); refs.control = null; }); });
 }

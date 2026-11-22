@@ -15,7 +15,7 @@ import { canonical, linkFromInput, parseHTML, parsePastedHTML, parsePlainText, r
 import { History } from './history';
 import {
   BREAK, blockLength, blockText, caret, clampSelection, collapsed, docEnd, emptyDoc, isEmpty, linkAt, marksAt, ordered, pos, samePos,
-  normalise, sortMarks, text, textLength, type Block, type Doc, type ImageSize, type Inline, type Mark, type Selection,
+  normalise, sortMarks, text, type Block, type Doc, type ImageSize, type Inline, type Mark, type Selection,
 } from './model';
 import {
   blockMatches, deleteBackward, deleteForward, deleteSelection, hasMark, indent, inputRule, insertBlocks, insertBreak, insertLink, insertRule,
@@ -24,6 +24,7 @@ import {
 } from './ops';
 import { domText, pointToPos, posToPoint, renderSurface } from './render';
 import { ACCEPT, checkImage, prepareImage, type ImageSource } from './images';
+import { BLOCK_NAMES, editorToolbar, statusOf, floatingBar, imagePopover, isMac, MARK_NAMES, mentionPicker, pickerKey, shortcutKey, type EditorCommands, type Status } from './editor-tools';
 
 export interface RichTextProps {
   /** The stored HTML (reactive): a change from outside replaces the document. */
@@ -64,16 +65,6 @@ export interface RichTextEditor {
   /** The current state, for tests and tools. */
   state(): State;
 }
-
-const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-const MARK_NAMES: Record<Mark, string> = { strong: 'Bold', em: 'Italic', u: 'Underline', s: 'Strikethrough', code: 'Inline code' };
-const BLOCK_NAMES: Array<[BlockSpec, string, string]> = [
-  [{ type: 'heading', level: 2 }, 'Heading', 'heading-2'], [{ type: 'heading', level: 3 }, 'Subheading', 'heading-3'],
-  [{ type: 'item', list: 'bullet' }, 'Bulleted list', 'list'], [{ type: 'item', list: 'ordered' }, 'Numbered list', 'list-ordered'],
-  [{ type: 'item', list: 'check' }, 'Checklist', 'list-checks'], [{ type: 'quote' }, 'Quote', 'text-quote'], [{ type: 'code' }, 'Code block', 'square-code'],
-];
-
-interface Status { marks: Mark[]; block: BlockSpec | null; link: boolean; undo: boolean; redo: boolean; length: number }
 
 export function RichTextEditor(props: RichTextProps): RichTextEditor {
   const id = props.id ?? uid('rt');
@@ -121,14 +112,7 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
   }
 
   function refreshStatus() {
-    const head = state.doc.blocks[state.selection.head.block];
-    const marks = collapsed(state.selection)
-      ? (stored?.marks ?? marksAt(head.content, state.selection.head.offset).marks)
-      : (['strong', 'em', 'u', 's', 'code'] as Mark[]).filter(mark => hasMark(state, mark));
-    const blocks = selectedBlocks(state).map(index => state.doc.blocks[index]);
-    const block = BLOCK_NAMES.map(([spec]) => spec).find(spec => blocks.length > 0 && blocks.every(item => blockMatches(item, spec))) ?? null;
-    const link = Boolean(linkAt(head.content, state.selection.head.offset)) && head.type !== 'code';
-    status.set({ marks, block, link, undo: history.canUndo, redo: history.canRedo, length: textLength(state.doc) });
+    status.set(statusOf(state, stored?.marks ?? null, history));
     updateFloating();
     checkMention();
     if (props.mentions) refreshMentioned();
@@ -510,19 +494,7 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
 
   function imageDialog(anchor: HTMLElement, index: number) {
     const block = state.doc.blocks[index] as ImageBlock;
-    openPopover(anchor, close => {
-      const alt = html`<input class="rt-link-in" maxlength="300" autocomplete="off" aria-label="Alt text">` as HTMLInputElement;
-      const caption = html`<input class="rt-link-in" maxlength="300" autocomplete="off" aria-label="Caption (optional)">` as HTMLInputElement;
-      alt.value = block.alt; caption.value = block.caption;
-      queueMicrotask(() => alt.focus());
-      return html`<form class="rt-link" novalidate on:submit=${(event: Event) => {
-        event.preventDefault();
-        close();
-        apply(updateImage(state, index, { alt: alt.value.replace(/\s+/g, ' ').trim(), caption: caption.value.replace(/\s+/g, ' ').trim() }), { message: 'Image updated' });
-        surface.focus();
-      }}><label class="rt-link-l">Alt text</label>${alt}<span class="muted rt-hint">Says what the image shows, for people who can't see it.</span>
-        <label class="rt-link-l">Caption (optional)</label>${caption}<div class="rt-link-b"><button type="submit" class="btn primary small">Save</button></div></form>`;
-    }, { role: 'dialog', label: 'Image', onClose: () => { if (!surface.contains(document.activeElement)) surface.focus(); } });
+    imagePopover(anchor, block, values => apply(updateImage(state, index, values), { message: 'Image updated' }), surface);
   }
 
   const picker = html`<input type="file" hidden multiple accept=${ACCEPT.join(',')} tabindex="-1" aria-hidden="true"
@@ -546,182 +518,38 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
 
   // ---------- mentions ----------
 
-  interface Picking { block: number; start: number; query: string; items: Person[]; active: number }
-  const picking = cell<Picking | null>(null);
-  const known = new Map<string, Person>();
-  const mentioned = cell<Person[]>([]);
-  const listId = `${id}-people`;
-  let searchTimer = 0, searchToken = 0;
-
-  /** Open, update or close the picker from the text before the caret: @ at a word start, then the query. */
-  function checkMention() {
-    if (!props.mentions || composing || !collapsed(state.selection)) { closePicker(); return; }
-    const at = state.selection.head, block = state.doc.blocks[at.block];
-    if (!block || block.type === 'code' || block.type === 'rule' || block.type === 'image') { closePicker(); return; }
-    const before = blockText(block).slice(0, at.offset);
-    const match = /(?:^|[\s(\uE000\uE001])@([^\s@\uE000\uE001]{0,30})$/.exec(before);
-    if (!match) { closePicker(); return; }
-    const start = at.offset - match[1].length - 1, query = match[1];
-    const current = picking.peek();
-    if (current && current.block === at.block && current.start === start && current.query === query) return;
-    picking.set({ block: at.block, start, query, items: current?.items ?? [], active: 0 });
-    window.clearTimeout(searchTimer);
-    const token = ++searchToken;
-    searchTimer = window.setTimeout(() => {
-      void props.mentions!.search(query).then(items => {
-        if (token !== searchToken || !picking.peek()) return;
-        picking.set({ ...picking.peek()!, items: items.slice(0, 8), active: 0 });
-        announce(items.length ? `${Math.min(items.length, 8)} ${items.length === 1 ? 'person' : 'people'}. Up and down to choose, Enter to mention.` : 'No one matches');
-      }, () => { if (token === searchToken && picking.peek()) picking.set({ ...picking.peek()!, items: [] }); });
-    }, 120);
-  }
-
-  function closePicker() { if (picking.peek()) { picking.set(null); searchToken++; } }
-
-  /** Put the chosen person in place of @query, then a space. */
-  function choose(person: Person) {
-    const current = picking.peek();
-    if (!current) return;
-    known.set(person.id, person);
-    const range = { anchor: pos(current.block, current.start), head: state.selection.head };
-    const { doc, end } = replaceRange(state.doc, range.anchor, range.head, [{ kind: 'mention', id: person.id, name: person.name }, text(' ')]);
-    closePicker();
-    apply({ doc, selection: caret(end) }, { message: person.can_read ? `Mentioned ${person.name}` : `Mentioned ${person.name}, who can't open this record` });
-  }
-
-  /** People mentioned in the text that the picker said cannot open the record. */
-  function refreshMentioned() {
-    const ids = new Set<string>();
-    for (const block of state.doc.blocks) for (const piece of block.content) if (piece.kind === 'mention') ids.add(piece.id);
-    mentioned.set([...ids].map(item => known.get(item)).filter((person): person is Person => Boolean(person) && !person!.can_read));
-  }
-
-  const caretRect = (): DOMRect | null => {
-    const selection = window.getSelection();
-    if (!selection || !selection.rangeCount) return null;
-    const rect = selection.getRangeAt(0).getBoundingClientRect?.();
-    return rect && (rect.width || rect.height || rect.top) ? rect : surface.getBoundingClientRect();
-  };
-
-  const mentionsPicker = props.mentions ? html`<div class="rt-mentions pop show" role="listbox" id=${listId} aria-label="People to mention"
-    hidden=${() => !picking.get() || !picking.get()!.items.length}
-    style:top=${() => { void picking.get(); const rect = caretRect(); return rect ? `${rect.bottom + 6}px` : null; }}
-    style:left=${() => { void picking.get(); const rect = caretRect(); return rect ? `${Math.max(8, Math.min(window.innerWidth - 280, rect.left))}px` : null; }}>${() =>
-      (picking.get()?.items ?? []).map((person, index) => html`<button type="button" class="mi rt-person" role="option" id=${`${listId}-${index}`} tabindex="-1"
-        aria-selected=${() => String(picking.get()?.active === index)} class:on=${() => picking.get()?.active === index}
-        on:mousedown=${(event: MouseEvent) => event.preventDefault()} on:click=${() => choose(person)}>
-        <span class="rt-person-name">${person.name}</span><span class="muted">@${person.username}</span>${person.can_read ? null
-          : html`<span class="rt-person-warn">Can't open this record</span>`}</button>`)}</div>` as HTMLElement : null;
-
-  const warnings = props.mentions ? html`<div class="rt-warn" role="status">${() => mentioned.get().map(person =>
-    html`<p>${Icon('info', { size: 'xs' })} ${person.name} can't open this record. They'll only be told they were mentioned.</p>`)}</div>` as HTMLElement : null;
+  const mentions = mentionPicker(props, id, { state: () => state, composing: () => composing, apply, announce, surface });
+  const { picking, choose, closePicker } = mentions;
+  const checkMention = () => mentions.check();
+  const refreshMentioned = () => mentions.refresh();
+  const mentionsPicker = props.mentions ? mentions.list : null;
+  const warnings = props.mentions ? mentions.warnings : null;
 
   function onKeyDown(event: KeyboardEvent) {
-    const open = picking.peek();
-    if (open && open.items.length) {
-      const count = open.items.length;
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        event.preventDefault();
-        const active = (open.active + (event.key === 'ArrowDown' ? 1 : count - 1)) % count;
-        picking.set({ ...open, active });
-        const person = open.items[active];
-        announce(`${person.name}${person.can_read ? '' : ", can't open this record"}`);
-        return;
-      }
-      if (event.key === 'Enter' || event.key === 'Tab') { event.preventDefault(); event.stopPropagation(); choose(open.items[open.active]); return; }
-      if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closePicker(); return; }
-    }
+    if (pickerKey(event, picking, announce, choose, closePicker)) return;
     if (composing || event.isComposing) return;
-    const mod = isMac() ? event.metaKey : event.ctrlKey;
-    const key = event.key.toLowerCase();
-    if (mod && !event.altKey) {
-      if (key === 'b' || key === 'i' || key === 'u') { event.preventDefault(); if (!disabled()) mark(key === 'b' ? 'strong' : key === 'i' ? 'em' : 'u'); return; }
-      // Ctrl or Cmd K is the link inside the editor, not the app's command palette.
-      if (key === 'k') { event.preventDefault(); event.stopPropagation(); if (!disabled()) linkDialog(linkButton); return; }
-      if (key === 'z' && !event.shiftKey) { event.preventDefault(); undo(); return; }
-      if ((key === 'z' && event.shiftKey) || key === 'y') { event.preventDefault(); redo(); return; }
-      if (event.shiftKey && (event.code === 'Digit7' || event.code === 'Digit8' || event.code === 'Digit9')) {
-        event.preventDefault();
-        if (!disabled()) block({ type: 'item', list: event.code === 'Digit7' ? 'ordered' : event.code === 'Digit8' ? 'bullet' : 'check' });
-        return;
-      }
-      // Ctrl or Cmd Enter is for the form around the editor (save), not a new line.
-      if (event.key === 'Enter') { event.preventDefault(); return; }
-    }
-    if (event.key === 'Tab' && !mod && !event.altKey) {
-      // Tab indents only inside lists; anywhere else it leaves the editor, as Tab should.
-      const items = selectedBlocks(state);
-      if (items.length && items.every(index => state.doc.blocks[index].type === 'item')) {
-        event.preventDefault();
-        if (!disabled()) apply(indent(state, event.shiftKey ? -1 : 1), { message: event.shiftKey ? 'Outdented' : 'Indented' });
-      }
-    }
+    shortcutKey(event, commands, linkButton, {
+      inList: () => { const items = selectedBlocks(state); return items.length > 0 && items.every(index => state.doc.blocks[index].type === 'item'); },
+      indent: back => apply(indent(state, back ? -1 : 1), { message: back ? 'Outdented' : 'Indented' }),
+    });
   }
 
   // ---------- toolbar ----------
 
-  const pressedMark = (name: Mark) => () => String(status.get().marks.includes(name));
-  const tool = (icon: string, label: string, shortcut: string, run: (button: HTMLElement) => void, pressed?: () => string | null, enabled: () => boolean = () => true) => {
-    const button = html`<button type="button" class="rt-tool" tabindex="-1" aria-label=${shortcut ? `${label} (${shortcut})` : label} title=${shortcut ? `${label} (${shortcut})` : label}
-      aria-pressed=${pressed ?? null} disabled=${() => disabled() || !enabled()}
-      on:mousedown=${(event: MouseEvent) => event.preventDefault()}
-      on:click=${(event: MouseEvent) => { syncSelectionFromState(); run(event.currentTarget as HTMLElement); }}>${Icon(icon, { size: 'sm' })}</button>` as HTMLButtonElement;
-    return button;
-  };
-  const mod = isMac() ? '⌘' : 'Ctrl+';
-  const linkButton = tool('link', 'Link', `${mod}K`, button => linkDialog(button), () => String(status.get().link));
-  const bulletSpec = BLOCK_NAMES.find(([spec]) => spec.type === 'item' && spec.list === 'bullet')!;
-  const blockTool = ([spec, label, icon]: [BlockSpec, string, string]) => tool(icon, label, spec.type === 'item' && spec.list === 'ordered' ? `${mod}Shift+7` : spec.type === 'item' && spec.list === 'bullet' ? `${mod}Shift+8` : '',
-    () => block(spec), () => String(JSON.stringify(status.get().block) === JSON.stringify(spec)));
-  // Mention types @ at the caret (a space first after a word), which opens the people picker.
-  const mentionTool = () => tool('at-sign', 'Mention', '', () => {
-    const range = state.selection, at = range.head, current = state.doc.blocks[at.block];
-    const before = current ? blockText(current).slice(0, at.offset) : '';
-    apply(insertText({ doc: state.doc, selection: range }, before && !/\s$/.test(before) ? ' @' : '@', { marks: [], href: null }));
-  });
-  const groups: HTMLElement[][] = props.toolbar === 'compact' ? [
-    [tool('bold', 'Bold', `${mod}B`, () => mark('strong'), pressedMark('strong')), tool('italic', 'Italic', `${mod}I`, () => mark('em'), pressedMark('em')),
-      blockTool(bulletSpec), linkButton, ...(props.mentions ? [mentionTool()] : [])],
-  ] : [
-    [tool('bold', 'Bold', `${mod}B`, () => mark('strong'), pressedMark('strong')), tool('italic', 'Italic', `${mod}I`, () => mark('em'), pressedMark('em')),
-      tool('underline', 'Underline', `${mod}U`, () => mark('u'), pressedMark('u')), tool('strikethrough', 'Strikethrough', '', () => mark('s'), pressedMark('s')),
-      tool('code', 'Inline code', '', () => mark('code'), pressedMark('code')), linkButton],
-    BLOCK_NAMES.map(blockTool),
-    [...(props.images ? [tool('image', 'Image', '', () => picker.click())] : []), tool('minus', 'Divider', '', () => block('rule')),
-      tool('undo-2', 'Undo', `${mod}Z`, () => undo(), undefined, () => status.get().undo), tool('redo-2', 'Redo', isMac() ? '⌘Shift+Z' : 'Ctrl+Y', () => redo(), undefined, () => status.get().redo)],
-  ];
-  const tools = groups.flat();
-  tools[0].tabIndex = 0;
-  // A toolbar is one Tab stop; the arrow keys move between its buttons (roving tabindex).
-  const toolbar = html`<div class=${props.toolbar === 'compact' ? 'rt-toolbar rt-toolbar-compact' : 'rt-toolbar'} role="toolbar" aria-label="Formatting" aria-controls=${id}
-    on:keydown=${(event: KeyboardEvent) => {
-      // Disabled buttons (Undo with nothing to undo) are skipped.
-      const usable = tools.filter(item => !(item as HTMLButtonElement).disabled);
-      const index = usable.indexOf(document.activeElement as HTMLElement);
-      if (index < 0) return;
-      const next = event.key === 'ArrowRight' ? (index + 1) % usable.length : event.key === 'ArrowLeft' ? (index - 1 + usable.length) % usable.length
-        : event.key === 'Home' ? 0 : event.key === 'End' ? usable.length - 1 : -1;
-      if (next < 0) return;
-      event.preventDefault();
-      tools.forEach(item => { item.tabIndex = item === usable[next] ? 0 : -1; });
-      usable[next].focus();
-    }}
-    on:focusin=${(event: FocusEvent) => { const index = tools.indexOf(event.target as HTMLElement); if (index >= 0) tools.forEach((item, at) => { item.tabIndex = at === index ? 0 : -1; }); }}>${groups.map((group, index) =>
-      html`${index ? html`<span class="rt-sep" aria-hidden="true"></span>` : null}${group}`)}</div>` as HTMLElement;
+  const commands: EditorCommands = { status, disabled, mark, block, undo, redo, linkDialog, pickImage: () => picker.click(),
+    syncSelection: () => syncSelectionFromState(),
+    // Mention types @ at the caret (a space first after a word), which opens the people picker.
+    mention: () => {
+      const range = state.selection, at = range.head, current = state.doc.blocks[at.block];
+      const before = current ? blockText(current).slice(0, at.offset) : '';
+      apply(insertText({ doc: state.doc, selection: range }, before && !/\s$/.test(before) ? ' @' : '@', { marks: [], href: null }));
+    } };
+  const { toolbar, linkButton, pressedMark } = editorToolbar(props, id, commands);
 
   function syncSelectionFromState() { if (document.activeElement !== surface) surface.focus({ preventScroll: true }); writeSelection(); }
 
-  // The floating selection toolbar (desktop): a few marks right above selected text. Mouse only; the
-  // main toolbar has the same buttons for the keyboard.
-  const quick = (icon: string, label: string, run: (button: HTMLElement) => void, pressed?: () => string | null) => html`<button type="button" class="rt-tool" tabindex="-1"
-    aria-label=${label} aria-pressed=${pressed ?? null} on:mousedown=${(event: MouseEvent) => event.preventDefault()}
-    on:click=${(event: MouseEvent) => run(event.currentTarget as HTMLElement)}>${Icon(icon, { size: 'sm' })}</button>` as HTMLElement;
-  const float = html`<div class="rt-float" aria-hidden="true" hidden=${() => !floating.get()}
-    style:top=${() => floating.get() ? `${Math.max(8, floating.get()!.top - 42)}px` : null}
-    style:left=${() => floating.get() ? `${Math.max(8, Math.min(window.innerWidth - 168, floating.get()!.left + floating.get()!.width / 2 - 80))}px` : null}>${[
-      quick('bold', 'Bold', () => mark('strong'), pressedMark('strong')), quick('italic', 'Italic', () => mark('em'), pressedMark('em')),
-      quick('underline', 'Underline', () => mark('u'), pressedMark('u')), quick('code', 'Inline code', () => mark('code'), pressedMark('code')),
-      quick('link', 'Link', () => linkDialog(linkButton), () => String(status.get().link))]}</div>` as HTMLElement;
+  // The floating selection toolbar (desktop): a few marks right above selected text.
+  const float = floatingBar(floating, commands, linkButton, pressedMark);
 
   function updateFloating() {
     const fine = typeof window.matchMedia === 'function' && window.matchMedia('(pointer: fine)').matches;

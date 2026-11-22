@@ -110,7 +110,8 @@ A record page shows each value once per view. The header has the title, the name
 subtitle, the first two key fields the primary area does not show. The key cards (or, without them, the summary
 strip) have calculated values and per-record measures the header doesn't show; with nothing left, there is no strip.
 The form of a saved record leaves out what the header and the cards or strip show: the title, name and State, a
-record number nothing can edit (the breadcrumb, or in a side panel the subtitle, shows it), and the cards' or
+record name or number this person cannot edit now, because it is read only or locked by its state (the breadcrumb,
+or in a side panel the subtitle, shows it; an editable one stays in the form and the header does not repeat it), and the cards' or
 strip's fields. While a side panel hides the cards or strip (`Meta.panel_summary = False`), the form keeps their
 fields. So a section left with only such fields, such as Other holding the number, does not show. A new record's
 form keeps everything. Related records are a section of their own after "more information", under the
