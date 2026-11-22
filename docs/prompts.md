@@ -121,9 +121,24 @@ the signed-in user as `/api/_draft/<model>` works out a new record: fields fetch
 `new=('quotation', {'customer': c, 'lines': [{'item': i, 'qty': 24}]})` answers each line with its fetched
 description and rate, what `derive()` sets and its amount, and the browser, Eva, the connector and API callers all
 get the same complete record in one request. Leave a fetched field out to have it read from the link; give it to
-set it. The answer holds only the fields and rows this user may read; values this user may not write are left out,
-as the form would leave them. Empty fields are left out. A model the draft route does not evaluate, or one this
-user may not create, keeps the values as given (its save refuses them anyway). In Python, `record.note(...)` and
+set it. The answer holds only the fields and rows this user may read, in two parts:
+
+```json
+{"_outcome": {"new": {
+  "model": "quotation",
+  "values":     {"customer": "...", "children": {"lines": [{"item": "...", "description": "Blue pen", "rate": "2.50", "qty": "24.00"}]}},
+  "calculated": {"customer": "...", "line_count": 1, "children": {"lines": [{"item": "...", "description": "Blue pen", "rate": "2.50", "qty": "24.00",
+                                                                             "pack_steps": "12.00", "amount": "60.00"}]}}
+}}}
+```
+
+`values` holds the fields and rows this user may write, as the record form would send them: post it back
+unchanged to `POST /api/<model>` (or MCP `create_record`) to create the record, and the save works out the rest
+again. `calculated` is the whole record as the form shows it, with what `derive()` sets (`derived=True` fields and
+Tables), the formulas and read-only values; sending those back is refused (`DERIVED_FIELD_WRITE`,
+`COMPUTED_FIELD_WRITE`), whatever they are. The browser shows `calculated` and saves the writable fields. Empty
+fields are left out. A model the draft route does not evaluate, or one this user may not create, keeps the values
+as given in both (its save refuses them anyway). In Python, `record.note(...)` and
 other direct calls return the outcome as given; the calculation is part of the answer.
 
 The JSON answer is at most 64 KiB. `submit()` may also return `None` (the screen says it is done) or any other JSON value (a dict, a list, a number or a string), which the screen receives as data.

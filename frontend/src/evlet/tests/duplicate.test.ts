@@ -328,10 +328,13 @@ describe('a new record that starts from other values arrives calculated (docs/ui
     expect(first).not.toHaveProperty('rate');
   });
 
-  it("an outcome's new record shows the values its answer carries, with no extra request; a blank new record asks nothing", async () => {
+  it("an outcome's new record shows the calculated record its answer carries, with no extra request; a blank new record asks nothing", async () => {
     const { host, router, sent } = await openOrder(derivedRoutes('9.99'));
-    await follow({ router } as any, { new: { model: 'order', values: { title: 'From ENQ-1', customer: '0000000000001',
-      children: { lines: [{ product: '0000000000001', qty: '24.0000', rate: '3.50' }] } } } }, 'ENQ-1');
+    // `values` holds what the person may write; `calculated` adds the derived rate, which the form shows.
+    await follow({ router } as any, { new: { model: 'order',
+      values: { title: 'From ENQ-1', customer: '0000000000001', children: { lines: [{ product: '0000000000001', qty: '24.0000' }] } },
+      calculated: { title: 'From ENQ-1', customer: '0000000000001',
+        children: { lines: [{ product: '0000000000001', qty: '24.0000', rate: '3.50' }] } } } }, 'ENQ-1');
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New order'));
     expect(host.querySelector<HTMLInputElement>('.fld[data-field="title"] input')!.value).toBe('From ENQ-1');
     await until(() => expect(rates(host)[0]).toContain('3.50'));

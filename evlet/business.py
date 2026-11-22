@@ -767,25 +767,29 @@ class Business:
 
     def writable_values(self, user, model, values):
         """`values` (with rows as {children: {table: [rows]}}) without the fields this user may not write, at every
-        depth: what the record form would send for them. Tables the user may not read are left out."""
+        depth: what the record form would send for them. Tables the user may not read, and Tables derive() builds
+        (derived=True), are left out."""
         allowed = self.policy.fields(user, model, write=True)
         result = {name: value for name, value in values.items() if name != 'children' and name in allowed}
-        children = {}
+        children, derived = {}, getattr(model, '__derives__', ())
         for name, rows in (values.get('children') or {}).items():
             child = self.children.get((model, name))
-            if child is not None and isinstance(rows, list) and self.policy.allows(user, child.model, 'read'):
+            if child is not None and name not in derived and isinstance(rows, list) and self.policy.allows(user, child.model, 'read'):
                 children[name] = [self.writable_values(user, child.model, row) if isinstance(row, dict) else row for row in rows]
         if children:
             result['children'] = children
         return result
 
     def calculated_new(self, context, model, values):
-        """The values of an Outcome(new=(model, values)), calculated as /api/_draft/<model> works out a new record of
-        `model` for this user: fetches from the linked records as they are now, derive() and formulas, with the given
-        values kept. Only fields and rows this user may read come back. A model the draft route does not evaluate, or
-        one this user may not create, keeps the values as given; the save checks them."""
+        """(values, calculated) of an Outcome(new=(model, values)). `calculated` is the new record of `model` as
+        /api/_draft/<model> works it out for this user: fetches from the linked records as they are now, derive() and
+        formulas, with the given values kept, and only fields and rows this user may read. `values` is the part of it
+        this user may write, as the record form would send it: a caller may post it back unchanged to create the
+        record. Derived, calculated and read-only values are only in `calculated`, which the form shows. A model the
+        draft route does not evaluate, or one this user may not create, keeps the values as given in both; the save
+        checks them."""
         if not self.drafts_model(model) or self.registry.api.get(model) == 'read' or not self.policy.allows(context.user, model, 'create'):
-            return values
+            return values, values
         result, _, _ = self.draft_answer(context, model, None, self.writable_values(context.user, model, values))
 
         def plain(item):
@@ -793,7 +797,8 @@ class Business:
             row = {key: value for key, value in item.items() if key not in ('id', '_key', '_sources', 'children') and value is not None}
             children = {name: [plain(line) for line in lines] for name, lines in item.get('children', {}).items() if lines}
             return {**row, 'children': children} if children else row
-        return plain(result)
+        calculated = plain(result)
+        return self.writable_values(context.user, model, calculated), calculated
 
     def visible_errors(self, user, model, errors, tx=None):
         """Hide error keys that name unreadable fields or rows the user cannot see."""

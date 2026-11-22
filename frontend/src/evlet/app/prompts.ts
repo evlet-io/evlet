@@ -37,8 +37,9 @@ export interface PromptSurface {
 export interface Outcome {
   message?: string;
   open?: { model: string; id: string };
-  /** A new record to review, filled with these values; nothing is saved until Create. */
-  new?: { model: string; values: Record<string, unknown> };
+  /** A new record to review, filled with these values; nothing is saved until Create. `values` holds the fields the
+   * person may write; `calculated` is the whole record as the server works it out (derived and calculated values too). */
+  new?: { model: string; values: Record<string, unknown>; calculated?: Record<string, unknown> };
   data?: unknown;
   /** The next prompt (a wizard). */
   prompt?: PromptSurface;
@@ -64,7 +65,7 @@ export async function follow(ctx: AppContext, outcome: Outcome | null | undefine
   if (!outcome) return false;
   if (outcome.message) toast(outcome.message, { icon: 'check' });
   if (outcome.new) {
-    prefills.set(outcome.new.model, { values: outcome.new.values ?? {}, from });
+    prefills.set(outcome.new.model, { values: outcome.new.calculated ?? outcome.new.values ?? {}, from });
     await ctx.router.go('create', { model: outcome.new.model });
   } else if (outcome.open) await ctx.router.go('record', { model: outcome.open.model, id: String(outcome.open.id) });
   if (outcome.prompt) await openPrompt(ctx, outcome.prompt);

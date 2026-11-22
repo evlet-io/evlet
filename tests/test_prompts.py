@@ -594,7 +594,8 @@ def test_an_outcome_names_a_model_by_name(app):
     status, result, _ = c('POST', f'/api/quotation/{record_id}/actions/note', {}, headers={b'if-match': etag})
     ticket = result['_outcome']['prompt']['ticket']
     status, outcome, _ = c('POST', f'/api/_prompts/{ticket}/submit', {'values': {'answer': 'new'}})
-    assert status == 200 and outcome['new'] == {'model': 'customer', 'values': {'customer_name': 'From Quotation'}}
+    assert status == 200 and outcome['new'] == {'model': 'customer', 'values': {'customer_name': 'From Quotation'},
+                                                'calculated': {'customer_name': 'From Quotation'}}
 
 
 def test_an_outcome_still_takes_a_class():
