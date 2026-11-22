@@ -236,6 +236,12 @@ describe('app shell', () => {
     expect(rule(styles, '.app-switch')).toContain('color:var(--fg)');
     expect(rule(styles, '.app-switch')).not.toContain('box-shadow');
     expect(rule(styles, '.top-search')).toContain('height:32px');
+    // In the sidebar's head it takes the list card's 6 px corners and light shadow, and shows the workspace's icon
+    // on a 20 px tile before its name; the reference's switcher is 32 px tall with a 20 px tile with 6 px corners.
+    expect(rule(styles, '.side-head .app-switch')).toContain('gap:8px;border-radius:var(--r-card);box-shadow:var(--shadow-sm)');
+    expect(rule(styles, '.side-head .as-text')).toContain('flex:1');
+    expect(rule(styles, '.as-tile')).toBe('width:20px;height:20px;border-radius:6px;display:grid;place-items:center;flex:none');
+    expect(rule(styles, '.app.collapsed .side-head .as-tile')).toContain('display:none');
     expect(rule(styles, '.app-switch:hover')).toContain('background:var(--side-hover)');
     expect(rule(styles, '.app-switch[aria-expanded="true"]')).toContain('border-color:var(--border-strong)');
     expect(rule(styles, '.app-switch:focus-visible')).toContain('outline:2px solid var(--accent)');

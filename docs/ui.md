@@ -549,8 +549,10 @@ class Employee(Model):
   Select's `colors`, as the list's badges show it; All and Link tabs have none), the label and a count chip.
   The open tab sits on a light accent fill with a solid chip. Tabs that don't fit the card's width go in a
   dashed **More N** button at the end of the row (N: how many are in it), whose menu lists them with their
-  dots and counts; the open tab always stays in the row. On phones (760 px and under) the search row comes
-  first, above the tabs. The title row (name, Filter, New and the app's buttons) is unchanged.
+  dots and counts; the open tab always stays in the row. The list's search box (240 px) ends the same row,
+  after More; the row under it keeps the filter chips and the record count. On phones (760 px and under) the
+  search box comes first, on its own line above the tabs. The title row (name, Filter, New and the app's
+  buttons) is unchanged.
 - **Link tabs** show the most used values, at most 8, most used first, each labelled with the
   linked record's title. The filter finds the others. A record a link opened with `?tab=` keeps
   its own tab even when it is not among them.
@@ -836,8 +838,9 @@ the workspace's section titles, parents and children. The Evlet brand is in the 
 ([Top bar](#top-bar-search-and-explorer)).
 
 - **Workspace switcher.** A compact button at the top of the sidebar, as wide as it: the
-  current workspace's name in the normal text colour and the up-down chevrons (`chevrons-up-down`), in
-  a flat box with a 1 px border and 4 px corners, as tall as the search box. Hover gives it a light grey
+  current workspace's icon on a 20 px tile in its colour (6 px corners), its name in the normal text colour and
+  the up-down chevrons (`chevrons-up-down`), in a box 32 px tall, as tall as the search box, with a 1 px border
+  and the list card's 6 px corners and light shadow. Collapsed, it keeps its chevrons only. Hover gives it a light grey
   background; while its menu is open the border is stronger too. Its tooltip and accessible name
   are "Workspace: Sales". A click opens a menu below the button, aligned to its left edge (moved left
   to stay on screen), as wide as the other menus, flat, with 4 px corners. It lists one row per
@@ -870,8 +873,8 @@ the workspace's section titles, parents and children. The Evlet brand is in the 
   its item directly, with no chevron or children.
 - **Children** sit under their parent on a thin vertical guide line, each starting with its icon (its own, or
   its kind's, [Navigation icons](#navigation-icons)) in the parent's colour. The one the page opens exactly
-  (a list with its view, tab and filters, or a report) is a white card with a 1 px border and a semibold
-  label, and the guide line is marked at its height by a short bar in the parent's colour. A child with a
+  (a list with its view, tab and filters, or a report) is a white card with a 1 px border, the list card's 6 px
+  corners and light shadow, and a semibold label, and the guide line is marked at its height by a short bar in the parent's colour. A child with a
   badge shows its [bounded count](#badges) at the end of the row, else its record count when the person
   turned counts on.
 - **New-tab items** (an http(s) address, or `new_tab=True`) end with the open-externally icon.
@@ -1425,9 +1428,11 @@ five options each, with the subtext under each title.
 ### List card
 
 The page's title, its stat cards and the breadcrumb sit on the grey main area. Under them, the list's
-tabs, its search row and its table are one white card, with a 1 px border and 4 px corners. Scrolled
+tabs and search box (one row; a list without tabs has the search box in its toolbar), its toolbar and its table are
+one white card, with a 1 px border, 6 px corners and a light shadow
+(`0 1px 2px`, `--shadow-sm`). The title row's primary New button has the same corners and shadow. Scrolled
 up, the card sticks 12 px below the top of the main area and fills the visible height down to 16 px
-from the bottom: the title, summary and stat cards scroll away, and the card's tab row, search row
+from the bottom: the title, summary and stat cards scroll away, and the card's tab row, toolbar
 and the table's header row stay in view. Only the table's body scrolls inside the card, down and
 sideways; the page never scrolls sideways. The pinned columns, column resizing, the pager (at the foot
 of the card) and the bulk bar work as before. The loading lines and the empty states show inside the

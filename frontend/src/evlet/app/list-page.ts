@@ -385,7 +385,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   }
   // Clearing goes back to the tab the list opens on.
   const clearAll = () => batch(() => { named = null; filters.clear(); q.set(''); tab.set(home.peek()); page.set(1); });
-  const toolbar = Toolbar({ label: `${model.plural} tools`, left: [search, FilterChips(filters, ctx.links)],
+  // With list tabs, the search box ends the tab row, after More; the toolbar below keeps the filter chips and the count.
+  const tabRow = tabs ? html`<div class="ev-tab-row">${tabs}${search}</div>` : null;
+  const toolbar = Toolbar({ label: `${model.plural} tools`, left: [tabs ? null : search, FilterChips(filters, ctx.links)],
     right: [html`<span class="summary" aria-live="polite">${() => loading.get() ? 'Loading…' : total.get() === null ? '' : `${total.get()} ${total.get() === 1 ? model.label.toLowerCase() : model.plural.toLowerCase()}`}</span>`] });
 
   // Each measure is a card with an icon for its function, in its color= or else the next accent, with its trend line.
@@ -658,7 +660,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
         match(boardOnly, Object.fromEntries(['all', ...stateKeys].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${total.get()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
 
   const list = html`<div class="page ev-list" class:ev-list-narrow=${panelOpen} data-model=${name} aria-busy=${() => loading.get() ? 'true' : null}>${ctx.crumbBar?.()}${header}${when(() => !panelOpen.get(), () => strip)}<p class="muted ev-progress" role="status" hidden=${() => !progress.get()}>${progress}</p>
-    <div class="ev-list-card" class:ev-list-card-board=${() => mode.get() === 'board'}>${tabs}${toolbar}${content}</div>${when(() => !panelOpen.get(), () => bulk)}</div>` as HTMLElement;
+    <div class="ev-list-card" class:ev-list-card-board=${() => mode.get() === 'board'}>${tabRow}${toolbar}${content}</div>${when(() => !panelOpen.get(), () => bulk)}</div>` as HTMLElement;
   // The filter panel docks beside the list, inside the page: the list narrows, nothing covers it.
   const closeFilters = () => { filtering.set(false); queueMicrotask(() => filterButton.focus()); };
   const savedFilters = ctx.prefs.cell<SavedFilter[]>(`list.${name}.filters`, []);

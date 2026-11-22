@@ -219,9 +219,12 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   }, { label: 'Workspace', role: 'menu', className: 'ws-pop', align: 'left' });
   const wsLabel = () => current.get()?.label ?? appName;
   const wsTip = () => `Workspace: ${wsLabel()}`;
+  // The current workspace's icon on a small tile in its colour, before its name, as in its menu.
+  const wsTile = () => { const workspace = current.get(); return workspace
+    ? html`<span class=${`as-tile b-${workspace.tint ?? 'slate'}`} aria-hidden="true">${Icon(workspace.icon, { size: 'sm' })}</span>` : null; };
   const workspaceSwitch = () => html`<button type="button" class="app-switch" aria-haspopup="menu" aria-expanded="false" aria-label=${wsTip}
     on:click=${(event: MouseEvent) => workspaceMenu(event.currentTarget as HTMLElement)}
-    ref=${(el: HTMLElement) => tooltip(el, wsTip)}><span class="as-text"><b>${wsLabel}</b></span>${Icon('chevrons-up-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
+    ref=${(el: HTMLElement) => tooltip(el, wsTip)}>${wsTile}<span class="as-text"><b>${wsLabel}</b></span>${Icon('chevrons-up-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
   const appSwitch = workspaceSwitch();
   // The brand at the top bar's left, as on the sign-in page: the evlet.io lockup (its white-wordmark file in
   // dark themes); the collapsed sidebar shows the mark alone. The drawer's head draws the same brand.

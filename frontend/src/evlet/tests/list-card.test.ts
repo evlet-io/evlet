@@ -50,10 +50,17 @@ describe('the list card', () => {
     // The breadcrumb, the title and the stat cards come before the card and scroll away; the card holds the rest.
     const before = [...list.children].slice(0, [...list.children].indexOf(card)).map(child => child.className);
     expect(before.slice(0, 2)).toEqual(['crumbs page-crumbs', 'ph']);
-    // The tabs are pills in a row with their More button.
-    expect([...card.children].map(child => child.classList.contains('pill-row') ? 'tabs' : child.classList[0])).toEqual(
-      [...(card.querySelector(':scope > .pill-row > [role="tablist"]') ? ['tabs'] : []), 'toolbar', 'ev-list-body']);
-    expect(card.querySelector('.toolbar input[type="search"], .toolbar input')).not.toBeNull();
+    // The tab row comes first: the pill tabs with their More button, then the search box at its right end. The
+    // toolbar under it keeps the filter chips and the count, without a second search box.
+    expect([...card.children].map(child => child.classList[0])).toEqual(['ev-tab-row', 'toolbar', 'ev-list-body']);
+    const row = card.querySelector<HTMLElement>(':scope > .ev-tab-row')!;
+    expect([...row.children].map(child => child.className)).toEqual(['pill-row', 'search-field']);
+    expect(row.querySelector(':scope > .pill-row > [role="tablist"]')).not.toBeNull();
+    expect([...row.querySelector(':scope > .pill-row')!.children].map(child => child.classList[0])).toEqual(['tabs', 'tab-more']);
+    expect(row.querySelector(':scope > .search-field input[type="search"]')!.getAttribute('aria-label')).toBe('Search invoices');
+    expect(card.querySelectorAll('input[type="search"]')).toHaveLength(1);
+    expect(card.querySelector('.toolbar input')).toBeNull();
+    expect(card.querySelector('.toolbar .filters')).not.toBeNull();
     // The table, its pager, and the empty and loading states are inside the card's body.
     const body = card.querySelector<HTMLElement>(':scope > .ev-list-body')!;
     expect(body.querySelector(':scope > .table-wrap .dt')).not.toBeNull();
@@ -69,8 +76,30 @@ describe('the list card', () => {
     for (const tab of tabs.slice(1)) expect(tab.querySelector('.tab-dot')!.className).toMatch(/^tab-dot dot-(blue|green|amber|rose|violet|teal|slate)$/);
     expect(rule(STYLES, '.pill-tabs button.on')).toContain('background:var(--accent-soft)');
     expect(rule(STYLES, '.tab-more')).toContain('border:1px dashed var(--border-strong)');
-    const phones = SCREENS.slice(SCREENS.indexOf('@media (max-width:760px){\n  .ev-list-card > .toolbar'));
-    expect(phones).toContain('.ev-list-card > .toolbar{order:-1}');
+    const phones = SCREENS.slice(SCREENS.indexOf('@media (max-width:760px){\n  .ev-list-card > .ev-tab-row'));
+    expect(phones).toContain('.ev-list-card > .ev-tab-row{flex-wrap:wrap}');
+    expect(phones).toContain('.ev-tab-row > .search-field{order:-1;flex:1 1 100%;margin:8px 12px 0}');
+    expect(phones).toContain('.ev-tab-row > .search-field .input{width:100%}');
+    // A toolbar left with nothing to show on a phone (no filter chips; the count is hidden there) takes no room.
+    expect(phones).toContain('.ev-list-card > .ev-tab-row ~ .toolbar:not(:has(.filters *)){display:none}');
+  });
+
+  it('ends the tab row with the search box, 240 px wide and 8 px after More, and leaves the tabs their own padding', () => {
+    expect(rule(SCREENS, '.ev-list-card > .ev-tab-row')).toMatch(/display:flex;align-items:center;min-width:0;border-bottom:1px solid var\(--divider\)/);
+    // The pill row keeps its 8px 12px padding (More's measuring counts it), with 8 px before the search box.
+    expect(rule(SCREENS, '.ev-tab-row > .pill-row')).toMatch(/^flex:1;padding-right:8px;border-bottom:0;/);
+    expect(rule(STYLES, '.pill-row')).toContain('padding:8px 12px');
+    expect(rule(SCREENS, '.ev-tab-row > .search-field')).toMatch(/^flex:none;margin:0 12px 0 auto;/);
+    expect(rule(SCREENS, '.ev-tab-row > .search-field .input')).toMatch(/^width:240px;/);
+  });
+
+  it('gives the list card, and the title row\'s New button, the reference card\'s 6 px corners and light shadow', () => {
+    expect(rule(STYLES, ':root')).toContain('--r-card:6px');
+    expect(rule(STYLES, ':root')).toContain('--shadow-sm:0 1px 2px rgba(16,24,40,.05)');
+    const card = rule(SCREENS, '.ev-list-card');
+    expect(card).toContain('border-radius:var(--r-card)');
+    expect(card).toContain('box-shadow:var(--shadow-sm)');
+    expect(rule(SCREENS, '.ev-list > .ph .btn.primary')).toBe('border-radius:var(--r-card);box-shadow:var(--shadow-sm)');
   });
 
   it('sticks to the top of the list\'s scrolling area and fills its height; only the table scrolls inside', () => {
@@ -80,7 +109,7 @@ describe('the list card', () => {
     expect(card).toMatch(/height:calc\(100% \+ var\(--ev-pad-top\) - var\(--ev-card-top\)\)/);
     expect(card).toMatch(/background:var\(--surface\)/);
     expect(card).toMatch(/border:1px solid var\(--border\)/);
-    expect(card).toMatch(/border-radius:var\(--r-lg\)/);
+    expect(card).toMatch(/border-radius:var\(--r-card\)/);
     // The card clips what is wider than it; the table scrolls down and sideways in its own frame.
     expect(card).toMatch(/overflow:hidden/);
     expect(card).toMatch(/min-width:0/);
