@@ -12,11 +12,17 @@ def add_restart(commands):
     restart.add_argument('--timeout', type=float, default=30.0, help='Seconds to wait for /health after the restart (default: 30)')
 
 
+def yes_no():
+    """A [y/N] question in a terminal; None without one, so the command says how to go on without asking."""
+    from ..restart import yes_no
+    return yes_no(None, None)
+
+
 def run_restart(args, context):
-    from ..restart import restart
-    if not 1 <= args.timeout <= 3600:
-        raise ValueError('Use a --timeout between 1 and 3600 seconds')
-    if not restart(context.root, args.instance, service=args.service, check_only=args.check, yes=args.yes, timeout=args.timeout):
+    from ..core import restart_instance
+    confirm = None if args.yes or args.check else yes_no()
+    if not restart_instance(context.root, args.instance, service=args.service, check_only=args.check, yes=args.yes,
+                            confirm=confirm, timeout=args.timeout, capture=False, out=print).ok:
         raise SystemExit(1)
 
 
@@ -30,8 +36,9 @@ def add_upgrade(commands):
 
 
 def run_upgrade(args, context):
-    from ..upgrade import upgrade
-    if not upgrade(context.root, args.instance, to=args.to, service=args.service, yes=args.yes, all_instances=args.all_instances):
+    from ..core import upgrade_evlet
+    if not upgrade_evlet(context.root, args.instance, to=args.to, service=args.service, yes=args.yes,
+                         confirm=None if args.yes else yes_no(), all_instances=args.all_instances, capture=False, out=print).ok:
         raise SystemExit(1)
 
 

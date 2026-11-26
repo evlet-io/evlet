@@ -118,6 +118,11 @@ that exist today, at module or function level; it only shrinks the same way. Mos
 model-screen schema compiler in `evlet/ui/metadata.py` and `evlet/ui/scripts.py`, or the generic
 helpers in `evlet/cli/project.py`.
 
+The lifecycle work of the CLI (install, migrate, back up, restore, restart, upgrade, hosts) lives in
+`evlet/cli/core.py`, which takes confirmation as an argument and returns an `Outcome` instead of printing; the
+commands in `evlet/cli/commands/` print it and keep their prompts ([cli.md](cli.md#lifecycle-core)). Code that
+needs the same lifecycle steps calls that module from `evlet/cli/`, above the layers.
+
 Building a model class or a `Registry` runs steps that belong to higher layers (ledger options,
 state manager hooks, rule guards, sequences, measures, activities, API access). `evlet/models.py`
 lists them in `BUILD_ORDER`, the order they run in; each owning module registers its function with

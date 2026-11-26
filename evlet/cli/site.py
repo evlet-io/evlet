@@ -314,13 +314,13 @@ def describe(command):
     return shlex.join(command)
 
 
-def run_privileged(commands, run=None):
+def run_privileged(commands, run=None, out=print):
     import shutil
     run = run or subprocess.run
     if not shutil.which('systemctl') or not shutil.which('sudo'):
         raise ValueError('--apply needs systemd and sudo. Run the printed steps on the server yourself')
     for command in commands:
-        print('$ ' + describe(command))
+        out('$ ' + describe(command))
         if command[0] == 'install':
             # The text rendered in this process goes to root through a pipe, so nothing in deploy/ can be swapped in.
             run(['sudo', 'install', '-m', '644', '/dev/stdin', command[2]], input=command[3], text=True, check=True)

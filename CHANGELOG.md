@@ -31,6 +31,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   was made for another folder stops at startup and names `evlet instance new-id <name>`, which gives it its own.
 - **Controls Overview shows the instance id and project id** to admins on the Controls host.
 
+### Internal
+
+- **A lifecycle core.** `evlet/cli/core.py` holds what `evlet install`, `migrate`, `makemigration`, `backup`,
+  `restore`, `restart`, `upgrade`, `host`, `app`, `build` and `instance` do, as functions that take confirmation
+  as an argument, never read stdin or print, and return an `Outcome` with the steps, the printed lines, the backup
+  and the `apps.lock` state before and after ([docs/cli.md](docs/cli.md#lifecycle-core)). The commands call it, so
+  their output, prompts, flags and exit codes are unchanged. It is internal and not exported.
+
 ## 0.4.21 (22-11-2026)
 
 ### Upgrading to 0.4.21

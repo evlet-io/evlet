@@ -7,7 +7,6 @@ import tempfile
 import shlex
 import shutil
 import subprocess
-import sys
 
 from packaging.version import InvalidVersion, Version
 
@@ -49,13 +48,26 @@ for step in steps:
 def upgrade(root, name, *, to=None, service=None, yes=False, all_instances=False, unit_dir=None, run=None, which=None,
             interactive=None, ask=None, out=print):
     """Stage a release, plan and back up all affected instances, then publish it while services are stopped."""
+    from .restart import yes_no
+    confirm = None if yes else yes_no(interactive, ask)
+    return upgrade_project(root, name, to=to, service=service, yes=yes, confirm=confirm, all_instances=all_instances,
+                           unit_dir=unit_dir, run=run, which=which, out=out)
+
+
+def upgrade_project(root, name, *, to=None, service=None, yes=False, confirm=None, all_instances=False, unit_dir=None,
+                    run=None, which=None, out=print, capture=False, backups=None):
+    """upgrade without reading stdin: confirm(question) -> bool decides unless yes; None means no one can answer.
+
+    capture=True runs every command with its output captured and passed to out, so nothing reaches stdout.
+    backups, when given, is a dict that receives {instance: main backup file} as each backup is written."""
     root = Path(root).absolute()
     with file_lock(root / '.evlet-upgrade.lock'):
-        return _upgrade(root, name, to=to, service=service, yes=yes, all_instances=all_instances,
-                        unit_dir=unit_dir, run=run, which=which, interactive=interactive, ask=ask, out=out)
+        return _upgrade(root, name, to=to, service=service, yes=yes, all_instances=all_instances, unit_dir=unit_dir,
+                        run=run, which=which, confirm=confirm, out=out, capture=capture,
+                        backups={} if backups is None else backups)
 
 
-def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, which, interactive, ask, out):
+def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, which, confirm, out, capture, backups):
     run = run or subprocess.run
     if not (root / '.venv' / 'evlet-project.json').is_file():
         raise ValueError('This project has no .venv made by evlet setup. Upgrade Evlet with pip in its environment yourself')
@@ -80,7 +92,7 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
             raise ValueError(f'Evlet is installed from source at {source[0]}, so --to does not apply. '
                              f'Check out the version you want with git, then run evlet upgrade {name} again')
         return _from_source(root, name, names, source, service=service, yes=yes, unit_dir=unit_dir, run=run,
-                            which=which, interactive=interactive, ask=ask, out=out)
+                            which=which, confirm=confirm, out=out, capture=capture, backups=backups)
     requirement = allowed(before, to)
     units = Path(unit_dir or site.SYSTEMD_DIR)
     for item in names:
@@ -96,13 +108,12 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
             raise ValueError(f'Service {item}: {exc}') from None
     served = [item for item in names if services[item] is not None]
     if not yes:
-        interactive = sys.stdin.isatty() if interactive is None else interactive
-        if not interactive:
+        if confirm is None:
             out(f'No terminal to confirm the upgrade. Run evlet upgrade {name} --yes to upgrade without asking.')
             return False
     python = str(python_in(root))
     evlet = [python, '-P', '-m', 'evlet', '--project', str(root)]
-    step = _stepper(run, out)
+    step = _stepper(run, out, capture)
 
     live = root / '.venv'
     if live.is_symlink():
@@ -129,7 +140,7 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
             if step([staged_python, '-P', '-c', PLAN, str(root), item]) is None:
                 out(f'The migration plan for {item} failed. The project environment and services were left unchanged.')
                 return False
-        if not yes and (ask or input)(f'Stop, back up, migrate and restart {", ".join(names)} on Evlet {after}? [y/N] ').strip().lower() not in ('y', 'yes'):
+        if not yes and not confirm(f'Stop, back up, migrate and restart {", ".join(names)} on Evlet {after}? [y/N] '):
             out('Upgrade cancelled. The project environment and services were left unchanged.')
             return False
         stopped = []
@@ -140,7 +151,6 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
                 out('Stopping the services failed. The original environment remains installed.')
                 return False
             stopped.append(item)
-        backups = {}
         for item in names:
             backup = _backup_line(step([*evlet, 'backup', '--instance', item], capture=True))
             if not backup:
@@ -211,9 +221,10 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
         return True
 
 
-def _stepper(run, out):
-    """Run one command, print it, and answer its result, or None when it failed."""
+def _stepper(run, out, every=False):
+    """Run one command, print it, and answer its result, or None when it failed. every=True captures every command."""
     def step(command, *, capture=False):
+        capture = capture or every
         out('$ ' + shlex.join(command))
         try:
             result = run(command, capture_output=capture, text=True)
@@ -231,7 +242,7 @@ def _backup_line(saved):
     return next((line[len('Backup: '):].strip() for line in saved.stdout.splitlines() if line.startswith('Backup: ')), None) if saved else None
 
 
-def _from_source(root, name, names, source, *, service, yes, unit_dir, run, which, interactive, ask, out):
+def _from_source(root, name, names, source, *, service, yes, unit_dir, run, which, confirm, out, capture, backups):
     """Evlet runs from source (an editable install of a git clone, say): pip must not replace it, so the
     framework is left to git and only the instance steps run: stop, back up, migrate and restart."""
     place, editable = source
@@ -253,15 +264,14 @@ def _from_source(root, name, names, source, *, service, yes, unit_dir, run, whic
         services[item] = unit
     served = [item for item in names if services[item] is not None]
     if not yes:
-        interactive = sys.stdin.isatty() if interactive is None else interactive
-        if not interactive:
+        if confirm is None:
             out(f'No terminal to confirm the upgrade. Run evlet upgrade {name} --yes to upgrade without asking.')
             return False
         verbs = 'Stop, back up, migrate and restart' if served else 'Back up and migrate'
-        if (ask or input)(f'{verbs} {", ".join(names)}? [y/N] ').strip().lower() not in ('y', 'yes'):
+        if not confirm(f'{verbs} {", ".join(names)}? [y/N] '):
             out('Upgrade cancelled. Nothing was changed.')
             return False
-    step = _stepper(run or subprocess.run, out)
+    step = _stepper(run or subprocess.run, out, capture)
     evlet = [str(python_in(root)), '-P', '-m', 'evlet', '--project', str(root)]
     stopped = []
 
@@ -275,7 +285,6 @@ def _from_source(root, name, names, source, *, service, yes, unit_dir, run, whic
             out('Stopping the services failed. Nothing was changed.')
             return False
         stopped.append(item)
-    backups = {}
     for item in names:
         backups[item] = _backup_line(step([*evlet, 'backup', '--instance', item], capture=True))
         if not backups[item]:

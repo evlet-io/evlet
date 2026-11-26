@@ -922,6 +922,47 @@ changes while preserving operator-disabled state and history. Changing a legacy
 interval schedule's task, payload or interval needs a later explicit
 schedule-update API; unchanged schedules retain their due time and activation.
 
+### Lifecycle core
+
+The lifecycle commands are thin wrappers over `evlet/cli/core.py`, so a caller without a terminal (such as a later
+project endpoint) runs the same code as the CLI. The module is internal: it is not exported from `evlet` and may
+change within 0.4.x. Every function takes the project root first and returns an `Outcome`; none reads stdin or
+writes stdout.
+
+| Function | Command |
+| --- | --- |
+| `install_app(root, instance, app, *, trust, confirm, hosts='offer', ask, out)` | `evlet install` (`hosts`: `'offer'`, `'take'` for `--yes`, `'skip'` for `--no-host`) |
+| `migrate(root, instance, *, trust, confirm, recompute_posted, allow_destructive, allow_maintenance, out)` | `evlet migrate` |
+| `migration_plan(root, instance, *, trust, confirm, out)` | `evlet migrate --plan` |
+| `make_migration(root, app, instance, *, name, trust, confirm, out)` | `evlet makemigration` |
+| `backup_create(root, instance, *, to, with_files, out)` | `evlet backup` |
+| `backup_list(root, instance, *, out)` | the sets in `data/backups`, newest first |
+| `backup_restore(root, instance, source, *, yes, confirm, out)` | `evlet restore` |
+| `restart_instance(root, instance, *, service, check_only, yes, confirm, timeout, capture, out)` | `evlet restart` |
+| `upgrade_evlet(root, instance, *, to, service, yes, confirm, all_instances, capture, out)` | `evlet upgrade` |
+| `host_add`, `host_remove`, `host_list`, `host_check` | `evlet host add`, `remove`, `list`; `host_check` checks a host and its DNS and writes nothing |
+| `app_create`, `app_fetch`, `build`, `instance_create` | `evlet app NAME`, `evlet app --get`, `evlet build`, `evlet instance NAME` |
+
+`Outcome(ok, steps, messages, backup, before, after, value)` is a frozen dataclass. `messages` are the lines the
+command prints, in order; `out(line)`, when given, receives each one as it happens, which is how the CLI prints
+(`out=print`). `steps` are the stages it completed: the commands it ran (`sudo systemctl restart evlet-acme`) or
+names such as `backup`, `migrations`, `framework`, `restore` and `host <name>`. `backup` is the main file of a
+backup it wrote, `before` and `after` the instance's `apps.lock` state around the change, and `value` the
+function's own result (the written paths, the plan, the manifest).
+
+Confirmation is an argument. `yes=True` (or `trust=True` for app source) goes ahead; otherwise `confirm(question)`
+must return true, and without `confirm` the function refuses as the CLI does without a terminal. An error that
+stops a command is raised, the same exception and message the CLI prints; a command that ran but did not go ahead
+(a failed restart check, a declined or failed upgrade) returns `ok=False`. A declined `upgrade_evlet` is a plan
+only: it stages the release and plans every instance, and `messages` hold the plans. `capture=True`, the default,
+captures the output of `systemctl`, `pip` and the evlet subprocesses into `messages`; the CLI passes `False`
+so they write to the terminal.
+
+The instance lock still applies. `migrate`, `install_app` and `backup_restore` need the instance stopped (they
+take its exclusive lock); `upgrade_evlet` stops and restarts the services itself; `backup_create`,
+`migration_plan` and the restart checks take the shared lock a running server holds. `host_add` and `host_remove`
+with `apply=True` run `sudo` steps, which ask for a password in a terminal.
+
 ## Schedules
 
 ```python
