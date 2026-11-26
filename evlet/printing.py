@@ -664,7 +664,7 @@ def report_context(context, report, filters):
     """Applied filters and every row (page by page, up to MAX_REPORT_ROWS) of a report."""
     from .documents import settle
     from .fields import Boolean, Currency, Date as DateField, Decimal as DecimalField, Integer, Text as TextField
-    from .forms import form_draft
+    from .forms import form_draft, run_report
     from .ui.metadata import label_for
     draft = form_draft(report, context, filters)
     errors, _ = settle(context, draft, complete=True)
@@ -675,7 +675,7 @@ def report_context(context, report, filters):
     rows, offset, total = [], 0, None
     while total is None or offset < min(total, MAX_REPORT_ROWS):
         context.limit, context.offset = 100, offset
-        result = draft.run()
+        result = run_report(context, report, draft)
         if not isinstance(result, dict) or not isinstance(result.get('rows'), list) or type(result.get('total')) is not int:
             raise ValueError('Reports return a bounded rows/total result from context.list')
         total = result['total']
@@ -687,12 +687,16 @@ def report_context(context, report, filters):
             rows.append({column.name: python_value(types[column.type](), values.get(column.name)) for column in report.columns
                          if column.name in allowed})
         offset += len(result['rows'])
+    from .forms import resolve_units, resolved_columns
+    units = resolve_units(context, report, draft)
+    columns = resolved_columns(report, units)
+    # A total over a column whose unit this run could not work out is left out, as on screen.
     totals = {column.name: sum((row[column.name] for row in rows if isinstance(row[column.name], (int, Decimal))), Decimal(0))
-              for column in report.columns if column.total}
+              for column in columns if column.total and not (column.name in units and units[column.name] is None)}
     applied = [{'name': name, 'label': field.label or label_for(name), 'value': draft._values.get(name), 'field': field}
                for name, field in report.__declared_fields__.items() if draft._values.get(name) not in (None, '', ())]
     return {'report': {'title': report.title or report.__name__, 'filters': {item['name']: item['value'] for item in applied},
-                       'applied': applied, 'rows': rows, 'columns': report.columns, 'totals': totals, 'total': total or 0,
+                       'applied': applied, 'rows': rows, 'columns': columns, 'totals': totals, 'total': total or 0,
                        'truncated': (total or 0) > len(rows)}, 'definition': report}
 
 
@@ -1063,7 +1067,7 @@ class Compiler:
         if self.report is not None:
             from .fields import Boolean, Currency, Date as DateField, Decimal as DecimalField, Integer, Text as TextField
             types = {'text': TextField, 'integer': Integer, 'decimal': DecimalField, 'currency': Currency, 'date': DateField, 'boolean': Boolean, 'link': TextField}
-            declared = {column.name: column for column in self.report.columns}
+            declared = {column.name: column for column in self.context['report']['columns']}
             wanted = block.columns or tuple(Column(name) for name in declared)
             fields = {}
             for column in wanted:
@@ -1130,7 +1134,7 @@ class Compiler:
         rows = []
         for path, label in block.names:
             if self.report is not None:
-                declared = {column.name: column for column in self.report.columns}
+                declared = {column.name: column for column in self.context['report']['columns']}
                 field = self.table_field(declared[path])
                 value, row = self.context['report']['totals'].get(path), {}
                 label = label or declared[path].label or self.label(path, None, {})

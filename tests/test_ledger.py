@@ -16,7 +16,7 @@ from evlet import (AddField, AddIndex, Application, Boolean, Column, ConflictErr
 from evlet.auth import LocalAuth, User
 from evlet.database import Session
 from evlet.ledger import describe, lock_hash, table as ledger_table
-from evlet.periods import set_lock
+from evlet.periods import save_lock
 from evlet.sequences import Sequence
 from support import PASSWORD, client, http
 from test_rules_types import ALL
@@ -381,7 +381,7 @@ def test_closed_periods_refuse_dated_ledger_writes_with_the_trusted_override(poi
     app, _ = points
     aisha = member(app)
     with app.database.transaction() as tx:
-        set_lock(tx.connection, '', date(2026, 10, 31), ADMIN)
+        save_lock(tx.connection, '', date(2026, 10, 31), ADMIN)
     with pytest.raises(ValidationError, match='closed period'):
         with app.database.transaction() as tx:
             tx.insert_many(PointMove, [move(member=aisha), move(member=aisha, on_date=date(2026, 10, 31))])

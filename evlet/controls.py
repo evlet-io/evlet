@@ -902,7 +902,7 @@ class Controls:
     def set_period(self, user, body):
         """Set or clear one lock: {"scope": null or {"model", "id"}, "date": "YYYY-MM-DD" or null}. Admin only."""
         from datetime import date
-        from .periods import scope_key, set_lock
+        from .periods import save_lock, scope_key
         if user.role != 'admin':
             raise AccessError(403, 'Only an admin can change period locks.')
         checked_body(body, {'scope', 'date'}, 'Send scope and date.', exact=True)
@@ -927,7 +927,7 @@ class Controls:
                     raise ValidationError({'scope': 'That record does not exist.'}) from None
             key = scope_key(self.registry, target, record_id)
         with self.database.transaction() as tx:
-            set_lock(tx.connection, key, value, user)
+            save_lock(tx.connection, key, value, user)
 
     # ---------- users and roles ----------
 
@@ -1543,3 +1543,31 @@ def params(scope, *names):
 class _Probe:
     id, username, role, links = 0, 'probe', 'viewer', ()
 
+
+def set_period_lock(context, model, scope_id, value, reason):
+    """evlet.periods.set_lock: one lock set from trusted code, with the Periods page's rules (evlet/periods.py)."""
+    from datetime import date, datetime
+    from .periods import save_lock, scope_of
+    from .permissions import CALLER
+    if not hasattr(context, '_tx') or not hasattr(context, 'user'):
+        raise ValueError('Pass a document context (business.context(user), self.context): the audit row names its user')
+    if CALLER.get():
+        raise AccessError(403, 'Period locks are set from trusted code or in Controls, Periods')
+    if context.readonly:
+        raise AccessError(403, 'This context is read only')
+    if context.user is None:
+        raise ValueError('A document context needs a User: the audit row names who changed the lock')
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError('Give the reason for changing a period lock')
+    if value is not None and (type(value) is not date):
+        raise ValueError('A lock date is a datetime.date, or None to open every period')
+    session, key = scope_of(context, model, scope_id)
+    if not session.connection.table_exists('evlet_period_locks'):
+        raise ValueError('Period locks need Controls: evlet_period_locks does not exist')
+    row = session.connection.run(qb.select('evlet_period_locks', 'lock_date').where(scope=key)).one()
+    current = None if row is None else date.fromisoformat(row[0])
+    if current is not None and (value is None or value < current) and context.user.role != 'admin':
+        raise AccessError(403, 'Only an admin can move a period lock earlier or open closed periods')
+    before = save_lock(session.connection, key, value, context.user, reason.strip())
+    session._period_locks = None  # The next write in this transaction reads the locks again.
+    return None if before is None else date.fromisoformat(before)
