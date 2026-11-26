@@ -44,6 +44,7 @@ def run_setup(args, context):
     if not site.wanted(args):
         created = setup(directory, framework=args.framework)
         print(f'Project created: {created}')
+        print(site.project_line(created))
         print(f'Next: cd {created} && evlet app notes && evlet instance acme && evlet install notes --instance acme '
               '&& evlet dev --instance acme')
         return

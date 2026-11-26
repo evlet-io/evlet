@@ -123,6 +123,8 @@ def setup(directory, *, framework=None):
     try:
         (target / 'apps').mkdir()
         (target / 'instances').mkdir()
+        from .project import ensure_project
+        ensure_project(target)
         create_environment(target, framework)
     except BaseException:
         # target was exclusively created by this call; never remove an existing project.
