@@ -72,7 +72,7 @@ def test_the_step_renames_the_tables_in_place_and_keeps_every_row(tmp_path):
     entries, hashed = rows(path, 'evlet_journal'), rows(path, 'evlet_journal_hashed')
     assert len(entries) == 11 and hashed == [('order',), ('tally',)]
     database = Database(path, fixture.registry())
-    assert upgrade(database) == ['0016_activity', '0017_prompt_tickets'] and STEPS[-1].name == '0017_prompt_tickets'
+    assert upgrade(database) == ['0016_activity', '0017_prompt_tickets', '0018_instance_id'] and STEPS[-1].name == '0018_instance_id'
     database.close()
     # Same ids, hashes and chains under the new names; nothing is left under the old ones.
     assert rows(path, 'evlet_activity') == entries and rows(path, 'evlet_activity_hashed') == hashed
@@ -172,7 +172,7 @@ def test_an_app_migration_before_the_step_writes_to_the_renamed_table(tmp_path):
     assert rows(path, 'evlet_activity') == entries
     with database.transaction() as tx:
         tx.create(fixture.Tally, amount=3)
-    assert upgrade(database) == ['0016_activity', '0017_prompt_tickets']
+    assert upgrade(database) == ['0016_activity', '0017_prompt_tickets', '0018_instance_id']
     assert activity.verify(database) == (HASHED + 1, [])
     database.close()
 

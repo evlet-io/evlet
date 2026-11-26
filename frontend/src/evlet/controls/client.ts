@@ -116,7 +116,9 @@ export interface JobRow { id: number; task: string; actor: number | null; model:
 export interface Jobs { available: boolean; schedules: Schedule[]; jobs: JobRow[] }
 export interface CodeFile { file: string; code: string }
 export interface ControlsState {
-  instance: { name: string; host: string; evlet: string; version: number; slug: string | null; managed: boolean };
+  instance: { name: string; host: string; evlet: string; version: number; slug: string | null; managed: boolean;
+    /** The instance id and the project id (project.json); null outside a project or before they exist. */
+    id?: string | null; project?: string | null };
   me: { id: number; username: string; role: string };
   apps: AppInfo[];
   jobs: { failed: number };
