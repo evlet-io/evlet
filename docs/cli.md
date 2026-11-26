@@ -66,6 +66,12 @@ The steps run in this order, each through the code of its own command:
    ([below](#serve-a-site-on-a-domain-in-one-go)). With neither, it stops after
    installing and prints the command that starts the site.
 
+`--endpoint` gives the project an endpoint that runs its instances, with a portal and a project MCP; in
+development it then serves on 127.0.0.1:7999 and prints a sign-in link. `evlet setup --endpoint` without a folder
+adds one to the project you are in, and `--endpoint-host HOSTNAME` prepares it behind Caddy for a server
+([project endpoint](project-endpoint.md)). It cannot be combined with `--dev` or `--host`: the endpoint runs the
+instances.
+
 `--app` and `--get` take comma lists, can be repeated and can be combined. Git URLs
 follow the [fetch rules](#dependencies-and-git): HTTPS or `ssh://`, no passwords;
 write `ssh://git@github.com/co/crm.git`, not `git@github.com:co/crm.git`. `--trust`
@@ -85,12 +91,16 @@ exactly as before and refuses an existing folder.
 evlet setup myproject
 evlet setup myproject --app notes,crm --instance acme --dev
 evlet setup myproject --app notes --instance acme --host erp.example.com
+evlet project
+evlet project new-id
+evlet project mode production
 evlet app notes
 evlet app --get https://github.com/company/notes.git
 evlet app --list
 evlet build --trust
 evlet instance acme
 evlet instance --list
+evlet instance new-id acme
 evlet install notes --instance acme --trust
 evlet install site --instance acme --trust --yes
 evlet serve acme --port 8000
@@ -112,6 +122,7 @@ evlet backup --instance acme
 evlet restore instances/acme/data/backups/20261112T061500000000Z.sqlite3 --instance acme
 evlet routes acme
 evlet proxy acme --caddy --check
+evlet proxy --endpoint --caddy
 evlet host add acme www.example.com --root site.www --apply
 evlet host remove acme www.example.com --apply
 evlet host list acme
@@ -125,7 +136,7 @@ evlet playground --port 8000
 evlet docs --port 8001
 ```
 
-`evlet --help` lists the commands in groups: Start (`setup`, `app`, `instance`, `install`),
+`evlet --help` lists the commands in groups: Start (`setup`, `project`, `app`, `instance`, `install`),
 Develop (`dev`, `dev-link`, `playground`, `docs`, `build`), Change (`makemigration`, `migrate`,
 `upgrade`), Operate (`serve`, `restart`, `routes`, `proxy`, `host`, `link-user`, `jobs`,
 `ledger`, `backup`), Recover (`restore`, `users`, `controls`, `secrets`, `ids`, `activity`) and
@@ -143,9 +154,44 @@ one; the others always need the name. Giving two different names is refused.
 models, as on a first install, also when the instance already has other apps; the app's
 existing migrations are recorded without running (their seed steps run). It prints the app
 (`Tables created from the models of sales`) and that later changes need a migration. On a new
-instance the framework's own steps are summarised (`Framework tables: created (17 framework
+instance the framework's own steps are summarised (`Framework tables: created (18 framework
 migrations recorded)`); on an existing database each one that ran is listed. Applied app
 migrations are named as `notes 0001_changes`.
+
+### Project and instance ids
+
+Every project and every instance has an id, in the [record id](internal/record-identity.md) format:
+13 lowercase letters and digits such as `01hc1sd9vc1ye`, safe as a DNS label, ordered by time, with
+the creation date readable from it. They are made locally, so nothing here can promise they are
+unique across the world: two ids collide only when they are made in the same millisecond and draw
+the same 21 random bits. Evlet Cloud keeps the registry and refuses a duplicate when a project or
+instance registers with it.
+
+- **The project id** is in `project.json` at the project root: `{"id", "created", "mode"}`, with
+  `mode` `development` unless set otherwise. `evlet setup` writes it. A project made before project ids
+  gets one the first time any project command runs, which prints it once on stderr
+  (`Project id: 01hc1sd9vc1ye`). Commit `project.json` with the project: a clone has the same id on
+  purpose. Run `evlet project new-id` to give a fork its own id; its instances keep theirs. When the
+  project folder cannot be written (a service account that may only read it), commands run without
+  an id until its owner runs one.
+- **The instance id** is in the instance's database, in the one-row table `evlet_instance` that
+  framework step `0018_instance_id` adds, so an existing instance gets its id when it migrates.
+  Backups and restores keep it: a restore is the same instance. The row also names the instance
+  folder the id was made for.
+- **A copied folder.** When two instances of a project report the same id, the one whose id was
+  made for another folder refuses to serve and names the fix: `evlet instance new-id <name>` gives
+  it its own id (stop it first; other commands still work on it). A backup of one instance restored
+  into another is a copy in the same way.
+
+`evlet project` prints the project id, its creation date, mode, endpoint (its address and whether it
+answers, or `none`; see [project endpoint](project-endpoint.md)) and each instance with its id. `evlet instance --list` adds the id as a third column. Controls shows both
+ids on its Overview ([controls.md](controls.md)); they are never shown to signed-out visitors or
+on public hosts. `evlet project mode production|development` rewrites only the `mode` key of
+`project.json`; it is a shell command, and no HTTP route can change it. With an endpoint, `production`
+refuses until the endpoint has a public host and the owner has set up two-step sign-in.
+
+`evlet endpoint` serves the project endpoint and runs every instance as its child process; `evlet endpoint link`
+prints a new one-time sign-in link for the owner in development ([project endpoint](project-endpoint.md)).
 
 `python -m evlet` accepts the same commands. It drops the working directory from
 `sys.path` before loading apps, but modules Python imports at startup can still be
@@ -701,9 +747,13 @@ that is not a static or server frontend of an installed app. The instance needs 
 `host remove` takes a host out of `routes.py` and rewrites the Caddy file the same way. `host list`
 prints the primary host and each sub-host with its root frontend and sign-in realm.
 
+`--live` keeps the host as data instead of in `routes.py`: no restart, and the running instance
+serves it within a second once its DNS check passes. `host check`, `host disable` and
+`host enable` manage such hosts ([routing.md](routing.md#hosts-from-data)).
+
 With Caddy's on-demand TLS ([routing.md](routing.md#many-instances-on-one-server)) no Caddy file
 changes: Caddy asks the instance before it gets a certificate. Then only `routes.py` and a restart
-are needed:
+are needed (or `--live`, with neither):
 
 ```sh
 evlet host add acme www.example.com --root site.www --routes-only
@@ -772,6 +822,11 @@ app.example.com {
 `evlet proxy acme --caddy` prints this block for your hosts, after a global options block
 that turns on `strict_sni_host`. Put that block first in `/etc/caddy/Caddyfile`, or add its
 `servers :443 { strict_sni_host on }` lines to the global options block you have.
+
+With a [project endpoint](project-endpoint.md#caddy), skip the block per instance: `evlet proxy --endpoint --caddy`
+prints the one-time global options (the admin API on loopback and the endpoint's one on-demand TLS `ask`), and the
+endpoint adds every instance's hosts to Caddy through the admin API itself. `evlet proxy NAME --caddy` still prints
+an instance's own file, with a note on stderr.
 
 Caddy obtains the certificate and passes the original Host header, which must
 match `domain`. Then run:
@@ -886,6 +941,53 @@ Do not remove app source used by an instance. Calendar `@cron` schedules reconci
 changes while preserving operator-disabled state and history. Changing a legacy
 interval schedule's task, payload or interval needs a later explicit
 schedule-update API; unchanged schedules retain their due time and activation.
+
+### Lifecycle core
+
+The lifecycle commands are thin wrappers over `evlet/cli/core.py`, so a caller without a terminal (such as a later
+project endpoint) runs the same code as the CLI. The module is internal: it is not exported from `evlet` and may
+change within 0.4.x. Every function takes the project root first and returns an `Outcome`; none reads stdin or
+writes stdout.
+
+| Function | Command |
+| --- | --- |
+| `install_app(root, instance, app, *, trust, confirm, hosts='offer', ask, out)` | `evlet install` (`hosts`: `'offer'`, `'take'` for `--yes`, `'skip'` for `--no-host`) |
+| `migrate(root, instance, *, trust, confirm, recompute_posted, allow_destructive, allow_maintenance, out)` | `evlet migrate` |
+| `migration_plan(root, instance, *, trust, confirm, out)` | `evlet migrate --plan` |
+| `make_migration(root, app, instance, *, name, trust, confirm, out)` | `evlet makemigration` |
+| `backup_create(root, instance, *, to, with_files, out)` | `evlet backup` |
+| `backup_list(root, instance, *, out)` | the sets in `data/backups`, newest first |
+| `backup_restore(root, instance, source, *, yes, confirm, out)` | `evlet restore` |
+| `restart_instance(root, instance, *, service, check_only, yes, confirm, timeout, capture, out)` | `evlet restart` |
+| `upgrade_evlet(root, instance, *, to, service, yes, confirm, all_instances, capture, out, supervised)` | `evlet upgrade` (`supervised`: the project endpoint stopped the instances and starts them, so no systemd unit is used) |
+| `host_add`, `host_remove`, `host_list`, `host_check` | `evlet host add`, `remove`, `list`; `host_check` checks a host and its DNS and writes nothing |
+| `app_create`, `app_fetch`, `build`, `instance_create` | `evlet app NAME`, `evlet app --get`, `evlet build`, `evlet instance NAME` |
+| `app_update_plan(root, instance, app, ref, *, trust, confirm, out)` | the new commits of an app fetched from Git and the migration plan on them |
+| `app_update(root, instance, app, ref, *, trust, confirm, stop, start, healthy, out)` | plan, back up, stop, migrate, start, health check; the previous commit and the backup come back on a failure |
+
+`Outcome(ok, steps, messages, backup, before, after, value)` is a frozen dataclass. `messages` are the lines the
+command prints, in order; `out(line)`, when given, receives each one as it happens, which is how the CLI prints
+(`out=print`). `steps` are the stages it completed: the commands it ran (`sudo systemctl restart evlet-acme`) or
+names such as `backup`, `migrations`, `framework`, `restore` and `host <name>`. `backup` is the main file of a
+backup it wrote, `before` and `after` the instance's `apps.lock` state around the change, and `value` the
+function's own result (the written paths, the plan, the manifest).
+
+Confirmation is an argument. `yes=True` (or `trust=True` for app source) goes ahead; otherwise `confirm(question)`
+must return true, and without `confirm` the function refuses as the CLI does without a terminal. An error that
+stops a command is raised, the same exception and message the CLI prints; a command that ran but did not go ahead
+(a failed restart check, a declined or failed upgrade) returns `ok=False`. A declined `upgrade_evlet` is a plan
+only: it stages the release and plans every instance, and `messages` hold the plans. `capture=True`, the default,
+captures the output of `systemctl`, `pip` and the evlet subprocesses into `messages`; the CLI passes `False`
+so they write to the terminal.
+
+The instance lock still applies. `migrate`, `install_app` and `backup_restore` need the instance stopped (they
+take its exclusive lock); `upgrade_evlet` stops and restarts the services itself; `backup_create`,
+`migration_plan` and the restart checks take the shared lock a running server holds. `host_add` and `host_remove`
+with `apply=True` run `sudo` steps, which ask for a password in a terminal.
+
+When the project has an endpoint, each of these functions that changes something appends to its operation log as it
+starts and ends ([project endpoint](project-endpoint.md#the-operation-log)); `backup_list`, `migration_plan`,
+`host_list` and `host_check` only read and are not logged.
 
 ## Schedules
 

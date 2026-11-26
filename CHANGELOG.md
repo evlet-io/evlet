@@ -4,6 +4,107 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Upgrading
+
+- **Run `evlet migrate <instance>` once per instance.** Framework step `0018_instance_id` adds `evlet_instance`,
+  the instance id; serving refuses until it has run, as for any framework step. It writes nothing else.
+- **Commit `project.json`.** The first project command you run in an existing project writes it and prints the
+  new id once on stderr (`Project id: 01hc1sd9vc1ye`). A clone shares the id on purpose; a fork runs
+  `evlet project new-id`.
+- **`evlet instance --list` has a third column**, the instance id. A script that split its lines in two by tab
+  reads three fields now.
+- No renamed names, no app changes. A project with no endpoint behaves as before apart from the ids.
+- **A project endpoint is optional.** Nothing changes until you run `evlet setup --endpoint`. With one, the endpoint
+  runs the instances: stop and disable their `evlet-<instance>` units (or do not install them) so two processes do
+  not serve one instance, and use the portal or the project tools to restart them. `evlet restart` and
+  `evlet upgrade` from the shell still use systemd.
+- **Run `evlet migrate NAME` once.** The framework migration `0019_hosts` adds the `evlet_hosts` and
+  `evlet_hosts_version` tables; an instance refuses to serve until it is applied, as with every framework
+  step. Applications built on `Application` apply it when they start. Nothing else changes: `routes.py`, its
+  restart and its boot-time clash check work as before, and an instance with no hosts from data keeps the
+  route table it built at start.
+- `evlet.cli.proxy.check` and `server_addresses` keep their names and arguments; the per-host check moved
+  to `evlet.hosts.dns_status`, which the new host check job uses too.
+- **With an endpoint and Caddy, load the base config once.** Run `evlet setup --endpoint --endpoint-host HOST`
+  again (it writes `deploy/evlet-global.caddy` with the admin API and the one `ask`), or put the output of
+  `evlet proxy --endpoint --caddy` first in your Caddyfile, and reload Caddy. Then the instances' own Caddy files
+  are no longer needed. Set `"caddy_admin": null` in `.evlet/endpoint.json` to keep managing Caddy files yourself.
+  A project without an endpoint keeps today's `evlet proxy` files, unchanged.
+
+### Added
+
+- **Project and instance ids** ([docs/cli.md](docs/cli.md#project-and-instance-ids)), in the record id format:
+  13 lowercase Crockford base32 characters, DNS-label safe, time ordered. The project id lives in `project.json`
+  (`{"id", "created", "mode"}`), which `evlet setup` writes; the instance id lives in the instance database and
+  survives backups and restores. Ids are made locally, so their uniqueness is not promised; Evlet Cloud is the
+  registry and refuses a duplicate.
+- **`evlet project`** prints the project id, creation date, mode, endpoint (`none` for now) and each instance with
+  its id. `evlet project new-id` gives a fork its own id; `evlet project mode development|production` rewrites only
+  the `mode` key (shell only, no HTTP route).
+- **A copied instance folder refuses to serve.** When two instances of a project have the same id, the one whose id
+  was made for another folder stops at startup and names `evlet instance new-id <name>`, which gives it its own.
+- **Controls Overview shows the instance id and project id** to admins on the Controls host.
+- **The project endpoint** ([docs/project-endpoint.md](docs/project-endpoint.md)). `evlet setup myproject --endpoint`
+  (or `evlet setup --endpoint` in an existing project) makes `.evlet/project.sqlite3` with one owner account and
+  serves the endpoint on 127.0.0.1:7999 with a one-time sign-in link; `--endpoint-host project.example.com` prepares
+  it behind Caddy over HTTPS as the project's only systemd unit. `evlet endpoint` serves it and runs every instance as
+  a child process, restarted with backoff after a crash and stopped around operations that need the instance's
+  exclusive lock. The portal at `/` shows the project id and mode, the instances (id, host, version, apps, status,
+  health), the operation log with live output and the MCP address, with a button for each operate tool:
+  `project_status`, `operation_log`, `operation_status`, `instance_logs`, `instance_restart`, `instance_stop`,
+  `instance_start`, `backup_create`, `backup_list`, `backup_restore` (always asks), `app_update_plan`, `app_update`,
+  `app_install` (production: only from the `sources` in `project.json`), `evlet_upgrade_plan` and `evlet_upgrade`.
+  MCP clients reach the same tools at `/_/mcp`.
+- **The operation log.** With an endpoint, every lifecycle command (`install`, `migrate`, `makemigration`, `backup`,
+  `restore`, `restart`, `upgrade`, `host add`/`remove`, `app`, `build`, `instance`) appends a start and an end row to
+  project.db's append-only operation log, with its origin (`cli`, `portal` or `mcp`), arguments, result, times,
+  output and the `apps.lock` before it. `evlet project` prints the endpoint's address and whether it answers.
+- **`evlet project mode production` refuses** on a project with an endpoint until the endpoint has a public host and
+  the owner has set up two-step sign-in.
+- **Caddy through its admin API, with one TLS ask** ([docs/project-endpoint.md](docs/project-endpoint.md#caddy)).
+  A project endpoint with a public host keeps two objects in Caddy's running config, `@id` `evlet-<project id>`
+  (each instance's hosts to its port, with the `evlet proxy` refusals) and `evlet-<project id>-tls` (those hosts on
+  demand), pushed on start, when an instance starts or stops and when its hosts change, and restored after a
+  `caddy reload`. It never touches the rest of the config. A load Caddy refuses is logged and retried with backoff;
+  the endpoint keeps running and the portal and `project_status` (`caddy`) show the error. The endpoint's
+  `/_/tls-allowed` answers for its own host and every instance's hosts. `caddy_admin` in `.evlet/endpoint.json`
+  sets the admin address (loopback only; `null` turns it off).
+- **`evlet proxy --endpoint --caddy`** prints the one-time global options for that (admin API on loopback, the
+  on-demand `ask` pointing at the endpoint, strict SNI); `evlet setup --endpoint --endpoint-host` writes and installs
+  them as `deploy/evlet-global.caddy`.
+- **`GET /_/hosts` on every instance**, loopback only: the hosts it serves now, from the route table that answers
+  `/_/tls-allowed`.
+
+### Internal
+
+- **A lifecycle core.** `evlet/cli/core.py` holds what `evlet install`, `migrate`, `makemigration`, `backup`,
+  `restore`, `restart`, `upgrade`, `host`, `app`, `build` and `instance` do, as functions that take confirmation
+  as an argument, never read stdin or print, and return an `Outcome` with the steps, the printed lines, the backup
+  and the `apps.lock` state before and after ([docs/cli.md](docs/cli.md#lifecycle-core)). The commands call it, so
+  their output, prompts, flags and exit codes are unchanged. It is internal and not exported.
+- **The core updates apps from Git.** `app_update_plan` and `app_update` update an installed app from its recorded
+  Git source to a tag, branch or commit (plan, backup, stop, migrate, start, health check, restore on failure), and
+  `upgrade_evlet(..., supervised=True)` upgrades instances the endpoint runs without any systemd unit.
+- **Hosts from data, served without a restart** ([docs/routing.md](docs/routing.md#hosts-from-data)). A
+  sub-host can be a row of `evlet_hosts` (host, target frontend, status `pending`/`active`/`disabled`, the
+  last DNS check and its error) instead of a `Host(...)` in `routes.py`. Each request reads a version row in
+  the same statement as the Controls config version (no extra statement) and, when it moved, swaps in a
+  rebuilt route table with `LocalAuth`'s origins and realms, so a host added by the CLI, Controls or another
+  process is served from the next request. A host starts
+  pending and becomes active once its DNS points here (the `evlet proxy --check` logic, run every minute
+  by the framework job `evlet_host_check` on pending hosts). Only active hosts get 200 from
+  `/_/tls-allowed`. `routes.py` wins a clash; a row the table can't serve is skipped and listed under
+  Needs attention, never failing the boot. Changes are audited (area Hosts).
+- **`evlet host add --live`, `evlet host check`, `evlet host disable` and `evlet host enable`**; `evlet host
+  remove` and `evlet host list` cover hosts from data too. `evlet proxy` and the Caddy files `evlet host`
+  writes include active hosts from data; `--apply` reloads Caddy without restarting the service.
+- **Controls, Routing: Hosts from data** for admins (add, check, disable, enable, remove), with
+  `/api/_controls/routing/hosts`.
+- `evlet.hosts`: `list_hosts`, `add_host`, `remove_host`, `set_host_status` and `check_hosts` (the API the
+  CLI and Controls use), and `evlet.routing.with_hosts` / `target_error`.
+
 ## 0.4.21 (22-11-2026)
 
 ### Upgrading to 0.4.21

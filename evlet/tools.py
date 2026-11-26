@@ -511,6 +511,9 @@ class Tools:
             endpoint = next((item for item in self.services(user) if item.name == values['service']), None)
             if endpoint is None:
                 raise ConnectorError(404, 'Service not found')
+            if endpoint.method == 'GET':
+                # A GET service reads: its context is read only, as for the other read tools.
+                return self.call_service(request, endpoint, values.get('arguments', {}))
             return self.approved(user, origin, tool, values, run_id, client, {'service': endpoint.name, 'arguments': values.get('arguments', {})},
                                  lambda: self.call_service(request, endpoint, values.get('arguments', {})))
         if name == 'answer_prompt':

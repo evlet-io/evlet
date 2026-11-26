@@ -65,8 +65,11 @@ levels. For MCP clients:
 | --- | --- |
 | Read, search, totals, files | Run |
 | Create or change a record | Run; the client asks its user |
-| Move a document, app actions, business services | Approved in Evlet |
+| Move a document, app actions, business services (POST) | Approved in Evlet |
 | Delete, a move into a final step | Approved in Evlet |
+
+A business service declared with `method='GET'` reads (its context is read only), so `call_service` runs it
+without asking, as it runs the other read tools.
 
 An app action that only opens a prompt (its body is `return SomePrompt` or `return SomePrompt(...)`
 with constant arguments, or the action declares `inputs=`) writes nothing, so `run_action` runs it

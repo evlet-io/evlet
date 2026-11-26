@@ -102,8 +102,15 @@ export interface AppInfo {
 }
 export interface RouteRow { host: string; path: string; serves: string; realm: string; source: string; locked: boolean }
 export interface Routing {
-  rows: RouteRow[]; planned: string[]; hosts: Array<{ host: string; primary: boolean; sub: boolean; realm: string }>; primary: string | null;
+  rows: RouteRow[]; planned: string[]; hosts: Array<{ host: string; primary: boolean; sub: boolean; realm: string; data?: boolean }>; primary: string | null;
   proxy: { caddy: string; nginx: string } | null; proxy_error: string | null;
+  /** Hosts kept as data (evlet/hosts.py): served without a restart once their DNS check passes. */
+  data_hosts?: DataHost[];
+}
+export interface DataHost {
+  host: string; target: string; status: 'pending' | 'active' | 'disabled'; records: string; checked_at: number | null; error: string | null;
+  /** In the live route table now; false for an active row the table skipped, with the reason in problem. */
+  served: boolean; problem: string | null;
 }
 export interface HostCheck { host: string; records: string; dns: string | null; certificate: 'valid' | 'missing' | null; expires: number | null }
 export interface Schedule {
@@ -116,7 +123,9 @@ export interface JobRow { id: number; task: string; actor: number | null; model:
 export interface Jobs { available: boolean; schedules: Schedule[]; jobs: JobRow[] }
 export interface CodeFile { file: string; code: string }
 export interface ControlsState {
-  instance: { name: string; host: string; evlet: string; version: number; slug: string | null; managed: boolean };
+  instance: { name: string; host: string; evlet: string; version: number; slug: string | null; managed: boolean;
+    /** The instance id and the project id (project.json); null outside a project or before they exist. */
+    id?: string | null; project?: string | null };
   me: { id: number; username: string; role: string };
   apps: AppInfo[];
   jobs: { failed: number };
@@ -282,6 +291,12 @@ export class ControlsClient extends ApiClient implements KeysApi {
   }
   async routing() { return (await this.request<Routing>('GET', '/api/_controls/routing')).data; }
   // The server takes JSON bodies only: actions without data send {}.
+  async addHost(host: string, target: string) { return (await this.request<{ items: DataHost[] }>('POST', '/api/_controls/routing/hosts', { body: { host, target } })).data.items; }
+  async removeHost(host: string) { return (await this.request<{ items: DataHost[] }>('DELETE', `/api/_controls/routing/hosts/${encodeURIComponent(host)}`)).data.items; }
+  async checkHost(host: string) { return (await this.request<{ items: DataHost[] }>('POST', `/api/_controls/routing/hosts/${encodeURIComponent(host)}/check`, { body: {} })).data.items; }
+  async hostStatus(host: string, status: 'pending' | 'disabled') {
+    return (await this.request<{ items: DataHost[] }>('POST', `/api/_controls/routing/hosts/${encodeURIComponent(host)}/status`, { body: { status } })).data.items;
+  }
   async checkHosts() { return (await this.request<{ hosts: HostCheck[]; notes: string[]; ok: boolean }>('POST', '/api/_controls/routing/check', { body: {} })).data; }
   async jobs() { return (await this.request<Jobs>('GET', '/api/_controls/jobs')).data; }
   async setSchedule(name: string, active: boolean) { return (await this.request<Jobs>('POST', `/api/_controls/jobs/schedules/${name}`, { body: { active } })).data; }

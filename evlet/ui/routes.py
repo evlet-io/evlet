@@ -12,12 +12,14 @@ from ..identity import path_id
 
 def dispatch(application, scope):
     """Return a UI response or None when the core application owns the route."""
-    from ..app import HTTPError, TLS_CHECK
+    from ..app import HOSTS_LIST, HTTPError, TLS_CHECK
 
     path, method = scope['path'], scope['method']
     host = dict(scope.get('headers', [])).get(b'host', b'')
     if path == TLS_CHECK:
         return _tls_allowed(application, scope)
+    if path == HOSTS_LIST:
+        return _hosts_list(application, scope)
     if not path.startswith('/api/') and method == 'GET':
         # A public host's pages are opened from search results and other sites' links (Sec-Fetch-Site:
         # cross-site); they hold no session or data, so only the Host check applies (RouteTable.public).
@@ -236,12 +238,20 @@ def _server(application, scope, host, definition, rest, config, user):
     return result.status, Download(body), [(b'content-type', result.content_type.encode()), (b'content-security-policy', CSP.encode())]
 
 
+def _loopback(application, scope):
+    """Whether the request comes from this server itself, read through the trusted proxies as auth reads it."""
+    try:
+        peer = application.business.auth.client_address(scope) if application.business else (scope.get('client') or ('',))[0]
+        return ipaddress.ip_address(peer).is_loopback
+    except ValueError:
+        return False
+
+
 def _tls_allowed(application, scope):
     """Caddy on-demand TLS asks here before it requests a certificate: 200 only for this instance's hosts."""
     from ..app import HTTPError
+    loopback = _loopback(application, scope)
     try:
-        peer = application.business.auth.client_address(scope) if application.business else (scope.get('client') or ('',))[0]
-        loopback = ipaddress.ip_address(peer).is_loopback
         query = parse_qs(scope.get('query_string', b'').decode('ascii'), strict_parsing=True, max_num_fields=1)
     except (ValueError, UnicodeError):
         loopback, query = False, {}
@@ -251,3 +261,20 @@ def _tls_allowed(application, scope):
     if not application.routes.primary or domain not in application.routes.hosts():
         raise HTTPError(404, 'Not served here')
     return 200, {'allowed': domain}, []
+
+
+def _hosts_list(application, scope):
+    """The hosts this instance serves now, for the project endpoint's Caddy routes: the primary host, the sub-hosts of
+    routes.py and the active hosts from data, each with whether it is a sub-host and a public one. Loopback only,
+    like /_/tls-allowed; the same route table answers both, so the two never disagree."""
+    from ..app import HTTPError
+    if scope['method'] != 'GET' or not _loopback(application, scope):
+        raise HTTPError(404, 'Route not found')
+    live = getattr(application.business, 'live_routes', None) if application.business else None
+    if live is not None:
+        live.refresh()  # one indexed read: a host made active a moment ago is listed now
+    routes = application.routes
+    if not routes.primary:
+        return 200, {'hosts': []}, []
+    subs = set(routes.sub_hosts())
+    return 200, {'hosts': [{'host': host, 'sub': host in subs, 'public': routes.public(host)} for host in routes.hosts()]}, []

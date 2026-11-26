@@ -33,6 +33,8 @@ OIDC_PATHS = ('/_/oidc/start', '/_/oidc/callback', '/_/oidc/finish')
 PUBLIC_PATHS = MCP_PATHS + MAIL_PATHS + OIDC_PATHS
 # The Caddy on-demand TLS check answers loopback callers only; the proxy refuses it from outside.
 TLS_CHECK = '/_/tls-allowed'
+# The hosts this instance serves, for the project endpoint's Caddy routes (evlet/cli/caddy.py); loopback only.
+HOSTS_LIST = '/_/hosts'
 
 
 def request_body_limit(path, image_bytes=None):
@@ -138,6 +140,7 @@ class Application:
         self.registry = database.registry
         if auth is None and (policy is not None or children or attachments or storage is not None or jobs is not None or events is not None):
             raise ValueError("Business features require authentication")
+        self.live_routes = None
         self.business = None if auth is None else Business(database, auth, policy=policy, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
             from .routing import authority
@@ -156,6 +159,9 @@ class Application:
             from .printing import Prints
             self.business.prints = Prints(self.business, prints)
             self.business.controls.routes = self.routes
+            # Sub-hosts from evlet_hosts join the table without a restart (evlet.hosts).
+            from .hosts import LiveRoutes
+            self.live_routes = self.business.live_routes = LiveRoutes(self)
             for connector in connectors:
                 self.business.connectors.register('app', connector)
             # Secrets are sealed with a key outside the database: EVLET_SECRET_KEY or secret_key, shared with
@@ -266,7 +272,7 @@ class Application:
                     await self._eva_stream(scope, receive, send)
                     return
                 body = None
-                internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/')) and scope['path'] != TLS_CHECK
+                internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/')) and scope['path'] not in (TLS_CHECK, HOSTS_LIST)
                 if internal:
                     # OAuth and the remote MCP endpoint read their own bodies (JSON or form), at most 64 KiB like /api.
                     data = bytearray()
@@ -726,6 +732,8 @@ class Application:
         upgrade(self.database, apply=not self.managed_framework)
         if self.business:
             self.business.initialize()
+        if self.live_routes is not None:
+            self.live_routes.refresh(force=True)
 
     def stop(self):
         """Stop admission and end live streams before server shutdown. Safe from any thread."""

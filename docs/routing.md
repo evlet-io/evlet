@@ -373,6 +373,66 @@ belong to the desk shell at `/`, which serves the host root.
 `LocalAuth(origins=table.origins(), realms=table.realms())` takes its hosts and realms
 from the table.
 
+## Hosts from data
+
+`routes.py` is read once at start, and a clash there fails the boot. A sub-host can also be
+kept as data, in the framework table `evlet_hosts` (added by the framework migration
+`0019_hosts`), and served without a restart:
+
+```sh
+evlet host add acme www.acme.com --root site.www --live
+```
+
+- **Sub-hosts only.** The primary host and `routes.py` stay in code, and code wins a clash: a
+  row for the primary host or for a host `routes.py` lists is skipped. A host from data leaves
+  its frontend's paths on the primary host as they are (like `Host(..., also_on_primary=True)`),
+  so adding or removing one never moves a path. It gets the frontend's sign-in realm and API
+  scopes like a `routes.py` sub-host. While the instance has no domain, hosts from data are
+  `.localhost` names, as in `routes.py`.
+- **Each row** holds the host, its target, a status (`pending`, `active` or `disabled`), what
+  the last DNS check found, when it ran, and its error. The target is a frontend id such as
+  `site.www` (a static or server frontend). A target without a dot is a site name, kept for
+  instance sites in a later release; until then such a row is refused.
+- **Activation.** A host starts `pending`. It becomes `active` once its DNS points here, by the
+  same check as `evlet proxy --check` (with the address saved in `deploy/server.json` when there
+  is one). `evlet host check` runs it at once; the framework job `evlet_host_check` runs it on
+  pending hosts every minute, scheduled once the instance has a host from data. A check that
+  fails later keeps an active host active and records the error, so a resolver hiccup never
+  takes a site down; `evlet host disable` stops serving one.
+- **Only active hosts are served**, and only they get 200 from `/_/tls-allowed`, so Caddy's
+  on-demand TLS gets a certificate for a host once its DNS check passed and never for a pending
+  or disabled one.
+- **No restart.** Each change bumps a version row (`evlet_hosts_version`). Every request already
+  reads the Controls config version, and the same statement reads this row, so it costs no extra
+  statement; when it moved, the process rebuilds its `RouteTable` from the
+  code table plus the active rows (`evlet.routing.with_hosts`) and swaps it in, with the origins,
+  Host check and realms of `LocalAuth`. A host added by the CLI, a job or another process is
+  served from that process's next request. An instance with no hosts from data keeps the table it built at
+  start.
+- **A bad row never fails the boot.** A row the table can't serve (its app was removed, its
+  frontend became an evlet frontend, `routes.py` took the host) is skipped, logged, and listed
+  under Needs attention in Controls until it is fixed or removed.
+- **Writes are audited** in the audit log (area Hosts), with the account, `cli` or `system`
+  (the check job).
+
+| Command | What it does |
+|---|---|
+| `evlet host add NAME HOST --root APP.FRONTEND --live [--ip ADDR] [--apply]` | Add a pending host and check its DNS at once |
+| `evlet host check NAME [HOST ...] [--ip ADDR] [--apply]` | Check hosts from data (default: all but disabled) |
+| `evlet host disable NAME HOST` / `evlet host enable NAME HOST` | Stop serving a host / set it back to pending |
+| `evlet host remove NAME HOST [--apply]` | Remove a host from data (or from `routes.py` when it lists the host) |
+| `evlet host list NAME` | The `routes.py` hosts, then the hosts from data with their status |
+
+With Caddy's on-demand TLS ([below](#many-instances-on-one-server)) nothing else is needed.
+With a Caddy site per host, `evlet proxy` and the files `evlet host` writes include the active
+hosts from data like `routes.py` sub-hosts; `--apply` on `host add --live`, `host check` and
+`host remove` writes the site again and reloads Caddy without restarting the service.
+
+Controls, Routing lists the hosts from data for admins, who can add, check, disable, enable and
+remove them there (`/api/_controls/routing/hosts`, admin only). The functions behind both are
+`list_hosts`, `add_host`, `remove_host`, `set_host_status` and `check_hosts` in `evlet/hosts.py`;
+each takes the application's `Business` and an `actor` name.
+
 ## `evlet routes`
 
 ```text
@@ -497,10 +557,16 @@ https:// {
 ```
 
 With on-demand TLS, adding a host needs no Caddy change: run
-`evlet host add acme www.acme.com --root site.www --routes-only`, which only edits `routes.py`, then
-restart the instance. Caddy asks `/_/tls-allowed` on the first visit and gets the certificate then.
+`evlet host add acme www.acme.com --root site.www --live`, which keeps the host as data and needs no
+restart ([Hosts from data](#hosts-from-data)), or `--routes-only`, which only edits `routes.py`, then
+restart the instance. Caddy asks `/_/tls-allowed` on the first visit and gets the certificate then;
+a host from data gets 200 there only once it is active.
 Add the `strict_sni_host` global option to this Caddyfile too.
 
 Caddy takes one `ask` URL, so with several instances on different ports, keep one site
-block per instance (the `evlet proxy` output) or put a small script in front that asks
-each instance in turn.
+block per instance (the `evlet proxy` output), or give the project an endpoint: it answers the one
+ask for every instance and adds each instance's hosts to Caddy through its admin API
+([project-endpoint.md](project-endpoint.md#caddy)). For that, each instance also answers
+`GET /_/hosts` on loopback with the hosts it serves now (primary, `routes.py` sub-hosts and active
+hosts from data), from the same route table as `/_/tls-allowed`; the `evlet proxy` output refuses it
+from outside like every internal `/_/` path.

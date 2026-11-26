@@ -146,6 +146,8 @@ so the step drops them and makes them again as `evlet_activity_record` and `evle
 `journal` operation name `activity` instead. No hash covers a table name, so every chain verifies as before.
 `evlet migrate` also renames the tables before app migrations run, since a `Recompute` or a ledger write in
 `RunData` adds entries; the step then finds them renamed.
+`0018_instance_id` adds `evlet_instance`, one row with the instance id, the instance folder it was made for and
+when ([cli.md](cli.md#project-and-instance-ids)). It writes nothing else.
 Steps never run while an instance is served.
 `evlet migrate acme --plan` lists the pending ones without writing anything. If a step fails, the staged copy is
 discarded and the database and lock stay as they were; restore the earlier Evlet

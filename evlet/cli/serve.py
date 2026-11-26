@@ -234,7 +234,7 @@ def development_factory():
     from ..devlink import DevSignIn
     path = child(root, 'instances', name)
     show_source_paths()
-    runtime = ManagedRuntime(lambda: load_runtime(root, name, port=port, development=True),
+    runtime = ManagedRuntime(lambda: load_runtime(root, name, port=port, development=True, serving=True),
                              lambda: instance_guard(path, serving=True), jobs=True, debug=os.environ.get('EVLET_CLI_DEBUG') == '1',
                              development=True, retry_key=lambda: data_state(path))
     # Development only: one-time sign-in links at /_dev/signin. serve() below never adds them.
@@ -395,7 +395,7 @@ def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=Fa
     else:
         if (hint := administrator_hint(path, name)) is not None:
             print(hint, flush=True)
-        application = ManagedRuntime(lambda: load_runtime(root, name, port=port, public=public),
+        application = ManagedRuntime(lambda: load_runtime(root, name, port=port, public=public, serving=True),
                                      lambda: instance_guard(path, serving=True), jobs=jobs, debug=debug)
         tls = {'ssl_certfile': str(ssl_certfile), 'ssl_keyfile': str(ssl_keyfile)} if ssl_certfile else {}
         run_server(application, host=host, port=port, lifespan='on', proxy_headers=False, **tls)
