@@ -13,7 +13,7 @@ Recorded 2026-11-26 by `docs/internal/project_mcp_demo.py` against a real `evlet
 On the server, the owner set a password and listed tools that need no approval in `.evlet/endpoint.json` (`never_ask`: app_create, file_write, instance_create, app_install, instance_start, makemigration, migrate, tests_run, instance_restart, app_update). app_update is listed too: production ignores that for it.
 
 
-The client registered, the owner approved it on the consent page, and the code was exchanged: a Bearer token for http://127.0.0.1:45689/_/mcp.
+The client registered, the owner approved it on the consent page, and the code was exchanged: a Bearer token for http://127.0.0.1:47831/_/mcp.
 
 ```json
 {
@@ -175,8 +175,8 @@ The client registered, the owner approved it on the consent page, and the code w
    "content": [
     {
      "type": "text",
-     "text": "{\"services\":[{\"name\":\"project_status\",\"description\":\"The project at a glance: its id, mode and endpoint, the MCP address, and each instance with its id, host,\\nEvlet version, installed apps, process status and health. Also the operation running now, if any.\",\"method\":\"GET\",\"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{},\"required\":[]}},{\"name\":\"operation_log\",\"description\":\"The newest operations first: kind, instance, origin (portal, mcp or cli), result, start and end times and\\narguments. Pass before (an operation id) for older ones. Read one operation's output with operation_status.\",\"method\":\"GET\",\"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"limit\":{\"type\":\"integer\"},\"before\":{\"type\":\"integer\"}},\"required\":[]}},{\"name\":\"operation_status\",\"description\":\"One operation with its output lines: live while it runs (result 'running'), then as logged. result is\\n'ok', 'failed', or 'started' for one run by another process (the CLI) that has not ended or was interrupted.\",\"method\":\"GET\",\"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"operation\":{\"type\":\"integer\"}},\"required\":[\"operation\"]}},{\"name\":\"instance_logs\",\"description\":\"The last lines an instance's process printed, kept by the endpoint since it started (2,000 at most). They\\ncan hold values from records and se
-... [31771 more characters trimmed]
+     "text": "{\"services\":[{\"name\":\"project_status\",\"description\":\"The project at a glance: its id, mode and endpoint, the MCP address, and each instance with its id, host,\\nEvlet version, installed apps, process status and health. Also the operation running now, if any, and caddy:\\nwhether the endpoint's last push of routes to Caddy's admin API worked (null without one).\",\"method\":\"GET\",\"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{},\"required\":[]}},{\"name\":\"operation_log\",\"description\":\"The newest operations first: kind, instance, origin (portal, mcp or cli), result, start and end times and\\narguments. Pass before (an operation id) for older ones. Read one operation's output with operation_status.\",\"method\":\"GET\",\"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"limit\":{\"type\":\"integer\"},\"before\":{\"type\":\"integer\"}},\"required\":[]}},{\"name\":\"operation_status\",\"description\":\"One operation with its output lines: live while it runs (result 'running'), then as logged. result is\\n'ok', 'failed', or 'started' for one run by another process (the CLI) that has not ended or was interrupted.\",\"method\":\"GET\",\"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"operation\":{\"type\":\"integer\"}},\"required\":[\"operation\"]}},{\"name\":\"instance_logs\",\"description\":\"The last lines an instance's process pr
+... [31978 more characters trimmed]
 ```
 
 list_services offers 35 project tools in development: project_status, operation_log, operation_status, instance_logs, instance_restart, instance_stop, instance_start, backup_create, backup_list, backup_restore, app_update_plan, app_update, app_install, evlet_upgrade_plan, evlet_upgrade, host_add, host_remove, host_check, files_list, file_read, file_write, file_delete, app_create, app_fetch, makemigration, migrate, build, tests_run, instance_create, instance_delete, controls_override_set, settings_set, site_files_write, site_publish, site_rollback.
@@ -256,7 +256,7 @@ list_services offers 35 project tools in development: project_status, operation_
    "content": [
     {
      "type": "text",
-     "text": "{\"id\":1,\"kind\":\"app_create\",\"instance\":\"\",\"origin\":\"mcp\",\"arguments\":{\"name\":\"notes\"},\"started\":\"2026-11-26T18:24:46Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:24:46Z\",\"output\":[\"App created: /tmp/evlet-demo-i1jex0ps/demo/apps/notes\"],\"before\":null,\"error\":\"\"}"
+     "text": "{\"id\":1,\"kind\":\"app_create\",\"instance\":\"\",\"origin\":\"mcp\",\"arguments\":{\"name\":\"notes\"},\"started\":\"2026-11-26T18:41:11Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:11Z\",\"output\":[\"App created: /tmp/evlet-demo-pr52clv0/demo/apps/notes\"],\"before\":null,\"error\":\"\"}"
     }
    ],
    "structuredContent": {
@@ -267,11 +267,11 @@ list_services offers 35 project tools in development: project_status, operation_
     "arguments": {
      "name": "notes"
     },
-    "started": "2026-11-26T18:24:46Z",
+    "started": "2026-11-26T18:41:11Z",
     "result": "ok",
-    "finished": "2026-11-26T18:24:46Z",
+    "finished": "2026-11-26T18:41:11Z",
     "output": [
-     "App created: /tmp/evlet-demo-i1jex0ps/demo/apps/notes"
+     "App created: /tmp/evlet-demo-pr52clv0/demo/apps/notes"
     ],
     "before": null,
     "error": ""
@@ -499,7 +499,7 @@ list_services offers 35 project tools in development: project_status, operation_
    "content": [
     {
      "type": "text",
-     "text": "{\"id\":5,\"kind\":\"instance_create\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"name\":\"acme\"},\"started\":\"2026-11-26T18:24:47Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:24:47Z\",\"output\":[\"Instance created: /tmp/evlet-demo-i1jex0ps/demo/instances/acme\",\"acme will serve on 127.0.0.1:8000\"],\"before\":null,\"error\":\"\"}"
+     "text": "{\"id\":5,\"kind\":\"instance_create\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"name\":\"acme\"},\"started\":\"2026-11-26T18:41:12Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:12Z\",\"output\":[\"Instance created: /tmp/evlet-demo-pr52clv0/demo/instances/acme\",\"acme will serve on 127.0.0.1:8000\"],\"before\":null,\"error\":\"\"}"
     }
    ],
    "structuredContent": {
@@ -510,11 +510,11 @@ list_services offers 35 project tools in development: project_status, operation_
     "arguments": {
      "name": "acme"
     },
-    "started": "2026-11-26T18:24:47Z",
+    "started": "2026-11-26T18:41:12Z",
     "result": "ok",
-    "finished": "2026-11-26T18:24:47Z",
+    "finished": "2026-11-26T18:41:12Z",
     "output": [
-     "Instance created: /tmp/evlet-demo-i1jex0ps/demo/instances/acme",
+     "Instance created: /tmp/evlet-demo-pr52clv0/demo/instances/acme",
      "acme will serve on 127.0.0.1:8000"
     ],
     "before": null,
@@ -598,7 +598,7 @@ list_services offers 35 project tools in development: project_status, operation_
    "content": [
     {
      "type": "text",
-     "text": "{\"id\":7,\"kind\":\"app_install\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"instance\":\"acme\",\"source\":\"notes\"},\"started\":\"2026-11-26T18:24:47Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:24:50Z\",\"output\":[\"Instance acme: installed notes\",\"Tables created from the models of notes. After this, every model change needs a migration: evlet makemigration APP --instance acme\",\"Applied migrations: none; schema is current\",\"Framework tables: created (20 framework migrations recorded)\"],\"before\":{\"apps\":{}},\"error\":\"\"}"
+     "text": "{\"id\":7,\"kind\":\"app_install\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"instance\":\"acme\",\"source\":\"notes\"},\"started\":\"2026-11-26T18:41:12Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:15Z\",\"output\":[\"Instance acme: installed notes\",\"Tables created from the models of notes. After this, every model change needs a migration: evlet makemigration APP --instance acme\",\"Applied migrations: none; schema is current\",\"Framework tables: created (20 framework migrations recorded)\"],\"before\":{\"apps\":{}},\"error\":\"\"}"
     }
    ],
    "structuredContent": {
@@ -610,9 +610,9 @@ list_services offers 35 project tools in development: project_status, operation_
      "instance": "acme",
      "source": "notes"
     },
-    "started": "2026-11-26T18:24:47Z",
+    "started": "2026-11-26T18:41:12Z",
     "result": "ok",
-    "finished": "2026-11-26T18:24:50Z",
+    "finished": "2026-11-26T18:41:15Z",
     "output": [
      "Instance acme: installed notes",
      "Tables created from the models of notes. After this, every model change needs a migration: evlet makemigration APP --instance acme",
@@ -701,7 +701,7 @@ list_services offers 35 project tools in development: project_status, operation_
    "content": [
     {
      "type": "text",
-     "text": "{\"id\":9,\"kind\":\"instance_start\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"instance\":\"acme\"},\"started\":\"2026-11-26T18:24:51Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:24:52Z\",\"output\":[\"acme: running on port 8000\"],\"before\":{\"apps\":{\"notes\":{\"commit\":null,\"sha256\":\"f34f220c617748d0a8f3baec2023af70605e78c21e0fb6b642d8e79c74b700d4\",\"source\":\"apps/notes\",\"version\":\"0.1.0\"}},\"evlet\":{\"schema\":\"0021_sites\",\"version\":\"0.4.21\"}},\"error\":\"\"}"
+     "text": "{\"id\":9,\"kind\":\"instance_start\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"instance\":\"acme\"},\"started\":\"2026-11-26T18:41:16Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:17Z\",\"output\":[\"acme: running on port 8000\"],\"before\":{\"apps\":{\"notes\":{\"commit\":null,\"sha256\":\"f34f220c617748d0a8f3baec2023af70605e78c21e0fb6b642d8e79c74b700d4\",\"source\":\"apps/notes\",\"version\":\"0.1.0\"}},\"evlet\":{\"schema\":\"0021_sites\",\"version\":\"0.4.21\"}},\"error\":\"\"}"
     }
    ],
    "structuredContent": {
@@ -712,9 +712,9 @@ list_services offers 35 project tools in development: project_status, operation_
     "arguments": {
      "instance": "acme"
     },
-    "started": "2026-11-26T18:24:51Z",
+    "started": "2026-11-26T18:41:16Z",
     "result": "ok",
-    "finished": "2026-11-26T18:24:52Z",
+    "finished": "2026-11-26T18:41:17Z",
     "output": [
      "acme: running on port 8000"
     ],
@@ -861,7 +861,7 @@ list_services offers 35 project tools in development: project_status, operation_
    "content": [
     {
      "type": "text",
-     "text": "{\"id\":13,\"kind\":\"makemigration\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"app\":\"notes\",\"instance\":\"acme\",\"name\":\"tag\"},\"started\":\"2026-11-26T18:24:53Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:24:53Z\",\"output\":[\"Wrote /tmp/evlet-demo-i1jex0ps/demo/apps/notes/migrations/m0001_tag.py\",\"Review it, then run evlet migrate acme.\"],\"before\":null,\"error\":\"\"}"
+     "text": "{\"id\":13,\"kind\":\"makemigration\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"app\":\"notes\",\"instance\":\"acme\",\"name\":\"tag\"},\"started\":\"2026-11-26T18:41:18Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:19Z\",\"output\":[\"Wrote /tmp/evlet-demo-pr52clv0/demo/apps/notes/migrations/m0001_tag.py\",\"Review it, then run evlet migrate acme.\"],\"before\":null,\"error\":\"\"}"
     }
    ],
    "structuredContent": {
@@ -874,11 +874,11 @@ list_services offers 35 project tools in development: project_status, operation_
      "instance": "acme",
      "name": "tag"
     },
-    "started": "2026-11-26T18:24:53Z",
+    "started": "2026-11-26T18:41:18Z",
     "result": "ok",
-    "finished": "2026-11-26T18:24:53Z",
+    "finished": "2026-11-26T18:41:19Z",
     "output": [
-     "Wrote /tmp/evlet-demo-i1jex0ps/demo/apps/notes/migrations/m0001_tag.py",
+     "Wrote /tmp/evlet-demo-pr52clv0/demo/apps/notes/migrations/m0001_tag.py",
      "Review it, then run evlet migrate acme."
     ],
     "before": null,
@@ -961,7 +961,7 @@ list_services offers 35 project tools in development: project_status, operation_
    "content": [
     {
      "type": "text",
-     "text": "{\"id\":15,\"kind\":\"migrate\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"instance\":\"acme\"},\"started\":\"2026-11-26T18:24:54Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:24:54Z\",\"output\":[\"Instance acme: apps notes\",\"Applied migrations: notes 0001_tag\",\"Backup: /tmp/evlet-demo-i1jex0ps/demo/instances/acme/data/backups/20261126T182454601629Z.sqlite3\"],\"before\":{\"apps\":{\"notes\":{\"commit\":null,\"sha256\":\"f34f220c617748d0a8f3baec2023af70605e78c21e0fb6b642d8e79c74b700d4\",\"source\":\"apps/notes\",\"version\":\"0.1.0\"}},\"evlet\":{\"schema\":\"0021_sites\",\"version\":\"0.4.21\"}},\"error\":\"\"}"
+     "text": "{\"id\":15,\"kind\":\"migrate\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"instance\":\"acme\"},\"started\":\"2026-11-26T18:41:19Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:20Z\",\"output\":[\"Instance acme: apps notes\",\"Applied migrations: notes 0001_tag\",\"Backup: /tmp/evlet-demo-pr52clv0/demo/instances/acme/data/backups/20261126T184119755547Z.sqlite3\"],\"before\":{\"apps\":{\"notes\":{\"commit\":null,\"sha256\":\"f34f220c617748d0a8f3baec2023af70605e78c21e0fb6b642d8e79c74b700d4\",\"source\":\"apps/notes\",\"version\":\"0.1.0\"}},\"evlet\":{\"schema\":\"0021_sites\",\"version\":\"0.4.21\"}},\"error\":\"\"}"
     }
    ],
    "structuredContent": {
@@ -972,13 +972,13 @@ list_services offers 35 project tools in development: project_status, operation_
     "arguments": {
      "instance": "acme"
     },
-    "started": "2026-11-26T18:24:54Z",
+    "started": "2026-11-26T18:41:19Z",
     "result": "ok",
-    "finished": "2026-11-26T18:24:54Z",
+    "finished": "2026-11-26T18:41:20Z",
     "output": [
      "Instance acme: apps notes",
      "Applied migrations: notes 0001_tag",
-     "Backup: /tmp/evlet-demo-i1jex0ps/demo/instances/acme/data/backups/20261126T182454601629Z.sqlite3"
+     "Backup: /tmp/evlet-demo-pr52clv0/demo/instances/acme/data/backups/20261126T184119755547Z.sqlite3"
     ],
     "before": {
      "apps": {
@@ -1095,7 +1095,7 @@ list_services offers 35 project tools in development: project_status, operation_
  "request": {
   "jsonrpc": "2.0",
   "method": "tools/call",
-  "id": 42,
+  "id": 41,
   "params": {
    "name": "call_service",
    "arguments": {
@@ -1114,12 +1114,12 @@ list_services offers 35 project tools in development: project_status, operation_
  "status": 200,
  "response": {
   "jsonrpc": "2.0",
-  "id": 42,
+  "id": 41,
   "result": {
    "content": [
     {
      "type": "text",
-     "text": "{\"id\":19,\"kind\":\"tests_run\",\"instance\":\"\",\"origin\":\"mcp\",\"arguments\":{\"seconds\":300,\"target\":\"notes\"},\"started\":\"2026-11-26T18:24:55Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:24:59Z\",\"output\":[\"$ -m pytest -q -p no:cacheprovider apps/notes\",\"....                                                                     [100%]\",\"4 passed in 4.08s\"],\"before\":null,\"error\":\"\"}"
+     "text": "{\"id\":19,\"kind\":\"tests_run\",\"instance\":\"\",\"origin\":\"mcp\",\"arguments\":{\"seconds\":300,\"target\":\"notes\"},\"started\":\"2026-11-26T18:41:20Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:23Z\",\"output\":[\"$ -m pytest -q -p no:cacheprovider apps/notes\",\"....                                                                     [100%]\",\"4 passed in 3.17s\"],\"before\":null,\"error\":\"\"}"
     }
    ],
    "structuredContent": {
@@ -1131,13 +1131,13 @@ list_services offers 35 project tools in development: project_status, operation_
      "seconds": 300,
      "target": "notes"
     },
-    "started": "2026-11-26T18:24:55Z",
+    "started": "2026-11-26T18:41:20Z",
     "result": "ok",
-    "finished": "2026-11-26T18:24:59Z",
+    "finished": "2026-11-26T18:41:23Z",
     "output": [
      "$ -m pytest -q -p no:cacheprovider apps/notes",
      "....                                                                     [100%]",
-     "4 passed in 4.08s"
+     "4 passed in 3.17s"
     ],
     "before": null,
     "error": ""
@@ -1154,7 +1154,7 @@ The owner set up two-step sign-in in Settings (production refuses without it).
 ## Release v1 and v2 of the app from Git (the developer, outside Evlet)
 
 
-apps/notes is a Git checkout at v1 whose origin (http://127.0.0.1:48297/notes.git) has a tag v2. apps.lock records the commit once the instance is migrated, as production checks it:
+apps/notes is a Git checkout at v1 whose origin (http://127.0.0.1:60085/notes.git) has a tag v2. apps.lock records the commit once the instance is migrated, as production checks it:
 
 
 **Shell:** `evlet migrate acme --trust`
@@ -1162,7 +1162,7 @@ apps/notes is a Git checkout at v1 whose origin (http://127.0.0.1:48297/notes.gi
 ```text
 Instance acme: apps notes
 Applied migrations: none; schema is current
-Backup: /tmp/evlet-demo-i1jex0ps/demo/instances/acme/data/backups/20261126T182501814888Z.sqlite3
+Backup: /tmp/evlet-demo-pr52clv0/demo/instances/acme/data/backups/20261126T184126356033Z.sqlite3
 ```
 
 ## Production
@@ -1340,8 +1340,8 @@ The client registered, the owner approved it on the consent page, and the code w
    "content": [
     {
      "type": "text",
-     "text": "{\"services\":[{\"name\":\"project_status\",\"description\":\"The project at a glance: its id, mode and endpoint, the MCP address, and each instance with its id, host,\\nEvlet version, installed apps, process status and health. Also the operation running now, if any.\",\"method\":\"GET\",\"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{},\"required\":[]}},{\"name\":\"operation_log\",\"description\":\"The newest operations first: kind, instance, origin (portal, mcp or cli), result, start and end times and\\narguments. Pass before (an operation id) for older ones. Read one operation's output with operation_status.\",\"method\":\"GET\",\"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"limit\":{\"type\":\"integer\"},\"before\":{\"type\":\"integer\"}},\"required\":[]}},{\"name\":\"operation_status\",\"description\":\"One operation with its output lines: live while it runs (result 'running'), then as logged. result is\\n'ok', 'failed', or 'started' for one run by another process (the CLI) that has not ended or was interrupted.\",\"method\":\"GET\",\"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"operation\":{\"type\":\"integer\"}},\"required\":[\"operation\"]}},{\"name\":\"instance_logs\",\"description\":\"The last lines an instance's process printed, kept by the endpoint since it started (2,000 at most). They\\ncan hold values from records and se
-... [16076 more characters trimmed]
+     "text": "{\"services\":[{\"name\":\"project_status\",\"description\":\"The project at a glance: its id, mode and endpoint, the MCP address, and each instance with its id, host,\\nEvlet version, installed apps, process status and health. Also the operation running now, if any, and caddy:\\nwhether the endpoint's last push of routes to Caddy's admin API worked (null without one).\",\"method\":\"GET\",\"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{},\"required\":[]}},{\"name\":\"operation_log\",\"description\":\"The newest operations first: kind, instance, origin (portal, mcp or cli), result, start and end times and\\narguments. Pass before (an operation id) for older ones. Read one operation's output with operation_status.\",\"method\":\"GET\",\"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"limit\":{\"type\":\"integer\"},\"before\":{\"type\":\"integer\"}},\"required\":[]}},{\"name\":\"operation_status\",\"description\":\"One operation with its output lines: live while it runs (result 'running'), then as logged. result is\\n'ok', 'failed', or 'started' for one run by another process (the CLI) that has not ended or was interrupted.\",\"method\":\"GET\",\"arguments\":{\"type\":\"object\",\"additionalProperties\":false,\"properties\":{\"operation\":{\"type\":\"integer\"}},\"required\":[\"operation\"]}},{\"name\":\"instance_logs\",\"description\":\"The last lines an instance's process pr
+... [16283 more characters trimmed]
 ```
 
 list_services offers 18 tools in production: project_status, operation_log, operation_status, instance_logs, instance_restart, instance_stop, instance_start, backup_create, backup_list, backup_restore, app_update_plan, app_update, app_install, evlet_upgrade_plan, evlet_upgrade, host_add, host_remove, host_check.
@@ -1471,8 +1471,8 @@ The owner reads the waiting approval (GET /api/_tools/approvals) and approves it
   "group": "destructive"
  },
  "status": "pending",
- "created_at": 1795717531,
- "expires_at": 1795803931,
+ "created_at": 1795718491,
+ "expires_at": 1795804891,
  "decided_at": null
 }
 ```
@@ -1550,7 +1550,7 @@ The owner reads the waiting approval (GET /api/_tools/approvals) and approves it
    "content": [
     {
      "type": "text",
-     "text": "{\"id\":23,\"kind\":\"app_update\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"app\":\"notes\",\"instance\":\"acme\",\"ref\":\"v2\"},\"started\":\"2026-11-26T18:25:31Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:25:33Z\",\"output\":[\"Updating notes in acme: 40f5ebfeec38 -> b5fd750ad698 (v2), 1 commits\",\"Instance acme: plan only; nothing was written\",\"Planned with Evlet 0.4.21\",\"Pending migrations: none\",\"The migrations produce the current models.\",\"Backup: /tmp/evlet-demo-i1jex0ps/demo/instances/acme/data/backups/20261126T182532237077Z.sqlite3\",\"With: 20261126T182532237077Z-sessions.sqlite3, 20261126T182532237077Z-logs.sqlite3, 20261126T182532237077Z-eva.sqlite3\",\"Not included: /tmp/evlet-demo-i1jex0ps/demo/instances/acme/files (uploaded attachments); add --with-files to archive it.\",\"Not included: /tmp/evlet-demo-i1jex0ps/demo/instances/acme/secret.key. Without it a restored database cannot open saved connector, mailbox and two-step secrets. Keep a copy stored apart from these backups.\",\"Instance acme: apps notes\",\"Applied migrations: none; schema is current\",\"Backup: /tmp/evlet-demo-i1jex0ps/demo/instances/acme/data/backups/20261126T182532817992Z.sqlite3\",\"notes in acme runs v2 (b5fd750ad698).\"],\"before\":{\"apps\":{\"notes\":{\"commit\":\"40f5ebfeec38145855a77afe8e05c1e7cddff0fd\",\"sha256\":\"c88170cd3ab1a169111c203adc1b0d48e69984abf266a4497ea055a9f344f170\",\"source\":\"http://127.0.0.1:482
+     "text": "{\"id\":23,\"kind\":\"app_update\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"app\":\"notes\",\"instance\":\"acme\",\"ref\":\"v2\"},\"started\":\"2026-11-26T18:41:31Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:33Z\",\"output\":[\"Updating notes in acme: 7f9dc3eba03b -> 004180305042 (v2), 1 commits\",\"Instance acme: plan only; nothing was written\",\"Planned with Evlet 0.4.21\",\"Pending migrations: none\",\"The migrations produce the current models.\",\"Backup: /tmp/evlet-demo-pr52clv0/demo/instances/acme/data/backups/20261126T184132182414Z.sqlite3\",\"With: 20261126T184132182414Z-sessions.sqlite3, 20261126T184132182414Z-logs.sqlite3, 20261126T184132182414Z-eva.sqlite3\",\"Not included: /tmp/evlet-demo-pr52clv0/demo/instances/acme/files (uploaded attachments); add --with-files to archive it.\",\"Not included: /tmp/evlet-demo-pr52clv0/demo/instances/acme/secret.key. Without it a restored database cannot open saved connector, mailbox and two-step secrets. Keep a copy stored apart from these backups.\",\"Instance acme: apps notes\",\"Applied migrations: none; schema is current\",\"Backup: /tmp/evlet-demo-pr52clv0/demo/instances/acme/data/backups/20261126T184132759062Z.sqlite3\",\"notes in acme runs v2 (004180305042).\"],\"before\":{\"apps\":{\"notes\":{\"commit\":\"7f9dc3eba03b4b488fd7a08f3c27423d8a6eb5af\",\"sha256\":\"c88170cd3ab1a169111c203adc1b0d48e69984abf266a4497ea055a9f344f170\",\"source\":\"http://127.0.0.1:600
 ... [1937 more characters trimmed]
 ```
 
@@ -1628,7 +1628,7 @@ The owner reads the waiting approval (GET /api/_tools/approvals) and approves it
    "content": [
     {
      "type": "text",
-     "text": "{\"id\":25,\"kind\":\"instance_restart\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"instance\":\"acme\"},\"started\":\"2026-11-26T18:25:33Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:25:34Z\",\"output\":[\"acme: running on port 8000\"],\"before\":{\"apps\":{\"notes\":{\"commit\":\"b5fd750ad698ae002d3a1c4f815ff36da0ac835e\",\"sha256\":\"60b11df76215231f43d22ffe340f49872d626281af82bce072fea62dbf55b037\",\"source\":\"http://127.0.0.1:48297/notes.git\",\"version\":\"0.1.0\"}},\"evlet\":{\"schema\":\"0021_sites\",\"version\":\"0.4.21\"}},\"error\":\"\"}"
+     "text": "{\"id\":25,\"kind\":\"instance_restart\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"instance\":\"acme\"},\"started\":\"2026-11-26T18:41:33Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:34Z\",\"output\":[\"acme: running on port 8000\"],\"before\":{\"apps\":{\"notes\":{\"commit\":\"004180305042a41846a09b6381cfa193bdc05b2f\",\"sha256\":\"60b11df76215231f43d22ffe340f49872d626281af82bce072fea62dbf55b037\",\"source\":\"http://127.0.0.1:60085/notes.git\",\"version\":\"0.1.0\"}},\"evlet\":{\"schema\":\"0021_sites\",\"version\":\"0.4.21\"}},\"error\":\"\"}"
     }
    ],
    "structuredContent": {
@@ -1639,18 +1639,18 @@ The owner reads the waiting approval (GET /api/_tools/approvals) and approves it
     "arguments": {
      "instance": "acme"
     },
-    "started": "2026-11-26T18:25:33Z",
+    "started": "2026-11-26T18:41:33Z",
     "result": "ok",
-    "finished": "2026-11-26T18:25:34Z",
+    "finished": "2026-11-26T18:41:34Z",
     "output": [
      "acme: running on port 8000"
     ],
     "before": {
      "apps": {
       "notes": {
-       "commit": "b5fd750ad698ae002d3a1c4f815ff36da0ac835e",
+       "commit": "004180305042a41846a09b6381cfa193bdc05b2f",
        "sha256": "60b11df76215231f43d22ffe340f49872d626281af82bce072fea62dbf55b037",
-       "source": "http://127.0.0.1:48297/notes.git",
+       "source": "http://127.0.0.1:60085/notes.git",
        "version": "0.1.0"
       }
      },
@@ -1696,6 +1696,6 @@ The owner reads the waiting approval (GET /api/_tools/approvals) and approves it
    "content": [
     {
      "type": "text",
-     "text": "{\"operations\":[{\"id\":25,\"kind\":\"instance_restart\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"instance\":\"acme\"},\"started\":\"2026-11-26T18:25:33Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:25:34Z\",\"error\":\"\",\"lines\":1},{\"id\":23,\"kind\":\"app_update\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"app\":\"notes\",\"instance\":\"acme\",\"ref\":\"v2\"},\"started\":\"2026-11-26T18:25:31Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:25:33Z\",\"error\":\"\",\"lines\":13},{\"id\":21,\"kind\":\"migrate\",\"instance\":\"acme\",\"origin\":\"cli\",\"arguments\":{\"allow_destructive\":false,\"allow_maintenance\":false,\"instance\":\"acme\",\"recompute_posted\":false,\"trust\":true},\"started\":\"2026-11-26T18:25:01Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:25:02Z\",\"error\":\"\",\"lines\":3},{\"id\":19,\"kind\":\"tests_run\",\"instance\":\"\",\"origin\":\"mcp\",\"arguments\":{\"seconds\":300,\"target\":\"notes\"},\"started\":\"2026-11-26T18:24:55Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:24:59Z\",\"error\":\"\",\"lines\":3},{\"id\":17,\"kind\":\"file_write\",\"instance\":\"\",\"origin\":\"mcp\",\"arguments\":{\"bytes\":494,\"path\":\"apps/notes/tests/test_body.py\"},\"started\":\"2026-11-26T18:24:55Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:24:55Z\",\"error\":\"\",\"lines\":0},{\"id\":15,\"kind\":\"migrate\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"instan
+     "text": "{\"operations\":[{\"id\":25,\"kind\":\"instance_restart\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"instance\":\"acme\"},\"started\":\"2026-11-26T18:41:33Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:34Z\",\"error\":\"\",\"lines\":1},{\"id\":23,\"kind\":\"app_update\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"app\":\"notes\",\"instance\":\"acme\",\"ref\":\"v2\"},\"started\":\"2026-11-26T18:41:31Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:33Z\",\"error\":\"\",\"lines\":13},{\"id\":21,\"kind\":\"migrate\",\"instance\":\"acme\",\"origin\":\"cli\",\"arguments\":{\"allow_destructive\":false,\"allow_maintenance\":false,\"instance\":\"acme\",\"recompute_posted\":false,\"trust\":true},\"started\":\"2026-11-26T18:41:25Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:26Z\",\"error\":\"\",\"lines\":3},{\"id\":19,\"kind\":\"tests_run\",\"instance\":\"\",\"origin\":\"mcp\",\"arguments\":{\"seconds\":300,\"target\":\"notes\"},\"started\":\"2026-11-26T18:41:20Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:23Z\",\"error\":\"\",\"lines\":3},{\"id\":17,\"kind\":\"file_write\",\"instance\":\"\",\"origin\":\"mcp\",\"arguments\":{\"bytes\":494,\"path\":\"apps/notes/tests/test_body.py\"},\"started\":\"2026-11-26T18:41:20Z\",\"result\":\"ok\",\"finished\":\"2026-11-26T18:41:20Z\",\"error\":\"\",\"lines\":0},{\"id\":15,\"kind\":\"migrate\",\"instance\":\"acme\",\"origin\":\"mcp\",\"arguments\":{\"instan
 ... [5790 more characters trimmed]
 ```
