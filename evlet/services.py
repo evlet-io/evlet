@@ -50,6 +50,17 @@ class Endpoint:
     permission: tuple
     public: bool = False
     tool: bool = False
+    # available() -> None when the endpoint may run now, else the reason it may not: it is then left out of
+    # list_services, and a call gets 403 with that reason. Checked on every call.
+    available: object = None
+    # ask(arguments) -> None for the Tool Engine's usual approval, False to run a tool call without one, or a dict
+    # to always ask (also where approvals would not ask), added to what the approval card shows.
+    ask: object = None
+
+
+def refusal(endpoint):
+    """Why endpoint may not run now, or None."""
+    return endpoint.available() if endpoint.available is not None else None
 
 
 # Calls per window for each client address on public endpoints: (seconds, limit).
@@ -185,6 +196,8 @@ def dispatch(business, scope, body, user):
     endpoint = endpoint_for(business, scope['path'])
     if endpoint is None: raise AccessError(404, 'Endpoint is unavailable')
     if scope['method'] != endpoint.method: raise AccessError(405, 'Method not allowed')
+    reason = refusal(endpoint)
+    if reason: raise AccessError(403, reason)
     if endpoint.public:
         public_limit(business, scope, endpoint)
         from .auth import PUBLIC

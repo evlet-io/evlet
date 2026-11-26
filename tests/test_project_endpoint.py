@@ -115,7 +115,7 @@ def test_the_operate_tools_are_owner_only_services(project):
     assert acme['name'] == 'acme' and len(acme['id']) == 13 and acme['apps'] == {'notes': '0.1.0'} and acme['status'] == 'stopped'
     status, data, _ = owner('POST', '/api/_tools/execute', {'tool': 'list_services', 'arguments': {}})
     from evlet.cli.project_tools import TIERS
-    assert {item['name'] for item in data['result']['services']} == set(TIERS) and set(TIERS.values()) == {'operate'}
+    assert {item['name'] for item in data['result']['services']} == set(TIERS) and set(TIERS.values()) == {'operate', 'develop'}
     # A destructive restore always asks first, and says what is lost.
     owner('POST', '/api/_services/backup_create', {'instance': 'acme'})
     runtime.wait()

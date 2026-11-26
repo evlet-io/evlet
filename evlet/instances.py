@@ -483,6 +483,11 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     app.live_routes.project = path.parent.parent
     app.live_routes.sites_folder = path / 'sites'
     app.live_routes.refresh(force=True)
+    # The project endpoint's management channel: answers only once the endpoint has written control.key.
+    from .manage import Manage
+    project = path.parent.parent
+    app.manage = Manage(path / 'control.key', mode=lambda: (read_project(project) or {}).get('mode', 'development'),
+                        lock=path / 'apps.lock')
     app.business.build_directory = path.parent.parent / '.evlet' / 'builds' / manifest['fingerprint']
     return app, tuple(schedules)
 

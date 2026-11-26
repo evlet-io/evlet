@@ -10,7 +10,7 @@ import { cell } from '../evlet/reactive';
 import { Button, EmptyState, StatusPill, openModal, toast, type Tint } from '../evlet/ui';
 
 export interface Instance { name: string; id: string | null; host: string | null; version: string | null; apps: Record<string, string>; status: string; health: boolean; port: number | null; restarts: number; error: string | null }
-export interface Status { id: string; created: string; mode: string; endpoint: string; mcp: string; two_step: boolean; instances: Instance[]; running: { operation: number; kind: string } | null }
+export interface Status { id: string; created: string; mode: string; endpoint: string; mcp: string; two_step: boolean; instances: Instance[]; running: { operation: number; kind: string } | null; tools?: Record<string, 'operate' | 'develop'> }
 export interface Operation { id: number; kind: string; instance: string; origin: string; arguments: Record<string, unknown>; started: string; finished: string | null; result: string; error: string; lines?: number; output?: string[] }
 
 type Client = ReturnType<typeof createClient>;
@@ -36,6 +36,8 @@ export type ProjectApi = ReturnType<typeof projectApi>;
 
 const TINT: Record<string, Tint> = { running: 'green', ok: 'green', started: 'blue', starting: 'blue', restarting: 'amber', failed: 'rose', stopped: 'slate' };
 export const tintOf = (state: string): Tint => TINT[state] ?? 'slate';
+/** Whether the develop tools are available now: the project is in development (project_status lists them). */
+export const develops = (status: Status) => Object.values(status.tools ?? {}).includes('develop');
 const message = (error: unknown) => error instanceof ApiError ? (Object.values(error.fields)[0] ?? error.message) : String(error);
 
 /** The portal. refresh is how often the status and the log are read again, in milliseconds. */
@@ -161,6 +163,16 @@ export function Portal(api: ProjectApi, options: { refresh?: number } = {}) {
       <div class="pp-actions">${Button({ label: 'Plan Evlet upgrade', onClick: () => void begin('evlet_upgrade_plan', {}, true) })}
         ${Button({ label: 'Upgrade Evlet', onClick: () => form('Upgrade Evlet', [{ name: 'to', label: 'Version (empty: the newest of this minor)', placeholder: '0.4.22' }], [
           { label: 'Upgrade', run: values => void begin('evlet_upgrade', values), danger: true }]) })}</div></section>
+    ${develops(current) ? html`<section class="pp-card" data-develop><h2>Develop</h2>
+      <p class="pp-muted">Development mode: change the project's apps. In production these tools are gone.</p>
+      <div class="pp-actions">${Button({ label: 'Build', onClick: () => void begin('build', {}) })}
+        ${Button({ label: 'Run tests', onClick: () => form('Run tests', [{ name: 'target', label: 'App or test path in apps/ (empty: all)', placeholder: 'notes' }], [
+          { label: 'Run', run: values => void begin('tests_run', values) }]) })}
+        ${Button({ label: 'Make migration', onClick: () => form('Make a migration', [
+          { name: 'app', label: 'App', placeholder: 'notes' }, { name: 'instance', label: 'Instance', placeholder: 'acme', value: current.instances[0]?.name }], [
+          { label: 'Make', run: values => void begin('makemigration', values) }]) })}
+        ${Button({ label: 'Migrate', onClick: () => form('Migrate an instance', [{ name: 'instance', label: 'Instance', placeholder: 'acme', value: current.instances[0]?.name }], [
+          { label: 'Migrate', run: values => void begin('migrate', values) }]) })}</div></section>` : null}
     <section class="pp-card"><h2>Operation log</h2>
       ${() => log.get().length ? html`<table class="pp-table" data-log><thead><tr><th>#</th><th>Operation</th><th>Instance</th><th>From</th><th>Result</th><th>Started</th><th>Ended</th></tr></thead>
         <tbody>${log.get().map(logRow)}</tbody></table>` : html`<p>No operations yet.</p>`}</section>

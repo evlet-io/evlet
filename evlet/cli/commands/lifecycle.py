@@ -20,6 +20,14 @@ def yes_no():
 
 def run_restart(args, context):
     from ..core import restart_instance
+    from ..endpoint import shell_operation
+    if not args.check and not args.service:
+        # A project endpoint that runs the instances restarts them itself; systemd units are not used then.
+        done = shell_operation(context.root, '/_/project/restart', {'instance': args.instance})
+        if done is not None:
+            if not done:
+                raise SystemExit(1)
+            return
     confirm = None if args.yes or args.check else yes_no()
     if not restart_instance(context.root, args.instance, service=args.service, check_only=args.check, yes=args.yes,
                             confirm=confirm, timeout=args.timeout, capture=False, out=print).ok:
@@ -37,6 +45,14 @@ def add_upgrade(commands):
 
 def run_upgrade(args, context):
     from ..core import upgrade_evlet
+    from ..endpoint import exists, running, shell_operation
+    if not args.service and exists(context.root) and running(context.root):
+        # The endpoint runs every instance: it stops, backs up, migrates and starts them all, then restarts itself.
+        if not args.yes and not (yes_no() or (lambda question: False))('The project endpoint upgrades Evlet for every instance it runs. Go on?'):
+            raise SystemExit('Not upgraded. Pass --yes to upgrade without asking.')
+        if not shell_operation(context.root, '/_/project/upgrade', {'to': args.to or ''}):
+            raise SystemExit(1)
+        return
     if not upgrade_evlet(context.root, args.instance, to=args.to, service=args.service, yes=args.yes,
                          confirm=None if args.yes else yes_no(), all_instances=args.all_instances, capture=False, out=print).ok:
         raise SystemExit(1)

@@ -99,11 +99,11 @@ def begin(root, kind, instance, arguments, origin, started, tx=None):
                           'result': 'started', 'started': started}, tx)
 
 
-def end(root, start, *, kind, instance, origin, started, ok, output=(), before=None, error=''):
+def end(root, start, *, kind, instance, origin, started, ok, output=(), before=None, error='', tx=None):
     """Append the end row of the operation whose start row is start."""
     return _insert(root, {'kind': kind, 'instance': instance or '', 'origin': origin, 'result': 'ok' if ok else 'failed',
                           'started': started, 'finished': now(), 'output': _text('\n'.join(output), OUTPUT_LIMIT),
-                          'lock_before': _text(before, 20_000), 'error': _text(error, 4_000), 'ends': start})
+                          'lock_before': _text(before, 20_000), 'error': _text(error, 4_000), 'ends': start}, tx)
 
 
 COLUMNS = ('id', 'kind', 'instance', 'arguments', 'origin', 'result', 'started', 'finished', 'output', 'lock_before', 'error', 'ends')

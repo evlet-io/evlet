@@ -369,6 +369,66 @@ def instance_create(root, name, *, out=None):
     return log.outcome(after=lock_state(root, name), value=target)
 
 
+@logged('instance_delete', instance='name')
+def instance_delete(root, name, *, yes=False, confirm=None, out=None):
+    """Delete an instance: its folder moves to .evlet/deleted/<name>-<time>/, whole (database, files, secret.key), so
+    it can still be moved back by hand. The instance must not be running. value is where it went."""
+    import shutil
+    log, root = _Log(out), Path(root)
+    path = child(root, 'instances', name)
+    if not (path / 'config.py').is_file():
+        raise ValueError(f'Instance does not exist: {name}')
+    if not _agreed(yes, confirm, f'Delete instance {name} with its database and files?'):
+        raise ValueError('Deleting an instance needs confirmation')
+    target = root / '.evlet' / 'deleted' / f'{name}-{time.strftime("%Y%m%d-%H%M%S")}'
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    before = lock_state(root, name)
+    shutil.move(str(path), str(target))
+    for token in (root / '.evlet' / 'control' / f'{name}.token',):
+        token.unlink(missing_ok=True)
+    log.step('delete')
+    log(f'Instance {name} deleted; its folder is in {target}')
+    return log.outcome(before=before, value=target)
+
+
+TESTS_SECONDS = 300
+TESTS_LINES = 400
+
+
+@logged('tests_run', instance=None)
+def tests_run(root, target='', *, seconds=TESTS_SECONDS, out=None):
+    """pytest in the project's .venv, from the project folder, on apps/ or one app (target: an app name or a test
+    path inside apps/). It stops after seconds; the output kept is its last TESTS_LINES lines. ok is whether pytest
+    passed; value is its exit code (None when it ran out of time)."""
+    import os
+    import subprocess
+    from .setup import python_in
+    from .project_files import inside
+    log, root = _Log(out), Path(root)
+    path = inside(root, 'apps/' + target if target else 'apps', roots=('apps',))
+    python = python_in(root)
+    if not python.is_file():
+        raise ValueError(f'The project has no {python.relative_to(root)}; run evlet setup again')
+    command = [str(python), '-m', 'pytest', '-q', '-p', 'no:cacheprovider', str(path.relative_to(root))]
+    log('$ ' + ' '.join(command[1:]))
+    environment = {key: value for key, value in os.environ.items() if key != 'EVLET_DELEGATED_PROJECT'}
+    try:
+        result = subprocess.run(command, cwd=root, stdin=subprocess.DEVNULL, capture_output=True, timeout=seconds, env=environment)
+        code, output = result.returncode, result.stdout + result.stderr
+    except subprocess.TimeoutExpired as expired:
+        code, output = None, (expired.stdout or b'') + (expired.stderr or b'')
+    lines = output.decode('utf-8', 'replace').splitlines()
+    if len(lines) > TESTS_LINES:
+        log(f'... {len(lines) - TESTS_LINES} earlier lines left out')
+    for line in lines[-TESTS_LINES:]:
+        log(line[:2000])
+    if code is None:
+        log(f'pytest ran longer than {seconds} seconds and was stopped')
+    elif code == 1 and not lines or b'No module named pytest' in output:
+        log(f'Install pytest in the project: {python.relative_to(root)} -m pip install pytest')
+    return log.outcome(code == 0, value=code)
+
+
 # App updates from the recorded Git source
 
 

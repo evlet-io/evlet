@@ -47,6 +47,13 @@ def run_project(args, context):
     if args.project_command == 'mode':
         changed = set_project_mode(root, args.mode)
         print(f'Mode: {args.mode}' + ('' if changed else ' (unchanged)'))
+        from ..endpoint import exists, running
+        if changed and exists(root):
+            print('The project tools follow the new mode from their next call: '
+                  + ('the develop tools are gone.' if args.mode == 'production' else 'the develop tools are back.'))
+            if running(root):
+                print('Restart the endpoint so its instances, Docs and sign-in follow it too '
+                      '(sudo systemctl restart evlet-project, or stop and start evlet endpoint).')
         return
     record, _ = ensure_project(root)
     if record is None:

@@ -139,6 +139,8 @@ class Supervisor:
         return list(self.child(name).lines)[-count:]
 
     def _spawn(self, child):
+        from .channel import token
+        token(self.root, child.name)  # the instance's management token (evlet/cli/channel.py), before it starts
         environment = {**os.environ, 'PYTHONUNBUFFERED': '1'}
         environment.pop('EVLET_DELEGATED_PROJECT', None)
         child.lines.append(f'[endpoint] starting: {" ".join(self.command(child)[3:])}')

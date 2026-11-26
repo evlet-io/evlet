@@ -30,18 +30,24 @@ OWNER = 'admin'  # The owner is the framework's built-in Administrator of projec
 # ---------- settings: .evlet/endpoint.json ----------
 
 def read_settings(root):
-    """{'port', 'host', 'instances': {name: port}}; host is None in development."""
+    """{'port', 'host', 'instances': {name: port}, 'never_ask': [tool names]}; host is None in development.
+
+    never_ask lists project tools whose calls run without the owner's approval; it is edited on the server only, and
+    the tools that always ask (project_tools.ALWAYS_ASK in production) ignore it."""
     path = Path(root) / SETTINGS
     try:
         value = json.loads(path.read_text(encoding='utf-8'))
     except FileNotFoundError:
-        return {'port': DEV_PORT, 'host': None, 'instances': {}}
+        return {'port': DEV_PORT, 'host': None, 'instances': {}, 'never_ask': []}
     except (OSError, ValueError):
         raise ValueError(f'{path} is not valid JSON. Fix it, or remove it and run evlet setup --endpoint again') from None
     if not isinstance(value, dict) or type(value.get('port')) is not int or not isinstance(value.get('instances', {}), dict) \
             or value.get('host') is not None and not isinstance(value['host'], str):
         raise ValueError(f'{path} must hold {{"port": a number, "host": a hostname or null, "instances": {{name: port}}}}')
-    return {'port': value['port'], 'host': value.get('host'), 'instances': dict(value.get('instances', {}))}
+    never = value.get('never_ask', [])
+    if not isinstance(never, list) or not all(isinstance(item, str) for item in never):
+        raise ValueError(f'{path}: never_ask must be a list of tool names')
+    return {'port': value['port'], 'host': value.get('host'), 'instances': dict(value.get('instances', {})), 'never_ask': never}
 
 
 def save_settings(root, value):
@@ -204,12 +210,30 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
        "frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'")
 
 
-class Endpoint:
-    """ASGI: the portal page at /, everything else by the Application. Starts the supervisor once the Application
-    has started and stops every child before the Application shuts down."""
+CONTROL = Path('.evlet/control/endpoint.token')
+CONTROL_PATHS = {('POST', '/_/project/restart'): 'instance_restart', ('POST', '/_/project/upgrade'): 'evlet_upgrade'}
 
-    def __init__(self, app, supervisor):
-        self.app, self.supervisor = app, supervisor
+
+def control_token(root):
+    """The token with which the server shell asks the running endpoint to restart or upgrade (evlet restart, evlet
+    upgrade): made on first use, 0600, readable only by the account that runs the project."""
+    from .channel import _write
+    path = Path(root) / CONTROL
+    try:
+        return path.read_text(encoding='ascii').strip()
+    except FileNotFoundError:
+        import secrets
+        value = secrets.token_urlsafe(32)
+        _write(path, value + '\n')
+        return value
+
+
+class Endpoint:
+    """ASGI: the portal page at /, the shell's control routes, everything else by the Application. Starts the
+    supervisor once the Application has started and stops every child before the Application shuts down."""
+
+    def __init__(self, app, supervisor, runtime=None):
+        self.app, self.supervisor, self.runtime = app, supervisor, runtime
 
     async def __call__(self, scope, receive, send):
         if scope['type'] == 'lifespan':
@@ -231,7 +255,56 @@ class Endpoint:
         if scope['type'] == 'http' and scope['method'] in ('GET', 'HEAD') and scope['path'] in ('/', '/index.html'):
             await self.portal(scope, send)
             return
+        if scope['type'] == 'http' and scope['path'].startswith('/_/project/'):
+            await self.control(scope, receive, send)
+            return
         await self.app(scope, receive, send)
+
+    async def control(self, scope, receive, send):
+        """The shell's routes: loopback only, not through a proxy, with the control token; 404 otherwise, like the
+        instances' management channel. POST /_/project/restart {instance}, POST /_/project/upgrade {to}, and
+        GET /_/project/operation?id=N to follow one."""
+        import hmac
+        import ipaddress
+        from urllib.parse import parse_qs
+        headers = dict(scope.get('headers') or ())
+        try:
+            loopback = ipaddress.ip_address((scope.get('client') or ('',))[0]).is_loopback
+        except ValueError:
+            loopback = False
+        sent = headers.get(b'authorization', b'').decode('latin-1')
+        route = (scope['method'], scope['path'])
+        allowed = self.runtime is not None and loopback and b'forwarded' not in headers and b'x-forwarded-for' not in headers \
+            and sent.startswith('Bearer ') and hmac.compare_digest(sent[7:].encode(), control_token(self.supervisor.root).encode()) \
+            and (route in CONTROL_PATHS or route == ('GET', '/_/project/operation'))
+        data = bytearray()
+        while scope['method'] == 'POST':
+            message = await receive()
+            data.extend(message.get('body', b''))
+            if len(data) > 4096 or not message.get('more_body'):
+                break
+        status, result = 404, {'error': 'Route not found'}
+        if allowed:
+            try:
+                if route in CONTROL_PATHS:
+                    body = json.loads(data or b'{}')
+                    arguments = {'instance': str(body.get('instance', ''))} if route[1].endswith('restart') else {'to': str(body.get('to') or '')}
+                    status, result = 200, await asyncio.to_thread(self.runtime.call, CONTROL_PATHS[route], arguments)
+                else:
+                    from .oplog import operation
+                    query = parse_qs(scope.get('query_string', b'').decode('ascii', 'replace'))
+                    found = operation(self.supervisor.root, int(query.get('id', ['0'])[0]))
+                    active = self.runtime.active
+                    if found is not None and active is not None and active.id == found['id']:
+                        found.update(result='running', output=list(active.lines))
+                    status, result = (200, found) if found else (404, {'error': 'No such operation'})
+            except Exception as exc:  # a refusal (another operation runs, no such instance) goes back to the shell
+                errors = getattr(exc, 'errors', None)
+                status, result = 422, {'error': '; '.join(map(str, errors.values())) if isinstance(errors, dict) else str(exc)}
+        body = json.dumps(result, default=str).encode()
+        await send({'type': 'http.response.start', 'status': status, 'headers': [(b'content-type', b'application/json'),
+                    (b'cache-control', b'no-store'), (b'content-length', str(len(body)).encode())]})
+        await send({'type': 'http.response.body', 'body': body})
 
     async def portal(self, scope, send):
         # The Host check of every page: a request for another host is refused as the Application refuses it.
@@ -266,7 +339,7 @@ def application(root, *, link=True):
     runtime = Runtime(root, supervisor)
     app = build(root, runtime=runtime)
     runtime.app = app
-    served = Endpoint(app, supervisor)
+    served = Endpoint(app, supervisor, runtime)
     if development and not read_settings(root)['host']:
         from ..devlink import DevSignIn
         served = DevSignIn(served, announce=link, user=OWNER)
@@ -283,6 +356,47 @@ def serve(root, *, link=True):
     for name, port in sorted(runtime.supervisor.children.items()):
         print(f'  instance {name}: http://127.0.0.1:{port.port}', flush=True)
     run_server(served, host='127.0.0.1', port=settings['port'], lifespan='on', proxy_headers=False)
+
+
+def shell_operation(root, route, body, out=print, *, poll=0.5):
+    """evlet restart / evlet upgrade while the endpoint runs: ask it to run the operation, print its output as it
+    comes and return whether it ended ok. None when the endpoint does not answer (the CLI then uses systemd)."""
+    import time
+    import urllib.error
+    import urllib.request
+    settings = read_settings(root)
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+    def ask(method, path, data=None):
+        request = urllib.request.Request(f'http://127.0.0.1:{settings["port"]}{path}', method=method,
+                                         data=None if data is None else json.dumps(data).encode(),
+                                         headers={'Authorization': 'Bearer ' + control_token(root), 'Content-Type': 'application/json'})
+        try:
+            with opener.open(request, timeout=30) as response:
+                return response.status, json.loads(response.read())
+        except urllib.error.HTTPError as error:
+            return error.code, json.loads(error.read() or b'{}')
+    if not exists(root) or not running(root):
+        return None
+    status, started = ask('POST', route, body)
+    if status != 200:
+        raise ValueError(started.get('error') or f'The endpoint answered {status}')
+    out(f'The project endpoint runs operation {started["operation"]}; its output:')
+    shown = 0
+    while True:
+        try:
+            status, found = ask('GET', f'/_/project/operation?id={started["operation"]}')
+        except (urllib.error.URLError, OSError):
+            out('The endpoint restarted (an upgrade restarts it on the new Evlet); see evlet project and the operation log.')
+            return True
+        for line in found.get('output', [])[shown:]:
+            out(line)
+        shown = len(found.get('output', []))
+        if found.get('result') in ('ok', 'failed'):
+            if found.get('error'):
+                out('Failed: ' + found['error'])
+            return found['result'] == 'ok'
+        time.sleep(poll)
 
 
 # ---------- production: the Caddy site and the one systemd unit ----------
