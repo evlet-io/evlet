@@ -38,76 +38,32 @@ def add_makemigration(commands):
 
 
 def run_plan(args, context):
-    from ..install import plan
+    from ..core import migration_plan
     if args.recompute_posted or args.allow_destructive or args.allow_maintenance:
         raise ValueError('--plan writes nothing; run migrate without --plan to use --recompute-posted, '
                          '--allow-destructive or --allow-maintenance')
-    result, suggestions, packages, steps = plan(context.root, args.instance, trust=args.trust, confirm=context.confirm)
-    from ...framework import version
-    print(f'Instance {args.instance}: plan only; nothing was written')
-    print(f'Planned with Evlet {version()}')
-    print(result.text(suggestion=False))
-    if steps:
-        print('Pending framework migrations (run after a backup):')
-        print('\n'.join(f'  {step.name}\n    {step.summary}' for step in steps))
-    for package in packages:
-        migration, code = suggestions[package.name]
-        if not code:
-            continue
-        where = f'apps/{package.path.name}/migrations/m{migration}.py' if package.layout == 'flat' \
-            else f'the migrations tuple in apps/{package.path.name}/{package.name}/migrations/__init__.py'
-        print(f'Suggested migration for {package.name} (save as {where}; review it and fill in any ...):')
-        print('\n'.join(('    ' + line).rstrip() for line in code.splitlines()))
-        if package.layout == 'flat':
-            print(f'Or write it with: evlet makemigration {package.name} --instance {args.instance}')
+    migration_plan(context.root, args.instance, trust=args.trust, confirm=context.confirm, out=print)
 
 
 def run_makemigration(args, context):
-    from ..install import makemigration
+    from ..core import make_migration
     require_instance(context.root, args)
-    target, review = makemigration(context.root, args.app, args.instance, name=args.name, trust=args.trust, confirm=context.confirm)
-    print(f'Wrote {target}')
-    print('Edit the lines marked with ... or # before running evlet migrate.' if review else
-          f'Review it, then run evlet migrate {args.instance}.')
+    make_migration(context.root, args.app, args.instance, name=args.name, trust=args.trust, confirm=context.confirm, out=print)
 
 
 def run_install(args, context):
     """evlet install and evlet migrate, which share the installer and its report."""
-    root = context.root
-    require_instance(root, args)
+    from .. import core
+    require_instance(context.root, args)
     if args.command == 'migrate' and args.plan:
         return run_plan(args, context)
-    from ..install import install
-    from ...instances import read_lock
-    try:
-        before = set(read_lock(root / 'instances' / args.instance)['apps'])
-    except ValueError:
-        before = set()
-    migrating = args.command == 'migrate'
-    posted = migrating and args.recompute_posted
-    result = install(root, args.instance, app_name=None if migrating else args.name, trust=args.trust, confirm=context.confirm,
-                     recompute_posted=posted, allow_destructive=migrating and args.allow_destructive,
-                     allow_maintenance=migrating and args.allow_maintenance)
-    from ..install import migration_label
-    print(f'Instance {args.instance}: ' + ('apps ' if migrating else 'installed ') + ', '.join(result['apps']))
-    added = [name for name in result['apps'] if name not in before]
-    if added:
-        # The same rule as a first install: a new app's tables come from its models; later changes need a migration.
-        print('Tables created from the models of ' + ', '.join(added) +
-              f'. After this, every model change needs a migration: evlet makemigration APP --instance {args.instance}')
-    print('Applied migrations: ' + (', '.join(map(migration_label, result['migrations'])) or 'none; schema is current'))
-    if result.get('framework') and result['backup']:
-        print('Framework migrations: ' + ', '.join(result['framework']))
-    elif result.get('framework'):
-        print(f'Framework tables: created ({len(result["framework"])} framework migrations recorded)')
-    if posted:
-        print(f'Posted records recalculated: {result.get("posted", 0)}')
-    if result['backup']:
-        print('Backup: ' + result['backup'])
-    if not migrating:
-        from ..hosts import suggest
-        suggest(root, args.instance, set(result['apps']) - before, yes=args.yes, skip=args.no_host,
-                ask=input if sys.stdin.isatty() else None)
+    if args.command == 'migrate':
+        core.migrate(context.root, args.instance, trust=args.trust, confirm=context.confirm, recompute_posted=args.recompute_posted,
+                     allow_destructive=args.allow_destructive, allow_maintenance=args.allow_maintenance, out=print)
+    else:
+        core.install_app(context.root, args.instance, args.name, trust=args.trust, confirm=context.confirm,
+                         hosts='take' if args.yes else 'skip' if args.no_host else 'offer',
+                         ask=input if sys.stdin.isatty() else None, out=print)
 
 
 COMMANDS = {

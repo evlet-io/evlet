@@ -258,9 +258,27 @@ def journal(service, run, out):
         out(text)
 
 
+def yes_no(interactive, ask):
+    """The confirm callable of the old interactive=/ask= pair: None without a terminal, else a [y/N] question."""
+    interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not interactive:
+        return None
+    return lambda question: (ask or input)(question).strip().lower() in ('y', 'yes')
+
+
 def restart(root, name, *, service=None, check_only=False, yes=False, timeout=30.0, unit_dir=None, run=None,
             which=None, fetch=None, sleep=time.sleep, clock=time.monotonic, interactive=None, ask=None, out=print):
     """Check the instance, then restart its service and wait for /health. Returns True on success."""
+    confirm = None if yes or check_only else yes_no(interactive, ask)
+    return restart_service(root, name, service=service, check_only=check_only, yes=yes, confirm=confirm, timeout=timeout,
+                           unit_dir=unit_dir, run=run, which=which, fetch=fetch, sleep=sleep, clock=clock, out=out)
+
+
+def restart_service(root, name, *, service=None, check_only=False, yes=False, confirm=None, timeout=30.0, unit_dir=None,
+                    run=None, which=None, fetch=None, sleep=time.sleep, clock=time.monotonic, out=print, capture=False):
+    """restart without reading stdin: confirm(question) -> bool decides unless yes; None means no one can answer.
+
+    capture=True runs systemctl with its output captured and passed to out, so nothing reaches stdout."""
     from . import site
     service = service_name(name, service)
     root = Path(root)
@@ -272,19 +290,23 @@ def restart(root, name, *, service=None, check_only=False, yes=False, timeout=30
         out(f'All checks passed. Run evlet restart {name} to restart {service}.')
         return True
     if not yes:
-        interactive = sys.stdin.isatty() if interactive is None else interactive
-        if not interactive:
+        if confirm is None:
             out(f'No terminal to confirm the restart. Run evlet restart {name} --yes to restart without asking.')
             return False
-        answer = (ask or input)(f'Restart {service} now? [y/N] ').strip().lower()
-        if answer not in ('y', 'yes'):
+        if not confirm(f'Restart {service} now? [y/N] '):
             out('Nothing was restarted.')
             return False
     run = run or subprocess.run
     command = ['sudo', 'systemctl', 'restart', service]
     out('$ ' + shlex.join(command))
     try:
-        run(command, check=True)
+        if capture:
+            result = run(command, check=True, capture_output=True, text=True)
+            for stream in (getattr(result, 'stdout', None), getattr(result, 'stderr', None)):
+                if stream:
+                    out(stream.rstrip())
+        else:
+            run(command, check=True)
     except (OSError, subprocess.SubprocessError) as exc:
         out(f'{shlex.join(command)} failed: {exc}')
         journal(service, run, out)

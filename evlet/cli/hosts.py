@@ -177,7 +177,7 @@ def _port(root, name, port):
     return 8000
 
 
-def proxy_files(root, name, app, port, user=None):
+def proxy_files(root, name, app, port, user=None, out=print):
     """Write deploy/evlet-<name>.caddy, the service unit and the global options, as evlet setup --host does.
 
     Returns the rendered texts, which --apply installs (never the copies in deploy/)."""
@@ -191,28 +191,28 @@ def proxy_files(root, name, app, port, user=None):
                proxy.write(root / 'deploy' / f'evlet-{name}.service', texts['unit']),
                proxy.write(root / 'deploy' / site.GLOBAL_FILE, texts['options'])]
     for path in written:
-        print(f'Wrote {path}')
+        out(f'Wrote {path}')
     note = site.account_note(account, chosen)
     if note:
-        print(note)
+        out(note)
     return texts
 
 
-def _finish(root, name, port, apply, run, user, app):
+def _finish(root, name, port, apply, run, user, app, out):
     from . import site
-    texts = proxy_files(root, name, app, port, user)
+    texts = proxy_files(root, name, app, port, user, out)
     # The instance reads routes.py when it starts, so the service restarts after Caddy has the new site.
     commands = site.privileged_steps(root, name, texts, restart=True)
     if not apply:
-        print('Review the files, then run these steps with sudo:')
-        print('\n'.join('    ' + site.describe(command) for command in commands))
-        print('Or run the same command again with --apply to run them. Each one is shown first and sudo asks for your password.')
+        out('Review the files, then run these steps with sudo:')
+        out('\n'.join('    ' + site.describe(command) for command in commands))
+        out('Or run the same command again with --apply to run them. Each one is shown first and sudo asks for your password.')
         return
     with site.step('install the Caddy site and restart the service'):
-        site.run_privileged(commands, run=run)
+        site.run_privileged(commands, run=run, out=out)
 
 
-def add(root, name, host, frontend, *, apply=False, ips=None, port=None, routes_only=False, run=None, user=None):
+def add(root, name, host, frontend, *, apply=False, ips=None, port=None, routes_only=False, run=None, user=None, out=print):
     """evlet host add: routes.py, the DNS check, the Caddy file, then with apply the sudo steps."""
     from . import proxy, site
     check_host(root, name, host, frontend)
@@ -220,31 +220,31 @@ def add(root, name, host, frontend, *, apply=False, ips=None, port=None, routes_
     if not routes_only:
         saved = None if ips else site.saved_addresses(root)
         report, ok = proxy.check(None, ips or saved, hosts=(host,))
-        print(report)
+        out(report)
         if not ok:
             raise ValueError(f'{host} has no usable A or AAAA record yet. Point it at this server, or pass --ip with the public address. Nothing was changed')
     changed, app = _checked(root, name, lambda: add_host_line(path, host, frontend))
-    print(f'Added {host} to instances/{name}/routes.py, served by {frontend}' if changed else f'instances/{name}/routes.py already serves {host} with {frontend}')
+    out(f'Added {host} to instances/{name}/routes.py, served by {frontend}' if changed else f'instances/{name}/routes.py already serves {host} with {frontend}')
     if routes_only:
-        print(f'Restart the instance to serve it: evlet restart {name}. '
+        out(f'Restart the instance to serve it: evlet restart {name}. '
               'Caddy with on-demand TLS gets its certificate on the first visit.')
         return
-    _finish(root, name, _port(root, name, port), apply, run, user, app)
+    _finish(root, name, _port(root, name, port), apply, run, user, app, out)
     if apply:
-        print(site.site_answers(host))
+        out(site.site_answers(host))
 
 
-def remove(root, name, host, *, apply=False, port=None, routes_only=False, run=None, user=None):
+def remove(root, name, host, *, apply=False, port=None, routes_only=False, run=None, user=None, out=print):
     """evlet host remove: take the host out of routes.py and the Caddy file."""
     path = child(root, 'instances', name)
     changed, app = _checked(root, name, lambda: remove_host_line(path, host))
     if not changed:
         raise ValueError(f'instances/{name}/routes.py does not list {host}')
-    print(f'Removed {host} from instances/{name}/routes.py')
+    out(f'Removed {host} from instances/{name}/routes.py')
     if routes_only:
-        print(f'Restart the instance to stop serving it: evlet restart {name}')
+        out(f'Restart the instance to stop serving it: evlet restart {name}')
         return
-    _finish(root, name, _port(root, name, port), apply, run, user, app)
+    _finish(root, name, _port(root, name, port), apply, run, user, app, out)
 
 
 def listing(root, name):
@@ -259,7 +259,7 @@ def listing(root, name):
     return '\n'.join(row[0].ljust(widths[0]) + row[1].ljust(widths[1]) + row[2] for row in rows)
 
 
-def suggest(root, name, apps, *, yes=False, skip=False, ask=None):
+def suggest(root, name, apps, *, yes=False, skip=False, ask=None, out=print):
     """After evlet install adds apps: offer <label>.<instance domain> for each frontend with suggested_host.
 
     yes takes each suggestion, skip offers nothing. Without a terminal (and without yes) it only prints the
@@ -279,7 +279,7 @@ def suggest(root, name, apps, *, yes=False, skip=False, ask=None):
         if yes:
             host = offer
         elif ask is None:
-            print(f'{identity} suggests the host {offer}. Serve it with: evlet host add {name} {offer} --root {identity}')
+            out(f'{identity} suggests the host {offer}. Serve it with: evlet host add {name} {offer} --root {identity}')
             continue
         else:
             answer = ask(f'Serve {identity} on its own host? Press Enter for {offer}, type your own domain, or type no: ').strip().lower()
@@ -289,7 +289,7 @@ def suggest(root, name, apps, *, yes=False, skip=False, ask=None):
         check_host(root, name, host, identity)
         path = child(root, 'instances', name)
         _checked(root, name, lambda: add_host_line(path, host, identity))
-        print(f'Added {host} to instances/{name}/routes.py, served by {identity}')
-        print(f'Next: evlet host add {name} {host} --root {identity} --apply checks DNS, updates Caddy and restarts the service')
+        out(f'Added {host} to instances/{name}/routes.py, served by {identity}')
+        out(f'Next: evlet host add {name} {host} --root {identity} --apply checks DNS, updates Caddy and restarts the service')
         added.append(host)
     return added

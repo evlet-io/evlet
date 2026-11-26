@@ -12,7 +12,7 @@ def add_app(commands):
 
 
 def run_app(args, context):
-    from ..app import create_app, get_app
+    from .. import core
     root = context.root
     if args.name and (args.get or args.list):
         raise ValueError('Choose an app name, --get, or --list')
@@ -23,9 +23,9 @@ def run_app(args, context):
                 package = read_package(path)
                 print(f'{package.name}\t{package.version}\t{package.title}')
     elif args.get:
-        get_app(root, args.get, trust=args.trust, confirm=context.confirm)
+        core.app_fetch(root, args.get, trust=args.trust, confirm=context.confirm, out=print)
     elif args.name:
-        print(f'App created: {create_app(root, args.name, legacy=args.legacy)}')
+        core.app_create(root, args.name, legacy=args.legacy, out=print)
     else:
         raise ValueError('Provide an app name, --get URL, or --list')
 
@@ -36,15 +36,8 @@ def add_build(commands):
 
 
 def run_build(args, context):
-    from ..app import prepare_dependencies
-    from ...builds import prepare
-    root = context.root
-    names = [path.name for path in sorted((root / 'apps').iterdir()) if path.is_dir() and not path.name.startswith('.')]
-    if not args.trust and not context.confirm('Trust and build these local applications: ' + ', '.join(names) + '?'):
-        raise ValueError('Build requires explicit trust; review source, then use --trust')
-    packages = prepare_dependencies(root, names)
-    _, manifest = prepare(root, packages)
-    print('Built generation: ' + manifest['fingerprint'])
+    from ..core import build
+    build(context.root, trust=args.trust, confirm=context.confirm, out=print)
 
 
 def add_instance(commands):
@@ -54,7 +47,7 @@ def add_instance(commands):
 
 
 def run_instance(args, context):
-    from ..instance import create_instance
+    from ..core import instance_create
     root = context.root
     if args.list:
         if args.name:
@@ -65,7 +58,7 @@ def run_instance(args, context):
                 state = read_lock(path)
                 print(f'{path.name}\t{", ".join(state["apps"]) or "no installed apps"}')
     elif args.name:
-        print(f'Instance created: {create_instance(root, args.name)}')
+        instance_create(root, args.name, out=print)
     else:
         raise ValueError('Provide an instance name or --list')
 
