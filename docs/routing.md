@@ -402,11 +402,12 @@ evlet host add acme www.acme.com --root site.www --live
 - **Only active hosts are served**, and only they get 200 from `/_/tls-allowed`, so Caddy's
   on-demand TLS gets a certificate for a host once its DNS check passed and never for a pending
   or disabled one.
-- **No restart.** Each change bumps a version row (`evlet_hosts_version`). Every process looks
-  at it at most once a second; when it moved, the process rebuilds its `RouteTable` from the
+- **No restart.** Each change bumps a version row (`evlet_hosts_version`). Every request already
+  reads the Controls config version, and the same statement reads this row, so it costs no extra
+  statement; when it moved, the process rebuilds its `RouteTable` from the
   code table plus the active rows (`evlet.routing.with_hosts`) and swaps it in, with the origins,
   Host check and realms of `LocalAuth`. A host added by the CLI, a job or another process is
-  served within about a second. An instance with no hosts from data keeps the table it built at
+  served from that process's next request. An instance with no hosts from data keeps the table it built at
   start.
 - **A bad row never fails the boot.** A row the table can't serve (its app was removed, its
   frontend became an evlet frontend, `routes.py` took the host) is skipped, logged, and listed

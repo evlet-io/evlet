@@ -234,9 +234,6 @@ class Application:
         if scope["type"] != "http":
             raise ValueError("Unsupported ASGI scope")
         admission = deadline = None
-        if self.live_routes is not None and self.live_routes.due():
-            # At most once a second: pick up hosts another process added or removed (evlet.hosts).
-            await asyncio.to_thread(self.live_routes.refresh)
         try:
             headers = []
             path = scope['path']

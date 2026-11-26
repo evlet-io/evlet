@@ -215,8 +215,8 @@ backup in isolation and follow the same cutover checks.
 Sub-hosts in `routes.py` need a restart; hosts from data do not
 ([routing.md](routing.md#hosts-from-data)). `evlet host add NAME HOST --root APP.FRONTEND --live`
 adds one as pending; it is served, and Caddy's on-demand TLS gets its certificate, once its DNS
-check passes. Each process looks at the `evlet_hosts_version` row at most once a second, so every
-worker and the job runner pick a change up within about a second. The `evlet_host_check` job checks
+check passes. Each request reads the `evlet_hosts_version` row with the Controls config version (one
+statement), so every worker picks a change up on its next request. The `evlet_host_check` job checks
 pending hosts every minute and needs the job queue (`evlet serve --jobs`, as the unit `evlet setup`
 writes runs it); without it, run `evlet host check NAME`. A row the route table can't serve never
 stops the instance from starting: it is skipped and listed under Needs attention. Back up and

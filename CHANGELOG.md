@@ -39,9 +39,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Controls Overview shows the instance id and project id** to admins on the Controls host.
 - **Hosts from data, served without a restart** ([docs/routing.md](docs/routing.md#hosts-from-data)). A
   sub-host can be a row of `evlet_hosts` (host, target frontend, status `pending`/`active`/`disabled`, the
-  last DNS check and its error) instead of a `Host(...)` in `routes.py`. Each process checks a version row
-  at most once a second and swaps in a rebuilt route table, with `LocalAuth`'s origins and realms, so a
-  host added by the CLI, Controls or another process is served within about a second. A host starts
+  last DNS check and its error) instead of a `Host(...)` in `routes.py`. Each request reads a version row in
+  the same statement as the Controls config version (no extra statement) and, when it moved, swaps in a
+  rebuilt route table with `LocalAuth`'s origins and realms, so a host added by the CLI, Controls or another
+  process is served from the next request. A host starts
   pending and becomes active once its DNS points here (the `evlet proxy --check` logic, run every minute
   by the framework job `evlet_host_check` on pending hosts). Only active hosts get 200 from
   `/_/tls-allowed`. `routes.py` wins a clash; a row the table can't serve is skipped and listed under

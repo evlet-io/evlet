@@ -2,8 +2,9 @@
 
 routes.py stays the code: its primary host and sub-hosts are read once at start, and a clash there fails
 the boot. A row in evlet_hosts adds one sub-host on top of that table (evlet.routing.with_hosts). Each
-process checks a version row at most once a second and swaps in a rebuilt RouteTable when it moved, so a
-host written by the CLI, a job or another process is served within about a second.
+request already reads the Controls config version; the same statement reads the hosts version row
+(Controls._versions), and when it moved the process swaps in a rebuilt RouteTable. So a host written by the
+CLI, a job or another process is served from the next request on, at no extra statement per request.
 
 A host starts pending. It becomes active once its DNS points here, by the same check as
 `evlet proxy --check` (dns_status), which the evlet_host_check job runs on pending hosts every minute.
@@ -46,8 +47,6 @@ VERSION = TableDefinition('evlet_hosts_version', (
 ))
 CHECK_TASK = 'evlet_host_check'
 CHECK_EVERY = 60
-# How often a process looks at the version row.
-REFRESH_SECONDS = 1.0
 LOOKUP_SECONDS = 5
 SERVER_FILE = 'server.json'
 DNS = ('points here', 'may point here', 'points elsewhere', 'no A or AAAA record')
@@ -134,8 +133,8 @@ def saved_addresses(project):
 class LiveRoutes:
     """The route table an Application serves: the code table from routes.py plus the active rows of evlet_hosts.
 
-    refresh() reads the version row at most once a second and, when it moved, rebuilds the table and swaps
-    it into the application, its Business, Controls and LocalAuth (origins, Host check and realms)."""
+    seen(version) is called with the hosts version each request reads; when it moved, refresh() rebuilds the
+    table and swaps it into the application, its Business, Controls and LocalAuth (origins, Host check and realms)."""
 
     def __init__(self, application):
         self.application = application
@@ -147,28 +146,27 @@ class LiveRoutes:
         # The project folder, for the addresses deploy/server.json saved (build_instance sets it).
         self.project = None
         self.problems = ()
-        self._version, self._checked, self._lock, self._swapped = None, float('-inf'), Lock(), False
+        self._version, self._lock, self._swapped = None, Lock(), False
 
     @property
     def database(self):
         return self.application.database
 
-    def due(self):
-        return time.monotonic() - self._checked >= REFRESH_SECONDS
+    def seen(self, version):
+        """The hosts version a request read along with the config version: refresh when it moved."""
+        if version != self._version:
+            self.refresh()
 
     def refresh(self, force=False):
-        """Swap in a new table when the version row moved since the last look. Never raises: a database it
-        can't read leaves the current table in place. Returns whether the table changed."""
-        if not force and not self.due():
-            return False
-        self._checked = time.monotonic()
+        """Swap in a new table when the version row moved since the last look (always with force). Never
+        raises: a database it can't read leaves the current table in place. Returns whether the table changed."""
         with self._lock:
             try:
                 path = getattr(self.database, 'path', None)
                 if path is not None and not path.exists():
                     return False
                 with self.database._connection() as connection:
-                    # One statement each second; before the 0019_hosts step the table is missing, which is no error.
+                    # Before the 0019_hosts step the table is missing, which is no error.
                     try:
                         version = connection.run(qb.select('evlet_hosts_version', 'version').where(id=1)).value()
                     except OperationalError:
