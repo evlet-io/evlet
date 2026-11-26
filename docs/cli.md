@@ -85,12 +85,16 @@ exactly as before and refuses an existing folder.
 evlet setup myproject
 evlet setup myproject --app notes,crm --instance acme --dev
 evlet setup myproject --app notes --instance acme --host erp.example.com
+evlet project
+evlet project new-id
+evlet project mode production
 evlet app notes
 evlet app --get https://github.com/company/notes.git
 evlet app --list
 evlet build --trust
 evlet instance acme
 evlet instance --list
+evlet instance new-id acme
 evlet install notes --instance acme --trust
 evlet install site --instance acme --trust --yes
 evlet serve acme --port 8000
@@ -115,6 +119,10 @@ evlet proxy acme --caddy --check
 evlet host add acme www.example.com --root site.www --apply
 evlet host remove acme www.example.com --apply
 evlet host list acme
+evlet sites create acme home
+evlet sites put acme home ./build
+evlet sites publish acme home
+evlet sites rollback acme home
 evlet link-user acme buyer customer 42
 evlet controls grant acme mariam
 evlet users reset-two-step acme mariam
@@ -125,9 +133,9 @@ evlet playground --port 8000
 evlet docs --port 8001
 ```
 
-`evlet --help` lists the commands in groups: Start (`setup`, `app`, `instance`, `install`),
+`evlet --help` lists the commands in groups: Start (`setup`, `project`, `app`, `instance`, `install`),
 Develop (`dev`, `dev-link`, `playground`, `docs`, `build`), Change (`makemigration`, `migrate`,
-`upgrade`), Operate (`serve`, `restart`, `routes`, `proxy`, `host`, `link-user`, `jobs`,
+`upgrade`), Operate (`serve`, `restart`, `routes`, `proxy`, `host`, `sites` ([sites.md](sites.md)), `link-user`, `jobs`,
 `ledger`, `backup`), Recover (`restore`, `users`, `controls`, `secrets`, `ids`, `activity`) and
 Connector (`login`, `logout`, `describe`, `mcp`). `install`, `migrate` and `dev` build the apps
 themselves, so `evlet build` is optional: it only checks and builds ahead of time.
@@ -143,9 +151,40 @@ one; the others always need the name. Giving two different names is refused.
 models, as on a first install, also when the instance already has other apps; the app's
 existing migrations are recorded without running (their seed steps run). It prints the app
 (`Tables created from the models of sales`) and that later changes need a migration. On a new
-instance the framework's own steps are summarised (`Framework tables: created (17 framework
+instance the framework's own steps are summarised (`Framework tables: created (18 framework
 migrations recorded)`); on an existing database each one that ran is listed. Applied app
 migrations are named as `notes 0001_changes`.
+
+### Project and instance ids
+
+Every project and every instance has an id, in the [record id](internal/record-identity.md) format:
+13 lowercase letters and digits such as `01hc1sd9vc1ye`, safe as a DNS label, ordered by time, with
+the creation date readable from it. They are made locally, so nothing here can promise they are
+unique across the world: two ids collide only when they are made in the same millisecond and draw
+the same 21 random bits. Evlet Cloud keeps the registry and refuses a duplicate when a project or
+instance registers with it.
+
+- **The project id** is in `project.json` at the project root: `{"id", "created", "mode"}`, with
+  `mode` `development` unless set otherwise. `evlet setup` writes it. A project made before project ids
+  gets one the first time any project command runs, which prints it once on stderr
+  (`Project id: 01hc1sd9vc1ye`). Commit `project.json` with the project: a clone has the same id on
+  purpose. Run `evlet project new-id` to give a fork its own id; its instances keep theirs. When the
+  project folder cannot be written (a service account that may only read it), commands run without
+  an id until its owner runs one.
+- **The instance id** is in the instance's database, in the one-row table `evlet_instance` that
+  framework step `0018_instance_id` adds, so an existing instance gets its id when it migrates.
+  Backups and restores keep it: a restore is the same instance. The row also names the instance
+  folder the id was made for.
+- **A copied folder.** When two instances of a project report the same id, the one whose id was
+  made for another folder refuses to serve and names the fix: `evlet instance new-id <name>` gives
+  it its own id (stop it first; other commands still work on it). A backup of one instance restored
+  into another is a copy in the same way.
+
+`evlet project` prints the project id, its creation date, mode, endpoint (`none` for now) and each
+instance with its id. `evlet instance --list` adds the id as a third column. Controls shows both
+ids on its Overview ([controls.md](controls.md)); they are never shown to signed-out visitors or
+on public hosts. `evlet project mode production|development` rewrites only the `mode` key of
+`project.json`; it is a shell command, and no HTTP route can change it.
 
 `python -m evlet` accepts the same commands. It drops the working directory from
 `sys.path` before loading apps, but modules Python imports at startup can still be
@@ -701,9 +740,13 @@ that is not a static or server frontend of an installed app. The instance needs 
 `host remove` takes a host out of `routes.py` and rewrites the Caddy file the same way. `host list`
 prints the primary host and each sub-host with its root frontend and sign-in realm.
 
+`--live` keeps the host as data instead of in `routes.py`: no restart, and the running instance
+serves it within a second once its DNS check passes. `host check`, `host disable` and
+`host enable` manage such hosts ([routing.md](routing.md#hosts-from-data)).
+
 With Caddy's on-demand TLS ([routing.md](routing.md#many-instances-on-one-server)) no Caddy file
 changes: Caddy asks the instance before it gets a certificate. Then only `routes.py` and a restart
-are needed:
+are needed (or `--live`, with neither):
 
 ```sh
 evlet host add acme www.example.com --root site.www --routes-only
@@ -876,8 +919,10 @@ run `evlet migrate acme`, which moves them out again before you serve.
 
 Backups hold only the database unless you add `--with-files`, which also writes
 `<time>-files.tar.gz`: the instance's `files/` folder (uploaded attachments), readable by its
-owner only (mode 0600), symbolic links left out. Restore it by extracting it into
-`instances/<name>/` with the server stopped. `evlet backup` never copies `secret.key`; it prints
+owner only (mode 0600), symbolic links left out, with the instance's `sites/` folder. Without
+`--with-files`, an instance with [sites](sites.md) gets `<time>-sites.tar.gz`, its `sites/` folder
+alone. Restore either by extracting it into `instances/<name>/` with the server stopped; `evlet
+restore` leaves both folders as they are. `evlet backup` never copies `secret.key`; it prints
 a reminder after every backup. Without that key a restored database cannot open its saved
 connector, mailbox and two-step secrets, so keep a copy of it, and of the app sources, stored
 apart from the database backups (whoever holds both can read those secrets).

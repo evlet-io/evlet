@@ -10,6 +10,7 @@ from importlib.machinery import PathFinder, SourceFileLoader, SourcelessFileLoad
 import json
 import re
 import runpy
+import sqlite3
 import sys
 from zoneinfo import ZoneInfo
 from types import SimpleNamespace
@@ -199,6 +200,63 @@ def read_lock(path):
         if entry['commit'] is not None and not isinstance(entry['commit'], str):
             raise ValueError(f'Invalid revision for {name}')
     return value
+
+
+# The project id: project.json at the project root, committed with the project, so a clone has the same id on
+# purpose (evlet project new-id gives a fork its own). evlet.cli.project writes it; this only reads it.
+PROJECT_FILE = 'project.json'
+PROJECT_MODES = ('development', 'production')
+
+
+def read_project(root):
+    """{'id', 'created', 'mode'} from the project's project.json, or None when it has none yet."""
+    target = Path(root) / PROJECT_FILE
+    if target.is_symlink():
+        raise ValueError(f'{PROJECT_FILE} cannot be a symbolic link')
+    try:
+        value = json.loads(target.read_text(encoding='utf-8'))
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeError, ValueError):
+        raise ValueError(f'{target} is not valid JSON. Fix it, or remove it and run evlet project for a new id') from None
+    from .identity import decode
+    try:
+        if not isinstance(value, dict) or not isinstance(value.get('id'), str) or not decode(value['id']) \
+                or value['id'] != value['id'].lower() or not isinstance(value.get('created'), str) or value.get('mode') not in PROJECT_MODES:
+            raise ValueError
+    except ValueError:
+        raise ValueError(f'{target} must hold {{"id": a 13-character id, "created": a date, "mode": "development" or "production"}}. '
+                         'Fix it, or remove it and run evlet project for a new id') from None
+    return value
+
+
+def instance_identity(path):
+    """{'id', 'name', 'created'} of the instance in instances/<name>, read from its database without writing,
+    or None when it has no database or no id yet (not installed, or not migrated since 0018_instance_id)."""
+    database = Path(path) / 'data/database.sqlite3'
+    if not database.is_file() or database.is_symlink():
+        return None
+    from .framework import instance_identity as read
+    with closing(read_file(database)) as connection:
+        return read(connection)
+
+
+def check_identity(root, name):
+    """Refuse to serve a copy: when another instance of the project has the same id, the one whose id was made
+    for another folder is the copy (both, when neither folder holds its own id)."""
+    mine = instance_identity(Path(root) / 'instances' / name)
+    if mine is None or mine['name'] == name:
+        return
+    for other in sorted(Path(root, 'instances').iterdir()):
+        if other.name == name or other.name.startswith('.') or not other.is_dir():
+            continue
+        try:
+            theirs = instance_identity(other)
+        except (OSError, ValueError, sqlite3.Error):
+            continue
+        if theirs is not None and theirs['id'] == mine['id']:
+            raise ValueError(f'Instance {name} has the same instance id ({mine["id"]}) as instance {other.name}: its folder was '
+                             f'copied. Give it its own id with evlet instance new-id {name}, then start it again')
 
 
 # The installed apps and Evlet version, one row written by evlet install and evlet migrate (evlet/cli/install.py).
@@ -421,6 +479,10 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     services.settings, services.preferences = app.business.settings.values, app.business.settings.preferences
     app.business.build_manifest = manifest
     app._source_packages = pinned
+    # Active hosts from evlet_hosts join the table now, so evlet proxy and evlet host list show them too.
+    app.live_routes.project = path.parent.parent
+    app.live_routes.sites_folder = path / 'sites'
+    app.live_routes.refresh(force=True)
     app.business.build_directory = path.parent.parent / '.evlet' / 'builds' / manifest['fingerprint']
     return app, tuple(schedules)
 
@@ -528,7 +590,7 @@ def register_schedules(app, schedules):
             app.business.jobs.schedule(schedule.name, schedule.task, schedule.payload, every=schedule.every)
 
 
-def load_runtime(root, name, *, port=8000, development=False, public=False):
+def load_runtime(root, name, *, port=8000, development=False, public=False, serving=False):
     from .cli.project import child
     from .packages import resolve_packages, portable_lock_entry
     path = child(root, 'instances', name)
@@ -549,6 +611,8 @@ def load_runtime(root, name, *, port=8000, development=False, public=False):
         expected = portable_lock_entry(package.name, locked['apps'][package.name])
         if current != expected and (not development or any(current[key] != expected[key] for key in ('version', 'source', 'commit'))):
             raise ValueError(f'{package.name} differs from apps.lock; stop serving and run evlet migrate {name}')
+    if serving:
+        check_identity(root, name)
     app, _ = build_instance(config, path, packages, port=port, development=development)
     if development and app.routes.primary:
         raise ValueError('Development serving requires a local instance and loopback host')

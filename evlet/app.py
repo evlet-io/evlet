@@ -138,6 +138,7 @@ class Application:
         self.registry = database.registry
         if auth is None and (policy is not None or children or attachments or storage is not None or jobs is not None or events is not None):
             raise ValueError("Business features require authentication")
+        self.live_routes = None
         self.business = None if auth is None else Business(database, auth, policy=policy, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
             from .routing import authority
@@ -156,6 +157,9 @@ class Application:
             from .printing import Prints
             self.business.prints = Prints(self.business, prints)
             self.business.controls.routes = self.routes
+            # Sub-hosts from evlet_hosts join the table without a restart (evlet.hosts).
+            from .hosts import LiveRoutes
+            self.live_routes = self.business.live_routes = LiveRoutes(self)
             for connector in connectors:
                 self.business.connectors.register('app', connector)
             # Secrets are sealed with a key outside the database: EVLET_SECRET_KEY or secret_key, shared with
@@ -230,6 +234,9 @@ class Application:
         if scope["type"] != "http":
             raise ValueError("Unsupported ASGI scope")
         admission = deadline = None
+        if self.live_routes is not None and self.live_routes.due():
+            # At most once a second: pick up hosts another process added or removed (evlet.hosts).
+            await asyncio.to_thread(self.live_routes.refresh)
         try:
             headers = []
             path = scope['path']
@@ -349,8 +356,10 @@ class Application:
                 logger.exception("Response encoding failed", extra={'request_id': scope.get('evlet.request_id')})
                 status, headers, download = 500, [], False
                 encoded = b'{"error": "Internal server error"}'
-            response_headers = [(b"x-content-type-options", b"nosniff"), (b"cache-control", b"no-store"), *headers]
-            if status != 204:
+            # no-store unless the response chose its own caching (a site's pages and hashed files, the manifest).
+            cached = any(name == b"cache-control" for name, _ in headers)
+            response_headers = [(b"x-content-type-options", b"nosniff"), *(() if cached else ((b"cache-control", b"no-store"),)), *headers]
+            if status not in (204, 304):
                 if not download:
                     response_headers.append((b"content-type", b"application/json; charset=utf-8"))
                 response_headers.append((b"content-length", str(len(encoded)).encode()))
@@ -726,6 +735,8 @@ class Application:
         upgrade(self.database, apply=not self.managed_framework)
         if self.business:
             self.business.initialize()
+        if self.live_routes is not None:
+            self.live_routes.refresh(force=True)
 
     def stop(self):
         """Stop admission and end live streams before server shutdown. Safe from any thread."""

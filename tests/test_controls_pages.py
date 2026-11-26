@@ -357,7 +357,7 @@ def test_exported_layout_and_list_pasted_into_the_model_give_the_same_screens(tm
 
 def test_dns_lookups_in_the_host_check_time_out(monkeypatch):
     import threading
-    import evlet.controls_system as system
+    import evlet.hosts as system
     monkeypatch.setattr(system, 'LOOKUP_SECONDS', 0.05)
     release = threading.Event()
     slow = system.bounded(lambda host, port, **options: release.wait(5))

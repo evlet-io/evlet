@@ -61,3 +61,23 @@ def create_instance(root, name):
         atomic_json(stage / 'apps.lock', {'apps': {}})
         os.rename(stage, target)
     return target
+
+
+def new_id(root, name):
+    """Give an instance a new instance id made for its folder (a copied folder keeps the original's).
+    Refuses while it serves. Returns (old id, new id)."""
+    from ..framework import instance_identity, new_instance_id
+    from ..writes import file_transaction
+    from .project import instance_guard
+    path = child(root, 'instances', name)
+    database = path / 'data/database.sqlite3'
+    if not (path / 'config.py').is_file():
+        raise ValueError(f'Instance does not exist: {name}')
+    if not database.is_file() or database.is_symlink():
+        raise ValueError(f'Instance {name} has no database yet; it gets its id when an app is installed')
+    with instance_guard(path):
+        with file_transaction(database, write=True) as connection:
+            old = instance_identity(connection)
+            if old is None:
+                raise ValueError(f'Instance {name} has no id yet; run evlet migrate {name} first')
+            return old['id'], new_instance_id(connection, name)

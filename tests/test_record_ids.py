@@ -249,9 +249,9 @@ def test_the_framework_step_adds_the_guard_to_existing_tables(tmp_path):
     with sqlite3.connect(path) as connection:
         for table in registry.models:
             connection.execute(f'DROP TRIGGER "evlet_{table}_fixed_id"')
-        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets', '0016_activity', '0017_prompt_tickets')")
+        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets', '0016_activity', '0017_prompt_tickets', '0018_instance_id', '0019_hosts', '0021_sites')")
     assert STEPS[5].name == '0006_fixed_ids'
-    assert upgrade(database) == ['0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets', '0016_activity', '0017_prompt_tickets']
+    assert upgrade(database) == ['0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets', '0016_activity', '0017_prompt_tickets', '0018_instance_id', '0019_hosts', '0021_sites']
     with database.transaction() as tx:
         assert check_ids(tx.connection, registry) == []
 

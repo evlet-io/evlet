@@ -165,7 +165,7 @@ def _docs_access(application, scope):
 def _frontend(application, scope, host, identity, base, rest):
     """Serve an app frontend: the evlet shell under its base, a static dist folder or a server handler."""
     from ..app import HTTPError
-    from .serving import frontend_response, static_response
+    from .serving import frontend_response, site_response, static_response
     definition = application.routes.frontend(identity)
     user = _frontend_user(application, scope, definition)
     # A public host's pages carry no config block: nothing about the instance, its apps or its version.
@@ -175,6 +175,10 @@ def _frontend(application, scope, host, identity, base, rest):
         if match is None or match[1] and match[1] not in application.registry.exposed or not _record_segment(match[2]):
             raise HTTPError(404, 'Route not found')
         response = static_response('/', config)
+    elif definition.kind == 'static' and '.' not in identity:
+        # An instance site (evlet.sites): only ever on its own public host, with cache headers and ETags.
+        response = site_response(application.routes.dist(identity), rest, base, definition.csp.get('connect-src', ()),
+                                 definition.routing, scope.get('query_string', b''), dict(scope.get('headers', [])).get(b'if-none-match', b''))
     elif definition.kind == 'static':
         response = frontend_response(application.routes.dist(identity), rest, config, base, definition.csp.get('connect-src', ()),
                                      definition.routing, scope.get('query_string', b''))
