@@ -123,8 +123,8 @@ def setup(directory, *, framework=None):
     try:
         (target / 'apps').mkdir()
         (target / 'instances').mkdir()
-        from .project import ensure_project
-        ensure_project(target)
+        from .project import atomic_json, project_record
+        atomic_json(target / 'project.json', project_record())  # a new folder: no lock needed
         create_environment(target, framework)
     except BaseException:
         # target was exclusively created by this call; never remove an existing project.
