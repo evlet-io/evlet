@@ -44,6 +44,7 @@ class Runtime:
         self.active = None
         self.thread = None
         self.restart_endpoint = False
+        self.caddy = None  # the CaddySync of an endpoint that pushes routes to Caddy (evlet/cli/caddy.py)
 
     # ---------- operations ----------
 
@@ -163,7 +164,8 @@ def endpoints(runtime):
     @tool('operate', 'GET')
     def project_status(context):
         """The project at a glance: its id, mode and endpoint, the MCP address, and each instance with its id, host,
-        Evlet version, installed apps, process status and health. Also the operation running now, if any."""
+        Evlet version, installed apps, process status and health. Also the operation running now, if any, and caddy:
+        whether the endpoint's last push of routes to Caddy's admin API worked (null without one)."""
         from ..instances import read_project
         from .endpoint import instance_names, two_step_ready, url
         record = read_project(runtime.root) or {}
@@ -171,7 +173,8 @@ def endpoints(runtime):
         return {'id': record.get('id'), 'created': record.get('created'), 'mode': record.get('mode'), 'endpoint': url(runtime.root),
                 'mcp': url(runtime.root) + '/_/mcp', 'two_step': two_step_ready(runtime.root),
                 'instances': [instance_status(runtime, name) for name in instance_names(runtime.root)],
-                'running': {'operation': active.id, 'kind': active.kind} if active else None}
+                'running': {'operation': active.id, 'kind': active.kind} if active else None,
+                'caddy': runtime.caddy.status() if runtime.caddy is not None else None}
 
     @tool('operate', 'GET')
     def operation_log(context, limit: int = 50, before: int = 0):

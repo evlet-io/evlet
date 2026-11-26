@@ -27,6 +27,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   route table it built at start.
 - `evlet.cli.proxy.check` and `server_addresses` keep their names and arguments; the per-host check moved
   to `evlet.hosts.dns_status`, which the new host check job uses too.
+- **With an endpoint and Caddy, load the base config once.** Run `evlet setup --endpoint --endpoint-host HOST`
+  again (it writes `deploy/evlet-global.caddy` with the admin API and the one `ask`), or put the output of
+  `evlet proxy --endpoint --caddy` first in your Caddyfile, and reload Caddy. Then the instances' own Caddy files
+  are no longer needed. Set `"caddy_admin": null` in `.evlet/endpoint.json` to keep managing Caddy files yourself.
+  A project without an endpoint keeps today's `evlet proxy` files, unchanged.
 
 ### Added
 
@@ -58,6 +63,19 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   output and the `apps.lock` before it. `evlet project` prints the endpoint's address and whether it answers.
 - **`evlet project mode production` refuses** on a project with an endpoint until the endpoint has a public host and
   the owner has set up two-step sign-in.
+- **Caddy through its admin API, with one TLS ask** ([docs/project-endpoint.md](docs/project-endpoint.md#caddy)).
+  A project endpoint with a public host keeps two objects in Caddy's running config, `@id` `evlet-<project id>`
+  (each instance's hosts to its port, with the `evlet proxy` refusals) and `evlet-<project id>-tls` (those hosts on
+  demand), pushed on start, when an instance starts or stops and when its hosts change, and restored after a
+  `caddy reload`. It never touches the rest of the config. A load Caddy refuses is logged and retried with backoff;
+  the endpoint keeps running and the portal and `project_status` (`caddy`) show the error. The endpoint's
+  `/_/tls-allowed` answers for its own host and every instance's hosts. `caddy_admin` in `.evlet/endpoint.json`
+  sets the admin address (loopback only; `null` turns it off).
+- **`evlet proxy --endpoint --caddy`** prints the one-time global options for that (admin API on loopback, the
+  on-demand `ask` pointing at the endpoint, strict SNI); `evlet setup --endpoint --endpoint-host` writes and installs
+  them as `deploy/evlet-global.caddy`.
+- **`GET /_/hosts` on every instance**, loopback only: the hosts it serves now, from the route table that answers
+  `/_/tls-allowed`.
 
 ### Internal
 

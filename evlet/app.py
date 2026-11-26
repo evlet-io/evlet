@@ -33,6 +33,8 @@ OIDC_PATHS = ('/_/oidc/start', '/_/oidc/callback', '/_/oidc/finish')
 PUBLIC_PATHS = MCP_PATHS + MAIL_PATHS + OIDC_PATHS
 # The Caddy on-demand TLS check answers loopback callers only; the proxy refuses it from outside.
 TLS_CHECK = '/_/tls-allowed'
+# The hosts this instance serves, for the project endpoint's Caddy routes (evlet/cli/caddy.py); loopback only.
+HOSTS_LIST = '/_/hosts'
 
 
 def request_body_limit(path, image_bytes=None):
@@ -270,7 +272,7 @@ class Application:
                     await self._eva_stream(scope, receive, send)
                     return
                 body = None
-                internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/')) and scope['path'] != TLS_CHECK
+                internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/')) and scope['path'] not in (TLS_CHECK, HOSTS_LIST)
                 if internal:
                     # OAuth and the remote MCP endpoint read their own bodies (JSON or form), at most 64 KiB like /api.
                     data = bytearray()

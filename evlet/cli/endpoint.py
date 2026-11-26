@@ -41,7 +41,10 @@ def read_settings(root):
     if not isinstance(value, dict) or type(value.get('port')) is not int or not isinstance(value.get('instances', {}), dict) \
             or value.get('host') is not None and not isinstance(value['host'], str):
         raise ValueError(f'{path} must hold {{"port": a number, "host": a hostname or null, "instances": {{name: port}}}}')
-    return {'port': value['port'], 'host': value.get('host'), 'instances': dict(value.get('instances', {}))}
+    settings = {'port': value['port'], 'host': value.get('host'), 'instances': dict(value.get('instances', {}))}
+    if 'caddy_admin' in value:
+        settings['caddy_admin'] = value['caddy_admin']  # docs/project-endpoint.md#caddy; checked by caddy.admin_address
+    return settings
 
 
 def save_settings(root, value):
@@ -205,11 +208,13 @@ CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
 
 
 class Endpoint:
-    """ASGI: the portal page at /, everything else by the Application. Starts the supervisor once the Application
-    has started and stops every child before the Application shuts down."""
+    """ASGI: the portal page at /, the project's one TLS ask at /_/tls-allowed, everything else by the Application.
+    Starts the supervisor (and the Caddy push, when there is one) once the Application has started, and stops them
+    before the Application shuts down."""
 
-    def __init__(self, app, supervisor):
-        self.app, self.supervisor = app, supervisor
+    def __init__(self, app, supervisor, caddy=None, host=None):
+        from ..app import TLS_CHECK
+        self.app, self.supervisor, self.caddy, self.host, self.tls_check = app, supervisor, caddy, host, TLS_CHECK
 
     async def __call__(self, scope, receive, send):
         if scope['type'] == 'lifespan':
@@ -219,14 +224,21 @@ class Endpoint:
                     root = self.supervisor.root
                     await asyncio.to_thread(self.supervisor.start_all, [name for name in self.supervisor.children
                                                                          if (root / 'instances' / name / 'data/database.sqlite3').is_file()])
+                    if self.caddy is not None:
+                        self.caddy.start()
                 await send(message)
 
             async def incoming():
                 message = await receive()
                 if message['type'] == 'lifespan.shutdown':
+                    if self.caddy is not None:
+                        await asyncio.to_thread(self.caddy.stop)
                     await asyncio.to_thread(self.supervisor.stop_all)
                 return message
             await self.app(scope, incoming, relay)
+            return
+        if scope['type'] == 'http' and scope['path'] == self.tls_check:
+            await self.tls_allowed(scope, send)
             return
         if scope['type'] == 'http' and scope['method'] in ('GET', 'HEAD') and scope['path'] in ('/', '/index.html'):
             await self.portal(scope, send)
@@ -249,6 +261,24 @@ class Endpoint:
         await send({'type': 'http.response.start', 'status': status, 'headers': headers})
         await send({'type': 'http.response.body', 'body': b'' if scope['method'] == 'HEAD' else body})
 
+    async def tls_allowed(self, scope, send):
+        """The project's one on-demand TLS ask: 200 for the endpoint's host and for every host an instance serves now
+        (asked at that instance's own /_/tls-allowed), 404 otherwise. Loopback only, as on an instance."""
+        import ipaddress
+        from urllib.parse import parse_qs
+        from . import caddy
+        try:
+            loopback = ipaddress.ip_address(self.app.business.auth.client_address(scope)).is_loopback
+            domain = parse_qs(scope.get('query_string', b'').decode('ascii'), max_num_fields=1).get('domain', [''])[0].lower()
+        except (ValueError, UnicodeError):
+            loopback, domain = False, ''
+        ok = scope['method'] == 'GET' and loopback and await asyncio.to_thread(caddy.allowed, self.supervisor, self.host, domain)
+        body = json.dumps({'allowed': domain} if ok else {'error': 'Not served here'}).encode()
+        await send({'type': 'http.response.start', 'status': 200 if ok else 404,
+                    'headers': [(b'content-type', b'application/json'), (b'cache-control', b'no-store'),
+                                (b'content-length', str(len(body)).encode())]})
+        await send({'type': 'http.response.body', 'body': body})
+
 
 async def _no_body():
     return {'type': 'http.request', 'body': b''}
@@ -264,13 +294,23 @@ def application(root, *, link=True):
     development = mode(root) == 'development'
     supervisor = Supervisor(root, instance_ports(root), development=development)
     runtime = Runtime(root, supervisor)
+    settings = read_settings(root)
+    runtime.caddy = caddy_sync(root, supervisor, settings)
     app = build(root, runtime=runtime)
     runtime.app = app
-    served = Endpoint(app, supervisor)
-    if development and not read_settings(root)['host']:
+    served = Endpoint(app, supervisor, runtime.caddy, settings['host'])
+    if development and not settings['host']:
         from ..devlink import DevSignIn
         served = DevSignIn(served, announce=link, user=OWNER)
     return served, runtime
+
+
+def caddy_sync(root, supervisor, settings):
+    """The thread that pushes the instances' hosts to Caddy's admin API (evlet/cli/caddy.py), or None without one."""
+    from ..instances import read_project
+    from .caddy import CaddySync, admin_address
+    address = admin_address(settings)
+    return None if address is None else CaddySync(supervisor, read_project(root)['id'], address)
 
 
 def serve(root, *, link=True):
@@ -326,13 +366,18 @@ WantedBy=multi-user.target
 def install_steps(root, unit, site):
     """The privileged steps for production, in the format of evlet.cli.site.run_privileged."""
     from . import site as sites
+    from .caddy import global_options
     deploy = Path(root) / 'deploy'
     unit_target = Path(sites.SYSTEMD_DIR) / f'{UNIT}.service'
     site_target = Path(sites.CADDY_DIR) / f'{UNIT}.caddy'
+    # Caddy's global options, once: the admin API on loopback and the one on-demand TLS ask (docs/project-endpoint.md#caddy).
+    options_target, options = Path(sites.CADDY_DIR) / sites.GLOBAL_FILE, global_options(root)
     return [
         ('install', str(deploy / f'{UNIT}.service'), str(unit_target), unit),
         ('install', str(deploy / f'{UNIT}.caddy'), str(site_target), site),
+        ('install', str(deploy / sites.GLOBAL_FILE), str(options_target), options),
         ('import', str(site_target)),
+        ('import-first', str(options_target), options),
         ['sudo', 'systemctl', 'daemon-reload'],
         ['sudo', 'systemctl', 'enable', '--now', UNIT],
         ['sudo', 'systemctl', 'reload', 'caddy'],
@@ -340,10 +385,12 @@ def install_steps(root, unit, site):
 
 
 def write_service_files(root, account):
-    from . import proxy
+    from . import proxy, site as sites
+    from .caddy import global_options
     unit, site = service_files(root, account)
     deploy = Path(root) / 'deploy'
     deploy.mkdir(mode=0o755, exist_ok=True)
     proxy.write(deploy / f'{UNIT}.service', unit)
     proxy.write(deploy / f'{UNIT}.caddy', site)
+    proxy.write(deploy / sites.GLOBAL_FILE, global_options(root))
     return unit, site

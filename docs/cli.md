@@ -122,6 +122,7 @@ evlet backup --instance acme
 evlet restore instances/acme/data/backups/20261112T061500000000Z.sqlite3 --instance acme
 evlet routes acme
 evlet proxy acme --caddy --check
+evlet proxy --endpoint --caddy
 evlet host add acme www.example.com --root site.www --apply
 evlet host remove acme www.example.com --apply
 evlet host list acme
@@ -821,6 +822,11 @@ app.example.com {
 `evlet proxy acme --caddy` prints this block for your hosts, after a global options block
 that turns on `strict_sni_host`. Put that block first in `/etc/caddy/Caddyfile`, or add its
 `servers :443 { strict_sni_host on }` lines to the global options block you have.
+
+With a [project endpoint](project-endpoint.md#caddy), skip the block per instance: `evlet proxy --endpoint --caddy`
+prints the one-time global options (the admin API on loopback and the endpoint's one on-demand TLS `ask`), and the
+endpoint adds every instance's hosts to Caddy through the admin API itself. `evlet proxy NAME --caddy` still prints
+an instance's own file, with a note on stderr.
 
 Caddy obtains the certificate and passes the original Host header, which must
 match `domain`. Then run:

@@ -120,6 +120,64 @@ no tool changes it.
 MCP clients get the framework's approvals: tools that change something wait for the owner's approval in Settings,
 as `call_service` does on any instance ([tools.md](tools.md#approvals)).
 
+## Caddy
+
+Caddy takes one on-demand TLS `ask` URL. With an endpoint, that URL is the endpoint's, and the endpoint also tells
+Caddy where each host goes, through Caddy's admin API on loopback. Nothing about Caddy changes when a host or an
+instance does.
+
+**The base config, once.** `evlet setup --endpoint --endpoint-host HOSTNAME` writes `deploy/evlet-global.caddy`
+with Caddy's global options and installs it on the first line of the Caddyfile (`--apply`, or the printed `sudo`
+steps). `evlet proxy --endpoint --caddy` prints the same text (`--write PATH` writes it):
+
+```text
+{
+	admin localhost:2019
+	on_demand_tls {
+		ask http://127.0.0.1:7999/_/tls-allowed
+	}
+	servers :443 {
+		strict_sni_host on
+	}
+}
+```
+
+A Caddyfile with a global options block of its own gets the lines to add instead of a second block. The endpoint's
+own site (`deploy/evlet-project.caddy`) gives Caddy the HTTPS server on `:443` that the routes go into.
+
+**The routes.** The endpoint keeps two objects in Caddy's running config, by `@id`, and changes nothing else:
+
+| `@id` | Where | What |
+| --- | --- | --- |
+| `evlet-<project id>` | first in the routes of the server that listens on `:443` | each host of each instance to `127.0.0.1:<its port>`, with the refusals of the `evlet proxy` Caddy file: `/_/*` but the public framework paths, and `/controls*` and `/docs*` on portal sub-hosts |
+| `evlet-<project id>-tls` | first in `apps.tls.automation.policies` | the same hosts, with `on_demand`, so Caddy asks the endpoint before it gets each certificate |
+
+It pushes them when it starts, when an instance starts or stops, and when an instance's hosts change; it looks at
+the instances every 2 seconds and checks every 10 seconds that Caddy still holds the route, so a `caddy reload`,
+which drops it, is repaired. A stopped instance's hosts leave the route; a restarting one keeps them. With no host
+at all, both objects are removed.
+
+**Which hosts.** Each instance answers `GET /_/hosts` on loopback with the hosts it serves now: its primary host,
+the sub-hosts of `routes.py` and its active [hosts from data](routing.md#hosts-from-data). The same route table
+answers its own `/_/tls-allowed`, so there is one source of truth and the endpoint keeps no copy of it in project.db.
+
+**The one ask.** The endpoint's `GET /_/tls-allowed?domain=HOST` answers 200 for the endpoint's own host and for any
+host a running instance answers 200 for at its own `/_/tls-allowed`; 404 otherwise, and to anyone but this machine.
+A host from data gets a certificate once it is active, as without an endpoint.
+
+**When Caddy refuses.** Caddy applies each load atomically and keeps its last good config when it refuses one, so
+one bad host never stops it. A refused load, or an admin API that does not answer, is logged (`Caddy refused ...;
+trying again in 5 s`) and tried again after 1, 2, 5, 10, 30, then 60 seconds; the endpoint keeps running. The
+portal's Caddy card and `project_status` (`caddy`: `admin`, `state` `ok` or `failed`, `error`, `pushed_at`, `hosts`)
+show it.
+
+**Settings.** `caddy_admin` in `.evlet/endpoint.json` is the admin API's address, an `http://` URL on `localhost`,
+`127.0.0.1` or `::1`. Left out, it is `http://localhost:2019` when the endpoint has a public host and off in
+development; `null` turns the push off (then keep a Caddy file per instance, as without an endpoint).
+
+A project without an endpoint never talks to the admin API: `evlet proxy` and `evlet setup --host` write the same
+files as before, one site block per instance.
+
 ## Development and production
 
 | | Development | Production |
@@ -137,4 +195,5 @@ Everything else is the same code, files and processes.
 The develop tier of tools, choosing the tiers MCP clients see by mode, and a management channel for the CLI to ask a
 running endpoint (so `evlet restart` goes through it) come next. Until then `evlet restart` and `evlet upgrade`
 from the shell use systemd as before; on a project whose endpoint runs the instances, use the portal or the tools.
-`host_add`, `host_remove` and `host_check` wait for hosts read from data.
+`host_add`, `host_remove` and `host_check` wait for hosts read from data. Caddy's routes come from the instances'
+running route tables, so a `routes.py` change reaches Caddy once the instance restarts.

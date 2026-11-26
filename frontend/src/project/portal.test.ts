@@ -56,11 +56,22 @@ describe('project portal', () => {
     const { root, dispose } = await render(stub());
     expect(root.querySelector('[data-project-id]')!.textContent).toBe(STATUS.id);
     expect(root.querySelector('[data-mcp]')!.textContent).toBe(STATUS.mcp);
+    expect(root.querySelector('[data-caddy]')).toBeNull();
     const row = root.querySelector('[data-instance="acme"]')!;
     expect(row.textContent).toContain('01hc1sdbbbbbb');
     expect(row.textContent).toContain('notes 0.1.0');
     expect(row.textContent).toContain('healthy');
     expect(root.querySelector('[data-log]')!.textContent).toContain('backup_create');
+    dispose();
+  });
+
+  it('shows the Caddy push and its error', async () => {
+    const api = stub();
+    const caddy = { admin: 'http://localhost:2019', state: 'failed', error: 'Caddy refused PATCH /id/evlet-x (400): bad host; trying again in 5 s', pushed_at: null, hosts: 0 };
+    api.status = () => Promise.resolve({ ...STATUS, caddy });
+    const { root, dispose } = await render(api);
+    expect(root.querySelector('[data-caddy]')!.textContent).toContain('http://localhost:2019');
+    expect(root.querySelector('[data-caddy-error]')!.textContent).toContain('trying again in 5 s');
     dispose();
   });
 
