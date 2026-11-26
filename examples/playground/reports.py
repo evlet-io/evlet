@@ -3,9 +3,9 @@
 A report reads through its context, so each person sees only the rows and fields they may read.
 """
 
-from evlet import Chart, Column, Count, Date, Link, Report, Select, Sum, ValidationError
+from evlet import Chart, Column, Count, Date, Link, Ref, Report, Select, Sum, ValidationError
 
-from .models import Customer, Invoice, LedgerEntry
+from .models import Customer, Invoice, LedgerEntry, PointMove
 
 # A filter's `in` takes at most 100 values (evlet/query.py), so a report reads at most that many customers.
 MOST_CUSTOMERS = 100
@@ -78,7 +78,10 @@ class SalesByCustomer(Report):
     status = Select(['draft', 'sent'], default='sent')
     from_date = Date(label='Posted from')
     to_date = Date(label='Posted to')
-    columns = (Column('customer', type='link', link='customer'), Column('invoices', type='integer', total=True, unit='invoices'),
+    # Each customer opens the Invoice register with that customer and this run's status and dates (a drill down).
+    columns = (Column('customer', type='link', link='customer', report='InvoiceRegister',
+                      filters={'customer': 'customer', 'status': 'status', 'from_date': 'from_date', 'to_date': 'to_date'}),
+               Column('invoices', type='integer', total=True, unit='invoices'),
                Column('total', type='currency', total=True, unit='AED', source='invoice.total'))
 
     def run(self):
@@ -139,4 +142,42 @@ class LedgerBalances(Report):
         return {'rows': groups[offset:offset + limit], 'total': len(groups), 'totals': totals}
 
 
-REPORTS = (InvoiceRegister, InvoicesByCustomer, SalesByCustomer, LedgerBalances)
+class CustomerStatement(Report):
+    """One customer's invoices in any currency: the total's unit is the customer's currency, read from the filter
+    (Column(unit=Ref('customer.currency'))), so a KWD customer's total shows in KWD with three places."""
+    title = 'Customer statement'
+    roles = ('admin', 'editor', 'viewer')
+    group = 'Sales'
+    model = Invoice
+    customer = Link(Customer, required=True)
+    columns = (Column('id', type='link', link='invoice', label='Invoice'), Column('posting_date', type='date', label='Posted'),
+               Column('status'), Column('total', type='currency', total=True, unit=Ref('customer.currency'), source='invoice.total'))
+
+    def run(self):
+        filters = {'customer': self.customer}
+        page = self.context.list(Invoice, filters=filters, order_by=('-posting_date', '-id'), limit=self.context.limit, offset=self.context.offset)
+        [everything] = self.context.aggregate(Invoice, measures={'total': Sum('total')}, filters=filters)
+        rows = [{name: row.get(name) for name in ('id', 'posting_date', 'status', 'total')} for row in page['rows']]
+        return {'rows': rows, 'total': page['total'], 'totals': {'total': everything['total']}}
+
+
+class PointsByCustomer(Report):
+    """Customer points from the points ledger, which has no routes or screens. Report.trusted = True gives run() a
+    read-only transaction session that reads the ledger whatever the runner's own rules; the report's roles still
+    decide who runs it."""
+    title = 'Points by customer'
+    roles = ('admin', 'editor')
+    group = 'Sales'
+    model = PointMove
+    autorun = True
+    trusted = True
+    columns = (Column('customer', type='link', link='customer'), Column('points', type='integer', total=True, unit='points'))
+
+    def run(self):
+        groups = self.context.session.aggregate(PointMove, measures={'points': Sum('points')}, group_by=('customer',))
+        groups.sort(key=lambda row: -(row['points'] or 0))
+        offset, limit = self.context.offset, self.context.limit
+        return {'rows': groups[offset:offset + limit], 'total': len(groups), 'totals': {'points': sum(row['points'] or 0 for row in groups)}}
+
+
+REPORTS = (InvoiceRegister, InvoicesByCustomer, SalesByCustomer, LedgerBalances, CustomerStatement, PointsByCustomer)

@@ -10,7 +10,7 @@ them as Application(workspaces=WORKSPACES). Each role sees only the items it can
 
 from evlet import NavGroup, NavSection, Shortcut, Workspace
 
-from .reports import InvoiceRegister, InvoicesByCustomer, LedgerBalances, SalesByCustomer
+from .reports import CustomerStatement, InvoiceRegister, InvoicesByCustomer, LedgerBalances, PointsByCustomer, SalesByCustomer
 
 SALES = Workspace('Sales', icon='receipt', home=True, groups=(
     NavSection('Sell', items=(
@@ -26,12 +26,14 @@ SALES = Workspace('Sales', icon='receipt', home=True, groups=(
             'ledgerentry',
             # An @api function that returns a prompt (Quick invoice), opened from the sidebar.
             Shortcut(api='playground.quick_invoice', label='Quick invoice', icon='zap'),
+            # A prompt whose submit() closes invoice periods through evlet.periods.set_lock.
+            Shortcut(api='playground.close_period', label='Close invoices', icon='lock'),
         )),
     )),
     NavSection('Analyse', items=(
         NavGroup('Reports', icon='chart-column', color='rose', items=(
             Shortcut(report=InvoiceRegister), Shortcut(report=InvoicesByCustomer), Shortcut(report=SalesByCustomer),
-            Shortcut(report=LedgerBalances),
+            Shortcut(report=LedgerBalances), Shortcut(report=CustomerStatement), Shortcut(report=PointsByCustomer),
             # A link to an app page, opened in place; new_tab=True opens it in a new tab.
             Shortcut(url='/reports', label='All reports'),
         )),

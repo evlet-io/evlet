@@ -27,6 +27,8 @@ class Customer(Model):
         # the same way, and notes, full width, sits below both columns. A layout of sections only: the first one is
         # the record page's primary area.
         layout = (Section('Details', ('customer_name', 'email', 'active', 'currency', 'notes'), collapsible=False, flow='columns'),)
+        # The list offers Import (CSV): map columns to fields, check every row, then create them all at once.
+        importable = True
 
     customer_name = Text(required=True, max_length=120, label='Customer name')
     email = Text(max_length=254)
@@ -129,8 +131,9 @@ class Payment(Model):
     # Each invoice option shows its customer (through the Link, with its title) and total.
     invoice = Link(Invoice, required=True, option=Option(subtext=(F('customer'), ' · ', F('total'))))
     reference = Text(required=True, unique=True, max_length=40)
-    # The currency is a field on the payment itself.
-    currency = Select(CURRENCIES, required=True, default='AED')
+    # The currency is a field on the payment itself. remember=True: a new payment suggests the currency this person
+    # saved last, in place of the default.
+    currency = Select(CURRENCIES, required=True, default='AED', remember=True)
     amount = Currency(required=True, minimum="0.01", currency='currency')
     received_at = DateTime()
 
@@ -402,6 +405,8 @@ class Expense(Model):
         description = 'Expense claims: the form shows what the payment needs.'
         list_fields = ('title', 'payment', 'amount')
         layout = (Main(('title', 'amount', 'payment', 'card_last4', 'split_total')), Main('splits'), Main('receipts'))
+        # Import (CSV) with rows: a key column groups lines into one claim, and children.splits.person fills its splits.
+        importable = True
 
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'delete')),
                    'viewer': Rule(('read',))}
