@@ -356,8 +356,10 @@ class Application:
                 logger.exception("Response encoding failed", extra={'request_id': scope.get('evlet.request_id')})
                 status, headers, download = 500, [], False
                 encoded = b'{"error": "Internal server error"}'
-            response_headers = [(b"x-content-type-options", b"nosniff"), (b"cache-control", b"no-store"), *headers]
-            if status != 204:
+            # no-store unless the response chose its own caching (a site's pages and hashed files, the manifest).
+            cached = any(name == b"cache-control" for name, _ in headers)
+            response_headers = [(b"x-content-type-options", b"nosniff"), *(() if cached else ((b"cache-control", b"no-store"),)), *headers]
+            if status not in (204, 304):
                 if not download:
                     response_headers.append((b"content-type", b"application/json; charset=utf-8"))
                 response_headers.append((b"content-length", str(len(encoded)).encode()))

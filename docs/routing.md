@@ -391,8 +391,8 @@ evlet host add acme www.acme.com --root site.www --live
   `.localhost` names, as in `routes.py`.
 - **Each row** holds the host, its target, a status (`pending`, `active` or `disabled`), what
   the last DNS check found, when it ran, and its error. The target is a frontend id such as
-  `site.www` (a static or server frontend). A target without a dot is a site name, kept for
-  instance sites in a later release; until then such a row is refused.
+  `site.www` (a static or server frontend). A target without a dot is the name of an
+  [instance site](sites.md), which the host then serves; a row naming no site is refused.
 - **Activation.** A host starts `pending`. It becomes `active` once its DNS points here, by the
   same check as `evlet proxy --check` (with the address saved in `deploy/server.json` when there
   is one). `evlet host check` runs it at once; the framework job `evlet_host_check` runs it on
@@ -416,7 +416,7 @@ evlet host add acme www.acme.com --root site.www --live
 
 | Command | What it does |
 |---|---|
-| `evlet host add NAME HOST --root APP.FRONTEND --live [--ip ADDR] [--apply]` | Add a pending host and check its DNS at once |
+| `evlet host add NAME HOST --root APP.FRONTEND --live [--ip ADDR] [--apply]` | Add a pending host and check its DNS at once; `--root SITE` serves an instance site |
 | `evlet host check NAME [HOST ...] [--ip ADDR] [--apply]` | Check hosts from data (default: all but disabled) |
 | `evlet host disable NAME HOST` / `evlet host enable NAME HOST` | Stop serving a host / set it back to pending |
 | `evlet host remove NAME HOST [--apply]` | Remove a host from data (or from `routes.py` when it lists the host) |
@@ -431,6 +431,15 @@ Controls, Routing lists the hosts from data for admins, who can add, check, disa
 remove them there (`/api/_controls/routing/hosts`, admin only). The functions behind both are
 `list_hosts`, `add_host`, `remove_host`, `set_host_status` and `check_hosts` in `evlet/hosts.py`;
 each takes the application's `Business` and an `actor` name.
+
+### Instance sites
+
+A host from data can also serve an [instance site](sites.md): a public website the instance keeps
+itself, in `instances/<name>/sites/`, with no app package. It is published and rolled back with
+`evlet sites` or `evlet.sites`, and served on its own public host only, with `frontend_response`
+like a static frontend of `auth=None`, plus cache headers: pages get an `ETag` with `no-cache`
+(and `304` on a matching `If-None-Match`), files with a content hash in their name are immutable
+for a year, and every other response keeps `no-store`.
 
 ## `evlet routes`
 

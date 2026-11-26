@@ -119,6 +119,10 @@ evlet proxy acme --caddy --check
 evlet host add acme www.example.com --root site.www --apply
 evlet host remove acme www.example.com --apply
 evlet host list acme
+evlet sites create acme home
+evlet sites put acme home ./build
+evlet sites publish acme home
+evlet sites rollback acme home
 evlet link-user acme buyer customer 42
 evlet controls grant acme mariam
 evlet users reset-two-step acme mariam
@@ -131,7 +135,7 @@ evlet docs --port 8001
 
 `evlet --help` lists the commands in groups: Start (`setup`, `project`, `app`, `instance`, `install`),
 Develop (`dev`, `dev-link`, `playground`, `docs`, `build`), Change (`makemigration`, `migrate`,
-`upgrade`), Operate (`serve`, `restart`, `routes`, `proxy`, `host`, `link-user`, `jobs`,
+`upgrade`), Operate (`serve`, `restart`, `routes`, `proxy`, `host`, `sites` ([sites.md](sites.md)), `link-user`, `jobs`,
 `ledger`, `backup`), Recover (`restore`, `users`, `controls`, `secrets`, `ids`, `activity`) and
 Connector (`login`, `logout`, `describe`, `mcp`). `install`, `migrate` and `dev` build the apps
 themselves, so `evlet build` is optional: it only checks and builds ahead of time.
@@ -915,8 +919,10 @@ run `evlet migrate acme`, which moves them out again before you serve.
 
 Backups hold only the database unless you add `--with-files`, which also writes
 `<time>-files.tar.gz`: the instance's `files/` folder (uploaded attachments), readable by its
-owner only (mode 0600), symbolic links left out. Restore it by extracting it into
-`instances/<name>/` with the server stopped. `evlet backup` never copies `secret.key`; it prints
+owner only (mode 0600), symbolic links left out, with the instance's `sites/` folder. Without
+`--with-files`, an instance with [sites](sites.md) gets `<time>-sites.tar.gz`, its `sites/` folder
+alone. Restore either by extracting it into `instances/<name>/` with the server stopped; `evlet
+restore` leaves both folders as they are. `evlet backup` never copies `secret.key`; it prints
 a reminder after every backup. Without that key a restored database cannot open its saved
 connector, mailbox and two-step secrets, so keep a copy of it, and of the app sources, stored
 apart from the database backups (whoever holds both can read those secrets).

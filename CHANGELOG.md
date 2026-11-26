@@ -23,6 +23,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   route table it built at start.
 - `evlet.cli.proxy.check` and `server_addresses` keep their names and arguments; the per-host check moved
   to `evlet.hosts.dns_status`, which the new host check job uses too.
+- **Run `evlet migrate NAME` once more for sites.** The framework migration `0021_sites` adds the empty
+  `evlet_sites` table; serving refuses until it has run. No folder is made until a site is created, and an
+  instance without sites serves exactly as before.
+- **`evlet backup` may write one more file**, `<time>-sites.tar.gz`, when the instance has sites; with
+  `--with-files` the sites go into `<time>-files.tar.gz`. A script that expects exactly the four database
+  files in its output should allow it.
+- A response that sets its own `Cache-Control` (the web app manifest, the service worker, a site's pages and
+  hashed files) no longer also carries the default `no-store`; every other response keeps `no-store`.
 
 ### Added
 
@@ -53,6 +61,22 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `/api/_controls/routing/hosts`.
 - `evlet.hosts`: `list_hosts`, `add_host`, `remove_host`, `set_host_status` and `check_hosts` (the API the
   CLI and Controls use), and `evlet.routing.with_hosts` / `target_error`.
+- **Instance sites** ([docs/sites.md](docs/sites.md)): public websites an instance keeps itself, with no app
+  package. A row of `evlet_sites` (routing `app`/`pages`, CSP connect origins, public API scopes, current
+  release, limits) and a folder `instances/<name>/sites/<site>/` with a `draft/` and immutable
+  `releases/<id>/`. Files go through `evlet.sites.SiteStore`: validated relative paths, the static type
+  allowlist, no dotfiles or links, and per-file, per-site and file-count limits (10 MiB, 100 MiB, 5000 by
+  default). Publishing copies the draft into a complete release folder, then switches the site's
+  `current_release` column with the hosts version bump, so every process serves it within a second;
+  rollback switches it back; the newest 10 releases are kept. A site is served only on an active host from
+  data whose target is its name, never on the primary or another host: pages get an `ETag` with `no-cache`
+  and `304` on `If-None-Match`, files with a content hash in their name `max-age=31536000, immutable`,
+  everything else `no-store`. Changes are audited (area Sites).
+- **`evlet sites`** `list`, `create`, `set`, `delete`, `files`, `put` (a file or a folder), `rm`, `publish`,
+  `rollback` and `releases`; `evlet host add NAME HOST --root SITE --live` serves a site.
+- `evlet.sites`: `create_site`, `update_site`, `get_site`, `list_sites`, `delete_site`, `write_file`,
+  `write_files`, `delete_file`, `list_files`, `read_file`, `publish`, `rollback` and `list_releases`;
+  `RouteTable.api_scopes()` lists the API scope ids a site may name.
 
 ## 0.4.21 (22-11-2026)
 

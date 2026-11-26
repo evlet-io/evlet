@@ -269,6 +269,11 @@ def _hosts(connection):
     from .hosts import ensure
     ensure(connection)
 
+def _sites(connection):
+    """Instance sites: their settings, current release and limits (evlet/sites.py)."""
+    from .sites import ensure
+    ensure(connection)
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -304,6 +309,8 @@ STEPS = (
                   'instance apart from every other one.', _instance_id),
     FrameworkStep('0019_hosts', 'Add evlet_hosts, the sub-hosts kept as data and served without a restart, and '
                   'evlet_hosts_version, the row each process checks to pick up a change.', _hosts),
+    FrameworkStep('0021_sites', 'Add evlet_sites, the public sites an instance keeps itself: their routing, CSP '
+                  'origins, public API scopes, current release and limits; their files are in the instance sites folder.', _sites),
 )
 
 LEDGER = TableDefinition('evlet_framework_migrations', (

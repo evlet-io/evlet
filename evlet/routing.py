@@ -263,6 +263,8 @@ class RouteTable:
     # The API scopes of each frontend id, so a host added from data later gets the same scopes (with_hosts).
     _frontend_scopes: MappingProxyType = _EMPTY
     _data: tuple = ()
+    # Every API scope of the installed apps by id ("app.scope"), for a site's api (evlet.sites).
+    _api_scopes: MappingProxyType = _EMPTY
 
     def rows(self):
         return self._rows
@@ -272,6 +274,10 @@ class RouteTable:
 
     def sub_hosts(self):
         return tuple(self._subs)
+
+    def api_scopes(self):
+        """The ids ("app.scope") of the API scopes the installed apps define."""
+        return tuple(self._api_scopes)
 
     def data_hosts(self):
         """The sub-hosts that come from evlet_hosts rows (evlet.hosts), not from routes.py."""
@@ -513,7 +519,8 @@ def resolve_routes(definitions=(), instance_config=None, routes_module=None, *, 
     served = {identity: tuple(scopes[item] for item in frontend.api) for identity, frontend in by_id.items()}
     return RouteTable(host, port, docs_on, controls, tuple(rows), MappingProxyType(segments), root, docs_path,
                       docs.roles if docs else (), MappingProxyType(subs), MappingProxyType(by_id), MappingProxyType(dists),
-                      MappingProxyType({name: served[identity] for name, identity in subs.items()}), MappingProxyType(served))
+                      MappingProxyType({name: served[identity] for name, identity in subs.items()}), MappingProxyType(served),
+                      _api_scopes=MappingProxyType(scopes))
 
 
 # A site name, which a data host may serve instead of a frontend id once sites exist: one name without a dot.
@@ -568,7 +575,11 @@ def with_hosts(table, entries, sites=None):
         frontend = frontends[target]
         subs[host] = target
         data.append(host)
-        scopes[host] = table._frontend_scopes.get(target, ())
+        if target in table._frontend_scopes:
+            scopes[host] = table._frontend_scopes[target]
+        else:
+            # A site names its scopes by id; one whose app was removed is left out.
+            scopes[host] = tuple(table._api_scopes[name] for name in frontend.api if name in table._api_scopes)
         realm = frontend.auth or 'public'
         rows.append(Route(host, '/', target, realm, 'data'))
         if frontend.auth is None:

@@ -20,7 +20,7 @@ def confirm(message):
 COMMANDS = (
     ('setup', 'setup'), ('project', 'project'), ('app', 'apps'), ('build', 'apps'), ('instance', 'apps'),
     ('install', 'install'), ('migrate', 'install'), ('makemigration', 'install'), ('serve', 'serve'), ('dev', 'serve'),
-    ('restart', 'lifecycle'), ('upgrade', 'lifecycle'), ('routes', 'routing'), ('proxy', 'routing'), ('host', 'routing'),
+    ('restart', 'lifecycle'), ('upgrade', 'lifecycle'), ('routes', 'routing'), ('proxy', 'routing'), ('host', 'routing'), ('sites', 'sites'),
     ('link-user', 'accounts'), ('controls', 'accounts'), ('users', 'accounts'), ('secrets', 'accounts'),
     ('ids', 'checks'), ('activity', 'checks'), ('ledger', 'checks'), ('jobs', 'checks'),
     ('backup', 'backup'), ('restore', 'backup'), ('playground', 'bundled'), ('docs', 'bundled'), ('dev-link', 'bundled'),
@@ -38,7 +38,7 @@ def command_entry(name):
 # into that position before parsing, so both forms work everywhere (evlet serve acme, evlet serve --instance acme).
 POSITIONAL_INSTANCE = {
     'serve': 1, 'migrate': 1, 'restart': 1, 'upgrade': 1, 'routes': 1, 'proxy': 1, 'link-user': 1,
-    'controls': 2, 'users': 2, 'secrets': 2, 'ids': 2, 'activity': 2, 'host': 2,
+    'controls': 2, 'users': 2, 'secrets': 2, 'ids': 2, 'activity': 2, 'host': 2, 'sites': 2,
 }
 
 # evlet --help lists the commands in these groups.
@@ -46,7 +46,7 @@ GROUPS = (
     ('Start', ('setup', 'project', 'app', 'instance', 'install')),
     ('Develop', ('dev', 'dev-link', 'playground', 'docs', 'build')),
     ('Change', ('makemigration', 'migrate', 'upgrade')),
-    ('Operate', ('serve', 'restart', 'routes', 'proxy', 'host', 'link-user', 'jobs', 'ledger', 'backup')),
+    ('Operate', ('serve', 'restart', 'routes', 'proxy', 'host', 'sites', 'link-user', 'jobs', 'ledger', 'backup')),
     ('Recover', ('restore', 'users', 'controls', 'secrets', 'ids', 'activity')),
     ('Connector', ('login', 'logout', 'describe', 'mcp')),
 )

@@ -144,8 +144,9 @@ def _checked(root, name, change):
     return changed, _runtime(root, name)
 
 
-def check_host(root, name, host, frontend):
-    """Refuse a host or root that the instance can't serve before anything is written."""
+def check_host(root, name, host, frontend, *, site=False):
+    """Refuse a host or root that the instance can't serve before anything is written. site=True (--live) also
+    accepts a site name (evlet sites), which evlet.hosts.add_host checks against the instance's sites."""
     from ..routing import HOSTNAME
     if not HOSTNAME.fullmatch(host) or '..' in host or '.' not in host or host.endswith('.localhost'):
         raise ValueError(f'{host} is not a public lowercase hostname such as www.example.com')
@@ -154,7 +155,7 @@ def check_host(root, name, host, frontend):
         raise ValueError(f'Instance {name} has no domain yet. Run evlet setup --host first, or set domain in instances/{name}/config.py')
     if host == app.routes.primary:
         raise ValueError(f'{host} is the primary host of {name}')
-    if frontend is not None:
+    if frontend is not None and not (site and '.' not in frontend):
         served = app.routes.frontend(frontend)
         if served is None:
             known = ', '.join(identity for identity, item in app.routes.frontends() if item.kind != 'evlet') or 'none'
@@ -317,7 +318,7 @@ def _after_live(root, name, app, active, apply, port, run, user):
 def add_live(root, name, host, frontend, *, apply=False, ips=None, port=None, run=None, user=None):
     """evlet host add --live: a pending host in evlet_hosts, checked at once; served when the check passes."""
     from ..hosts import add_host, check_hosts
-    check_host(root, name, host, frontend)
+    check_host(root, name, host, frontend, site=True)
     app = _open(root, name)
     try:
         add_host(app.business, host, frontend, actor='cli')

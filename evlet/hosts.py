@@ -10,6 +10,9 @@ A host starts pending. It becomes active once its DNS points here, by the same c
 Only active hosts are in the route table, so only they get 200 from /_/tls-allowed. A row the table
 can't serve (an app was removed, routes.py took the host) is skipped and listed under Needs attention.
 
+A target with no dot names an instance site (evlet.sites); its folder is the site's current release, read
+with the hosts whenever the version row moves, so a publish or rollback is served the same way.
+
 The functions below are the API the CLI (evlet host ... --live), Controls and the MCP host tools call.
 Each change is audited (area Hosts) and bumps the version row.
 """
@@ -18,6 +21,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as Late
 import ipaddress
 import json
 import logging
+from pathlib import Path
 import socket
 from threading import Lock
 import time
@@ -142,8 +146,11 @@ class LiveRoutes:
         self.code = application.routes
         auth = application.business.auth
         self._origins, self._realms = frozenset(auth.origins), dict(auth.realms)
-        # Sites ({name: (Frontend, dist folder or None)}) that a row's target may name; none yet.
+        # Sites ({name: (Frontend, folder of the current release or None)}) that a row's target may name, read
+        # from evlet_sites with the hosts (evlet.sites); sites_folder holds their files (build_instance sets it).
         self.sites = {}
+        path = getattr(application.database, 'path', None)
+        self.sites_folder = None if path is None else Path(path).parent / 'sites'
         # The project folder, for the addresses deploy/server.json saved (build_instance sets it).
         self.project = None
         self.problems = ()
@@ -176,10 +183,13 @@ class LiveRoutes:
                     if version == self._version and not force:
                         return False
                     rows = connection.run(qb.select('evlet_hosts', 'host', 'target').where(status='active').order_by('host')).all()
+                    from .sites import serving
+                    sites = serving(connection, self.sites_folder)
             except Exception:
                 logger.exception('Could not read evlet_hosts; the current route table stays')
                 return False
             self._version = version
+            self.sites = sites
             self.swap([(row['host'], row['target']) for row in rows])
             return True
 

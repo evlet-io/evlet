@@ -68,7 +68,8 @@ def add_host(commands):
     for command in (host_add, host_remove, host_disable, host_enable):
         command.add_argument('host')
     host_check.add_argument('host', nargs='*', help='Hosts to check (default: every host from data that is not disabled)')
-    host_add.add_argument('--root', required=True, metavar='APP.FRONTEND', help='The static or server frontend the host serves at /')
+    host_add.add_argument('--root', required=True, metavar='APP.FRONTEND', help='The static or server frontend the host serves at /; '
+                          'with --live also a site name (evlet sites)')
     host_add.add_argument('--live', action='store_true',
                           help='Keep the host as data: no routes.py edit and no restart; served once its DNS check passes')
     for command in (host_add, host_check):

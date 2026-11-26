@@ -176,7 +176,7 @@ def test_existing_database_gets_an_id_when_it_migrates(project):
     database = project / 'instances/acme/data/database.sqlite3'
     connection = sqlite3.connect(database)
     connection.execute('DROP TABLE evlet_instance')
-    connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0018_instance_id', '0019_hosts')")
+    connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0018_instance_id', '0019_hosts', '0021_sites')")
     connection.commit()
     connection.close()
     lock = json.loads((project / 'instances/acme/apps.lock').read_text())
@@ -191,7 +191,7 @@ def test_existing_database_gets_an_id_when_it_migrates(project):
     with pytest.raises(ValueError, match='evlet migrate acme'):
         load_runtime(project, 'acme')
     result = install(project, 'acme', trust=True)
-    assert result['framework'] == ['0018_instance_id', '0019_hosts']
+    assert result['framework'] == ['0018_instance_id', '0019_hosts', '0021_sites']
     found = instance_identity(project / 'instances/acme')
     assert text_id(found['id']) and found['name'] == 'acme'
 
