@@ -73,16 +73,17 @@ def add_host(commands):
 
 
 def run_host(args, context):
-    from .. import hosts
+    from .. import core
     root = context.root
     if args.host_command == 'list':
-        print(hosts.listing(root, args.instance))
+        core.host_list(root, args.instance, out=print)
     elif args.apply and args.routes_only:
         raise ValueError('Choose --apply or --routes-only')
     elif args.host_command == 'add':
-        hosts.add(root, args.instance, args.host, args.root, apply=args.apply, ips=args.ip, port=args.port, routes_only=args.routes_only)
+        core.host_add(root, args.instance, args.host, args.root, apply=args.apply, ips=args.ip, port=args.port,
+                      routes_only=args.routes_only, out=print)
     else:
-        hosts.remove(root, args.instance, args.host, apply=args.apply, port=args.port, routes_only=args.routes_only)
+        core.host_remove(root, args.instance, args.host, apply=args.apply, port=args.port, routes_only=args.routes_only, out=print)
 
 
 COMMANDS = {'routes': (add_routes, run_routes), 'proxy': (add_proxy, run_proxy), 'host': (add_host, run_host)}
