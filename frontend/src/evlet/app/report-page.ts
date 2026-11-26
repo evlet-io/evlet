@@ -347,6 +347,24 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
   // ---------- table ----------
 
   const tablePrefs = ctx.prefs.cell<TablePrefs>(`report.${name}`, emptyPrefs());
+  // A unit from the filters (Column(unit=Ref(...))) is the one this run worked out; until a run, the column has none.
+  const withUnit = (column: ReportColumn): ReportColumn => {
+    const units = result.get()?.units;
+    return column.unit_from_filters ? { ...column, unit: units?.[column.name] ?? null } : column;
+  };
+  // A drill-down link (Column(report=, filters=)): the other report's address with its filters from this row,
+  // or from the filters this report ran with when the row has no such column.
+  const drillHref = (column: ReportColumn, row: Row) => {
+    const params: Record<string, string> = {};
+    const ran = executed.peek() ?? {};
+    for (const [target, from] of Object.entries(column.filters ?? {})) {
+      const value = from in row ? row[from] : ran[from];
+      if (!blank(value)) params[target] = toAddress(value);
+    }
+    if (!Object.keys(params).length) params.run = '1';
+    return router.href('report', { report: column.report! }, params);
+  };
+  const drillable = (column: ReportColumn) => Boolean(column.report && reportsOf(ctx).some(item => item.name === column.report));
   const columns: Column<Row>[] = report.columns.map((column, index) => ({
     key: column.name, label: columnLabel(column), align: NUMBERS.includes(column.type) ? 'right' : 'left',
     width: index === 0 ? 220 : column.type === 'currency' ? 150 : column.type === 'boolean' ? 100 : 160,
@@ -357,14 +375,17 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
       if (row()._kind === 'head') return column.name === grouping
         ? html`<span class="ev-report-group-name">${() => cellText(ctx, column, value(), report.model) || 'Not set'}<small class="muted">${() => { const count = row()._group?.count; return count === undefined ? '' : ` · ${count} ${count === 1 ? 'row' : 'rows'}`; }}</small></span>` : null;
       if (row()._kind === 'sub') return column.name === grouping ? html`<span class="muted">Subtotal</span>`
-        : column.total ? html`<span class="num">${() => { const total = row()._group?.totals[column.name]; return total === undefined || total === null ? '' : cellView(ctx, column, total); }}</span>` : null;
+        : column.total ? html`<span class="num">${() => { const total = row()._group?.totals[column.name]; return total === undefined || total === null ? '' : cellView(ctx, withUnit(column), total); }}</span>` : null;
+      if (drillable(column)) return when(() => !blank(value()), () =>
+        html`<a class=${`ev-row-link ev-report-drill${NUMBERS.includes(column.type) ? ' num' : ''}`} href=${() => drillHref(column, row())}
+          title=${() => `Open ${reportsOf(ctx).find(item => item.name === column.report)?.label ?? 'the report'}`}>${() => cellView(ctx, withUnit(column), value(), report.model)}</a>`);
       if (column.type === 'link' && column.link) return when(() => !blank(value()), () =>
         html`<a class="ev-row-link" href=${() => router.href('record', { model: column.link!, id: String(value()) })}>${() => cellText(ctx, column, value())}</a>`);
-      return html`<span class=${NUMBERS.includes(column.type) ? 'num' : null}>${() => cellView(ctx, column, value(), report.model)}</span>`;
+      return html`<span class=${NUMBERS.includes(column.type) ? 'num' : null}>${() => cellView(ctx, withUnit(column), value(), report.model)}</span>`;
     },
   }));
   const totals = Object.fromEntries(report.columns.filter(column => column.total).map(column =>
-    [column.name, () => { const value = result.get()?.totals?.values[column.name]; return value === undefined ? '' : cellView(ctx, column, value); }]));
+    [column.name, () => { const value = result.get()?.totals?.values[column.name]; return value === undefined || value === null ? '' : cellView(ctx, withUnit(column), value); }]));
   const table = () => DataTable<Row>({ columns, rows, key: row => row._row, label: report.label, pinned: 1, sort, serverSort: true, prefs: tablePrefs, height: 560,
     rowClass: row => row._kind ? `ev-report-${row._kind}` : null,
     totals: Object.keys(totals).length ? totals : undefined,
