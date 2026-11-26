@@ -365,20 +365,11 @@ class Controls:
         self.refresh(force=True)
 
     def refresh(self, force=False):
-        """Rebuild the Policy and settings when another process saved a change (one indexed read, or none when
-        this request's hosts check read the version already: evlet.hosts.CONFIG_SEEN)."""
+        """Rebuild the Policy and settings when another process saved a change (one indexed read)."""
         if not self.ready:
             return
-        from .hosts import CONFIG_SEEN, REFRESH_SECONDS
-        seen = CONFIG_SEEN.get()
-        if seen is not None:
-            # Used once: a later refresh in this request (after a save, say) reads the row itself.
-            CONFIG_SEEN.set(None)
-        if seen is not None and seen[0] is self.database and time.monotonic() - seen[2] < REFRESH_SECONDS:
-            version = seen[1]
-        else:
-            with self.database._connection() as connection:
-                version = connection.run(qb.select('evlet_config', 'version').where(id=1)).value()
+        with self.database._connection() as connection:
+            version = connection.run(qb.select('evlet_config', 'version').where(id=1)).value()
         if version == self.version and not force:
             return
         with self.lock:

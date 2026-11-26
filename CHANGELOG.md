@@ -106,12 +106,6 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   publish and rollback are approved in Evlet. Everyone else gets 403, and the tools are not listed for them.
 - The Playground's news site lists finished projects from a collection (`/projects/`, `/data/projects.json`).
 
-### Fixed
-
-- The once-a-second check for hosts from data no longer costs a request a statement of its own: it reads the
-  hosts version and the Controls config version in one statement, and Controls uses that version for the same
-  request instead of reading it again. A request whose check was due ran one statement more than the others.
-
 ## 0.4.21 (22-11-2026)
 
 ### Upgrading to 0.4.21
