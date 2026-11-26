@@ -61,7 +61,7 @@ def change_model(root, *, migration=True, fail=False):
 
 def test_setup_containers_environment_and_never_overwrites(tmp_path):
     root = setup(tmp_path / 'p')
-    assert sorted(path.name for path in root.iterdir()) == ['.venv', 'apps', 'instances']
+    assert sorted(path.name for path in root.iterdir()) == ['.venv', 'apps', 'instances', 'project.json']
     with pytest.raises(FileExistsError):
         setup(root)
     assert not list(root.rglob('*.sqlite3'))

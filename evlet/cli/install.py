@@ -137,7 +137,7 @@ def install(root, name, *, app_name=None, app_names=(), trust=False, confirm=Non
         if not names:
             raise ValueError('No installed apps to migrate')
         packages = resolve_packages(root, names, check_installed=False)
-        from ..framework import state, upgrade
+        from ..framework import name_instance, state, upgrade
         after = {'apps': {package.name: package.locked() for package in packages}, 'evlet': state()}
         changed = [package.name for package in packages if package.name not in before['apps'] or portable_lock_entry(package.name, before['apps'][package.name]) != after['apps'][package.name]]
         if changed and not trust:
@@ -185,6 +185,7 @@ def install(root, name, *, app_name=None, app_names=(), trust=False, confirm=Non
             register_schedules(app, schedules)
             with app.database.transaction() as tx:
                 tx.connection.ensure_table(INSTALLED_APPS)
+                name_instance(tx.connection, name)
                 tx.connection.run(qb.insert('evlet_installed_apps', id=1, manifest=json_text(after))
                                   .on_conflict('id').do_update(manifest=qb.col('excluded.manifest')))
             app.database.close()

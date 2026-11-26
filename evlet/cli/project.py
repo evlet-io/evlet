@@ -59,3 +59,62 @@ def instance_guard(path, *, serving=False):
         if str(exc).startswith('Resource is in use'):
             raise ValueError('Instance is in use. Stop its server or other lifecycle command before changing it') from None
         raise
+
+
+# project.json: the project id, its creation date and its mode (evlet.instances.read_project reads it).
+
+def project_record(mode='development'):
+    from datetime import datetime, timezone
+    from ..identity import encode, new_id
+    return {'id': encode(new_id()), 'created': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'), 'mode': mode}
+
+
+def ensure_project(root):
+    """The project's project.json, made on first use: (record, made now). (None, False) when it cannot be
+    written, such as a project folder the service account may only read; the next command run by its owner makes it."""
+    from ..instances import PROJECT_FILE, read_project
+    from ..writes import LockBusy
+    root = Path(root)
+    found = read_project(root)
+    if found is not None:
+        return found, False
+    try:
+        (root / '.evlet').mkdir(exist_ok=True)
+        with file_lock(root / '.evlet' / 'project.lock'):
+            found = read_project(root)
+            if found is not None:
+                return found, False
+            record = project_record()
+            atomic_json(root / PROJECT_FILE, record)
+            return record, True
+    except (OSError, LockBusy):
+        return read_project(root), False
+
+
+def new_project_id(root):
+    """Give the project a new id, keeping its mode (evlet project new-id, for a fork). Returns (old id, record)."""
+    from ..instances import PROJECT_FILE, read_project
+    root = Path(root)
+    (root / '.evlet').mkdir(exist_ok=True)
+    with file_lock(root / '.evlet' / 'project.lock'):
+        old = read_project(root)
+        record = project_record(old['mode'] if old else 'development')
+        atomic_json(root / PROJECT_FILE, record)
+    return (old or {}).get('id'), record
+
+
+def set_project_mode(root, mode):
+    """Rewrite the mode key of project.json (evlet project mode); the shell only, never an HTTP route."""
+    from ..instances import PROJECT_FILE, PROJECT_MODES, read_project
+    if mode not in PROJECT_MODES:
+        raise ValueError('Use evlet project mode development or evlet project mode production')
+    root = Path(root)
+    ensure_project(root)
+    with file_lock(root / '.evlet' / 'project.lock'):
+        record = read_project(root)
+        if record is None:
+            raise ValueError(f'{root / PROJECT_FILE} could not be written')
+        changed = record['mode'] != mode
+        if changed:
+            atomic_json(root / PROJECT_FILE, {**record, 'mode': mode})
+    return changed

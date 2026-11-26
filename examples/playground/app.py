@@ -39,7 +39,10 @@ PORTAL_RULES = {
 
 
 def playground_routes(port=8000):
-    """The portal on its own host, and at /portal on the main host too; the public website on its own host only."""
+    """The portal on its own host, and at /portal on the main host too; the public website on its own host only.
+
+    More hosts need no restart: in Controls, Routing, Add host www.localhost serving playground.site, then Check.
+    It is a row of evlet_hosts (evlet/hosts.py), served within a second at http://www.localhost:8000."""
     definition = AppDefinition(frontends=(portal, website), api_scopes=(ApiScope('portal', models=(Customer, Invoice)),))
     hosts = (Host('portal.localhost', root=portal, also_on_primary=True), Host('site.localhost', root='playground.site'))
     return resolve_routes([('playground', definition)], None, {'hosts': hosts},

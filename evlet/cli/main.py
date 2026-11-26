@@ -18,7 +18,7 @@ def confirm(message):
 # Every command in the order its parser is added, with the module of evlet.cli.commands that adds and runs it.
 # The order is the order of argparse's choices, as in "invalid choice" errors.
 COMMANDS = (
-    ('setup', 'setup'), ('app', 'apps'), ('build', 'apps'), ('instance', 'apps'),
+    ('setup', 'setup'), ('project', 'project'), ('app', 'apps'), ('build', 'apps'), ('instance', 'apps'),
     ('install', 'install'), ('migrate', 'install'), ('makemigration', 'install'), ('serve', 'serve'), ('dev', 'serve'),
     ('restart', 'lifecycle'), ('upgrade', 'lifecycle'), ('routes', 'routing'), ('proxy', 'routing'), ('host', 'routing'),
     ('link-user', 'accounts'), ('controls', 'accounts'), ('users', 'accounts'), ('secrets', 'accounts'),
@@ -43,7 +43,7 @@ POSITIONAL_INSTANCE = {
 
 # evlet --help lists the commands in these groups.
 GROUPS = (
-    ('Start', ('setup', 'app', 'instance', 'install')),
+    ('Start', ('setup', 'project', 'app', 'instance', 'install')),
     ('Develop', ('dev', 'dev-link', 'playground', 'docs', 'build')),
     ('Change', ('makemigration', 'migrate', 'upgrade')),
     ('Operate', ('serve', 'restart', 'routes', 'proxy', 'host', 'link-user', 'jobs', 'ledger', 'backup')),
@@ -172,6 +172,15 @@ def main(argv=None):
         root = None
         if args.command not in WITHOUT_PROJECT:
             root = project_root(args.project)
+            if args.command != 'project':  # evlet project prints the id itself, and refuses a broken project.json
+                from .project import ensure_project
+                try:
+                    record, made = ensure_project(root)
+                except ValueError as exc:
+                    print(f'Note: {exc}', file=sys.stderr, flush=True)
+                else:
+                    if made:
+                        print(f'Project id: {record["id"]}', file=sys.stderr, flush=True)
             if argv is None:
                 from .setup import delegate
                 delegate(root, values)
