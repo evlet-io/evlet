@@ -191,7 +191,9 @@ answers, or `none`; see [project endpoint](project-endpoint.md)) and each instan
 ids on its Overview ([controls.md](controls.md)); they are never shown to signed-out visitors or
 on public hosts. `evlet project mode production|development` rewrites only the `mode` key of
 `project.json`; it is a shell command, and no HTTP route can change it. With an endpoint, `production`
-refuses until the endpoint has a public host and the owner has set up two-step sign-in.
+refuses until the endpoint has a public host and the owner has set up two-step sign-in. The project tools follow the
+new mode from their next call (in production the develop tools are gone); restart the endpoint so its instances,
+Docs and sign-in follow it too.
 
 `evlet endpoint` serves the project endpoint and runs every instance as its child process; `evlet endpoint link`
 prints a new one-time sign-in link for the owner in development ([project endpoint](project-endpoint.md)).
@@ -617,6 +619,10 @@ On a server set up with `evlet setup --host --apply`, restart an instance with:
 evlet restart acme
 ```
 
+While a [project endpoint](project-endpoint.md#evlet-restart-and-evlet-upgrade) runs the instances, `evlet restart
+NAME` and `evlet upgrade` ask it to restart or upgrade them instead (no `sudo`) and print its operation's output;
+`--check` and `--service` still use systemd.
+
 Run it on the server as the service user, inside the project or with `--project`. It
 checks the instance first, so a working site is never restarted into a broken one. Each
 check prints one line, `ok` or the problem in plain words:
@@ -964,6 +970,8 @@ writes stdout.
 | `app_create`, `app_fetch`, `build`, `instance_create` | `evlet app NAME`, `evlet app --get`, `evlet build`, `evlet instance NAME` |
 | `app_update_plan(root, instance, app, ref, *, trust, confirm, out)` | the new commits of an app fetched from Git and the migration plan on them |
 | `app_update(root, instance, app, ref, *, trust, confirm, stop, start, healthy, out)` | plan, back up, stop, migrate, start, health check; the previous commit and the backup come back on a failure |
+| `instance_delete(root, name, *, yes, confirm, out)` | the project tool `instance_delete`: moves the stopped instance's folder to `.evlet/deleted/<name>-<time>/` |
+| `tests_run(root, target='', *, seconds=300, out)` | the project tool `tests_run`: pytest in the project's `.venv` on `apps/` or `apps/<target>`, stopped after `seconds`; `ok` when it passed, `value` its exit code |
 
 `Outcome(ok, steps, messages, backup, before, after, value)` is a frozen dataclass. `messages` are the lines the
 command prints, in order; `out(line)`, when given, receives each one as it happens, which is how the CLI prints

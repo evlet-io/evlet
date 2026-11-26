@@ -71,6 +71,11 @@ levels. For MCP clients:
 A business service declared with `method='GET'` reads (its context is read only), so `call_service` runs it
 without asking, as it runs the other read tools.
 
+The project endpoint's tools ([project-endpoint.md](project-endpoint.md#approvals)) are services with two more
+hooks, set by the framework, not by `@api`: one leaves a service out of `list_services` and answers a call with 403
+and its reason (the develop tier in production), and one decides per call whether it asks: always (with a warning on
+the approval card, such as what a restore loses), never, or as above.
+
 An app action that only opens a prompt (its body is `return SomePrompt` or `return SomePrompt(...)`
 with constant arguments, or the action declares `inputs=`) writes nothing, so `run_action` runs it
 without asking and returns the prompt. The approval is asked once, on the `answer_prompt` call that

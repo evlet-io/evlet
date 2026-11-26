@@ -98,43 +98,119 @@ operate tool. A restore always asks first and says that every change since the b
 
 The tools are `@api(tool=True)` services of the endpoint (`evlet/cli/project_tools.py`), called by the portal at
 `/api/_services/<tool>` and by MCP clients at `/_/mcp` through `list_services` and `call_service`, after the OAuth
-sign-in of [assistants](connector.md). Each declares a tier; every tool of this release is `operate`. A tool that
-changes something starts an operation and answers `{"operation": id}`: follow it with `operation_status`. One
-operation runs at a time; another is refused until it ends.
+sign-in of [assistants](connector.md). A long tool starts an operation and answers `{"operation": id}`: follow it
+with `operation_status`. One operation runs at a time; another is refused until it ends. A short change (a file, a
+host, an override) runs in its request and answers `{"operation": id, "result": "ok" | "failed", ...}`; it is logged
+as one operation too.
+
+There is no shell tool. "Anything in the project" means every Evlet command and the project's files, never arbitrary
+processes.
+
+### Tiers
+
+Each tool declares its tier: `operate` (running the project, in both modes) or `develop` (changing it, in
+development only). The tier rule is read from `project.json` on every call, never from the client: in production a
+develop tool is not in `list_services`, a call gets 403 `Not available in production`, and the portal hides its
+buttons. Only the server shell changes the mode (`evlet project mode production|development`); no tool and no
+portal page can, so an AI client can never unlock its own tools. Switching to production refuses until the endpoint
+has a public host and the owner has set up two-step sign-in. Restart the endpoint afterwards so its children, Docs
+and sign-in follow the mode too; the tier rule follows at once.
+
+The project tools never read an instance's records, in either mode; the instance's own MCP endpoint does that. In
+development this is a boundary of the tools, not a security one: app code they write runs in the instance and can
+read anything there. In production no code changes, so it holds.
+
+#### Operate (development and production)
 
 | Tool | What it does |
 | --- | --- |
-| `project_status` | The project id, mode, endpoint and MCP address, and each instance with id, host, version, apps, status and health |
+| `project_status` | The project id, mode, endpoint and MCP address, each instance with id, host, version, apps, status and health, and the tools available now with their tiers |
 | `operation_log`, `operation_status` | The newest operations; one operation with its output, live while it runs |
 | `instance_logs` | The last lines an instance's process printed. They can hold values that tracebacks print |
 | `instance_restart`, `instance_stop`, `instance_start` | Through the supervisor; restart and start wait for `/health` |
 | `backup_create`, `backup_list` | A backup set while the instance serves; the sets by name |
-| `backup_restore` | Destructive. Without `confirm: true` it only answers with what will be lost |
+| `backup_restore` | Destructive. Without `confirm: true` it only answers with what will be lost; it always asks for approval |
 | `app_update_plan`, `app_update` | An installed app from its Git source to a tag, branch or commit: plan, backup, stop, migrate, start, health check, and the previous commit and the backup back on a failure |
 | `app_install` | A Git URL, or in development an app in `apps/`. In production only URLs that start with one of the `sources` in `project.json` |
 | `evlet_upgrade_plan`, `evlet_upgrade` | Stage a newer Evlet and plan; or upgrade every instance, then the endpoint restarts itself on the new Evlet |
+| `host_add`, `host_remove`, `host_check` | Hosts from data ([routing.md](routing.md#hosts-from-data)): through the running instance's management channel, or straight to its database when it is stopped. No restart |
 
 `sources` is a list of URL prefixes in `project.json`, such as `["https://github.com/acme/"]`. Edit it on the server;
 no tool changes it.
 
-MCP clients get the framework's approvals: tools that change something wait for the owner's approval in Settings,
-as `call_service` does on any instance ([tools.md](tools.md#approvals)).
+#### Develop (development only)
+
+| Tool | What it does |
+| --- | --- |
+| `files_list`, `file_read`, `file_write`, `file_delete` | Files in `apps/`, and the `config.py` and `routes.py` of an instance (config.py is never deleted). UTF-8 text; a write is at most 64 KiB, a read 1 MiB |
+| `app_create`, `app_fetch` | `evlet app NAME`; `evlet app --get URL` from any Git URL |
+| `makemigration`, `migrate`, `build` | The commands, through the lifecycle core. `migrate` stops the instance, backs up and starts it again; a destructive step is refused |
+| `tests_run` | pytest in the project's `.venv` on `apps/` or one app or test path in it, for at most `seconds` (300 by default, up to 900); the operation keeps pytest's last 400 lines and is `ok` when it passed |
+| `instance_create`, `instance_delete` | A new instance with its own port; or stop one and move its folder (database, files, `secret.key`) to `.evlet/deleted/`. Delete always asks |
+| `controls_override_set`, `settings_set` | A Controls override, or an app's settings, of the running instance, through the management channel |
+| `site_files_write`, `site_publish`, `site_rollback` | A site's draft files, a release, or an earlier release again ([sites.md](sites.md)), through the management channel |
+
+The file tools reach nothing else: never `.venv`, `.evlet`, an instance's `data/`, `secret.key`, `control.key`,
+`apps.lock`, a part that starts with a dot (`.git`, `.env`) or a link. A path is relative, with `/` between parts and
+nothing to normalise; a refused path writes nothing, not even a log row.
+
+### Approvals
+
+MCP clients get the Tool Engine's approvals ([tools.md](tools.md#approvals)): a tool that changes something waits for
+the owner's approval in Settings, under AI (`GET /api/_tools/approvals`, `POST /api/_tools/approvals/<id>`), then the
+client calls it again. Reads never ask.
+
+- In production `app_install`, `app_update`, `evlet_upgrade`, `backup_restore` and `instance_delete` always ask,
+  whatever else is set.
+- `backup_restore` and `instance_delete` always ask in development too. The approval says what is lost: every change
+  since the backup, or the instance's folder moved away.
+- Every other tool may be set never to ask: list it under `never_ask` in `.evlet/endpoint.json`, on the server. The
+  portal is the owner's own session and asks no approvals; `backup_restore` there still needs `confirm: true`.
+
+## The management channel
+
+The endpoint reaches a running instance only through `/_/manage/*` on the instance (`evlet/manage.py`), never through
+its database or its `/api`:
+
+- It answers only a loopback caller that is not behind a proxy (no `Forwarded` or `X-Forwarded-For` header) and sends
+  the instance's token as `Authorization: Bearer ...`. Everything else gets 404, as `/_/tls-allowed` does.
+- Each instance has its own token. The endpoint keeps it in `.evlet/control/<instance>.token`; the instance keeps only
+  its SHA-256 in `instances/<instance>/control.key`. Both are 0600. The endpoint makes them before it starts the
+  instance; an instance without `control.key` (a project without an endpoint) has no management channel.
+- The token authenticates these routes only. It is no session, API key or OAuth token: `/api/*`, `/_/mcp`, Controls
+  and every other route answer as they do without it (`tests/test_project_mcp.py` walks every route).
+- It never reads or writes records. Writes are audited on the instance with the actor `project`.
+
+| Route | What |
+| --- | --- |
+| `GET health`, `version`, `lock`, `id` | `/health`'s check, the Evlet version and schema, `apps.lock`, the instance id with the project id and mode |
+| `GET overrides`, `POST overrides` | Controls overrides; writes in development only |
+| `GET settings`, `POST settings` | App settings; writes in development only |
+| `GET hosts`, `POST hosts/add`, `hosts/remove`, `hosts/check` | Hosts from data, in both modes |
+| `GET sites`, `sites/files`, `sites/releases`; `POST sites/files`, `sites/publish`, `sites/rollback` | Site files and releases; writes in development only |
+
+### evlet restart and evlet upgrade
+
+While the endpoint runs, `evlet restart NAME` and `evlet upgrade` ask it to do the work (`instance_restart`,
+`evlet_upgrade`) and print the operation's output as it comes; it is logged with origin `cli`. They reach it on
+loopback with `.evlet/control/endpoint.token` (0600). With `--service`, with `--check`, or when the endpoint does not
+answer, they use systemd as before.
 
 ## Development and production
 
+This table is the whole difference between the modes.
+
 | | Development | Production |
 | --- | --- | --- |
-| Address | `http://127.0.0.1:7999` | `https://HOSTNAME` behind Caddy |
-| Instances | `evlet dev` children, reloading | `evlet serve --jobs` children |
-| Sign-in | one-time link; password and two-step optional | password and two-step sign-in |
+| Address | loopback, `.localhost` names: `http://127.0.0.1:7999` | a domain: `https://HOSTNAME` behind Caddy |
+| Instances | `evlet dev` children, reloading app source | `evlet serve --jobs` children, no reload |
 | Docs | on | off |
-| `app_install` | Git URLs and apps in `apps/` | Git URLs under `sources` only |
+| Sign-in | one-time link; password and two-step sign-in optional | password and two-step sign-in required |
+| Project MCP | operate and develop tools | operate tools only |
+| `app_install` | any Git URL, and apps in `apps/` | Git URLs under `sources` only |
 
-Everything else is the same code, files and processes.
+Everything else is the same code, files and processes. Cookies, allowed origins and trusted proxies follow from
+having a public host, not from the mode.
 
-## Not yet
-
-The develop tier of tools, choosing the tiers MCP clients see by mode, and a management channel for the CLI to ask a
-running endpoint (so `evlet restart` goes through it) come next. Until then `evlet restart` and `evlet upgrade`
-from the shell use systemd as before; on a project whose endpoint runs the instances, use the portal or the tools.
-`host_add`, `host_remove` and `host_check` wait for hosts read from data.
+A recorded session of an MCP client against a real endpoint, in both modes, is in
+[internal/project-mcp-demo.md](internal/project-mcp-demo.md) (made by `docs/internal/project_mcp_demo.py`).
