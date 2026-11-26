@@ -20,6 +20,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   runs the instances: stop and disable their `evlet-<instance>` units (or do not install them) so two processes do
   not serve one instance, and use the portal or the project tools to restart them. `evlet restart` and
   `evlet upgrade` from the shell still use systemd.
+- **Run `evlet migrate NAME` once.** The framework migration `0019_hosts` adds the `evlet_hosts` and
+  `evlet_hosts_version` tables; an instance refuses to serve until it is applied, as with every framework
+  step. Applications built on `Application` apply it when they start. Nothing else changes: `routes.py`, its
+  restart and its boot-time clash check work as before, and an instance with no hosts from data keeps the
+  route table it built at start.
+- `evlet.cli.proxy.check` and `server_addresses` keep their names and arguments; the per-host check moved
+  to `evlet.hosts.dns_status`, which the new host check job uses too.
 
 ### Added
 
@@ -62,6 +69,23 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **The core updates apps from Git.** `app_update_plan` and `app_update` update an installed app from its recorded
   Git source to a tag, branch or commit (plan, backup, stop, migrate, start, health check, restore on failure), and
   `upgrade_evlet(..., supervised=True)` upgrades instances the endpoint runs without any systemd unit.
+- **Hosts from data, served without a restart** ([docs/routing.md](docs/routing.md#hosts-from-data)). A
+  sub-host can be a row of `evlet_hosts` (host, target frontend, status `pending`/`active`/`disabled`, the
+  last DNS check and its error) instead of a `Host(...)` in `routes.py`. Each request reads a version row in
+  the same statement as the Controls config version (no extra statement) and, when it moved, swaps in a
+  rebuilt route table with `LocalAuth`'s origins and realms, so a host added by the CLI, Controls or another
+  process is served from the next request. A host starts
+  pending and becomes active once its DNS points here (the `evlet proxy --check` logic, run every minute
+  by the framework job `evlet_host_check` on pending hosts). Only active hosts get 200 from
+  `/_/tls-allowed`. `routes.py` wins a clash; a row the table can't serve is skipped and listed under
+  Needs attention, never failing the boot. Changes are audited (area Hosts).
+- **`evlet host add --live`, `evlet host check`, `evlet host disable` and `evlet host enable`**; `evlet host
+  remove` and `evlet host list` cover hosts from data too. `evlet proxy` and the Caddy files `evlet host`
+  writes include active hosts from data; `--apply` reloads Caddy without restarting the service.
+- **Controls, Routing: Hosts from data** for admins (add, check, disable, enable, remove), with
+  `/api/_controls/routing/hosts`.
+- `evlet.hosts`: `list_hosts`, `add_host`, `remove_host`, `set_host_status` and `check_hosts` (the API the
+  CLI and Controls use), and `evlet.routing.with_hosts` / `target_error`.
 
 ## 0.4.21 (22-11-2026)
 

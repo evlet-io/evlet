@@ -210,6 +210,18 @@ smoke checks. Preserve the failed state for investigation. A code rollback is sa
 only when its models accept the current schema; otherwise restore the matching
 backup in isolation and follow the same cutover checks.
 
+## Hosts without a restart
+
+Sub-hosts in `routes.py` need a restart; hosts from data do not
+([routing.md](routing.md#hosts-from-data)). `evlet host add NAME HOST --root APP.FRONTEND --live`
+adds one as pending; it is served, and Caddy's on-demand TLS gets its certificate, once its DNS
+check passes. Each request reads the `evlet_hosts_version` row with the Controls config version (one
+statement), so every worker picks a change up on its next request. The `evlet_host_check` job checks
+pending hosts every minute and needs the job queue (`evlet serve --jobs`, as the unit `evlet setup`
+writes runs it); without it, run `evlet host check NAME`. A row the route table can't serve never
+stops the instance from starting: it is skipped and listed under Needs attention. Back up and
+restore `evlet_hosts` with the database like any framework table.
+
 ## Monitoring and capacity
 
 Monitor request/error latency, 401/403/429/503 rates, CPU, memory, open connections,

@@ -282,12 +282,12 @@ def upgrade_evlet(root, instance, *, to=None, service=None, yes=False, confirm=N
 
 @logged('host_add')
 def host_add(root, instance, host, frontend, *, apply=False, ips=None, port=None, routes_only=False, out=None, run=None,
-             user=None):
+             user=None, live=False):
     """evlet host add INSTANCE HOST --root APP.FRONTEND: routes.py, the DNS check, the Caddy files, with apply the sudo steps."""
     from . import hosts
     log = _Log(out)
     hosts.add(Path(root), instance, host, frontend, apply=apply, ips=ips, port=port, routes_only=routes_only, run=run,
-              user=user, out=log)
+              user=user, live=live, out=log)
     log.step('host ' + host)
     return log.outcome()
 

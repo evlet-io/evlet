@@ -59,13 +59,22 @@ def add_host(commands):
     host_add = host_commands.add_parser('add', help='Add a host to routes.py, check its DNS and rewrite the Caddy site')
     host_remove = host_commands.add_parser('remove', help='Remove a host from routes.py and rewrite the Caddy site')
     host_list = host_commands.add_parser('list', help='Print the hosts of an instance with their root frontends')
-    for command in (host_add, host_remove, host_list):
+    host_check = host_commands.add_parser('check', help='Check the DNS of hosts from data; a pass makes a pending host active')
+    host_disable = host_commands.add_parser('disable', help='Stop serving a host from data, without removing it')
+    host_enable = host_commands.add_parser('enable', help='Set a disabled host from data back to pending')
+    for command in (host_add, host_remove, host_list, host_check, host_disable, host_enable):
         command.add_argument('instance', help=INSTANCE_HELP)
         command.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
-    for command in (host_add, host_remove):
+    for command in (host_add, host_remove, host_disable, host_enable):
         command.add_argument('host')
+    host_check.add_argument('host', nargs='*', help='Hosts to check (default: every host from data that is not disabled)')
     host_add.add_argument('--root', required=True, metavar='APP.FRONTEND', help='The static or server frontend the host serves at /')
-    host_add.add_argument('--ip', action='append', help="This server's public address, for an exact DNS match; optional")
+    host_add.add_argument('--live', action='store_true',
+                          help='Keep the host as data: no routes.py edit and no restart; served once its DNS check passes')
+    for command in (host_add, host_check):
+        command.add_argument('--ip', action='append', help="This server's public address, for an exact DNS match; optional")
+    host_check.add_argument('--port', type=int, help='Port the service listens on (default: the one in deploy/, else 8000)')
+    host_check.add_argument('--apply', action='store_true', help='Write the Caddy site again and reload Caddy, without restarting the service')
     for command in (host_add, host_remove):
         command.add_argument('--port', type=int, help='Port the service listens on (default: the one in deploy/, else 8000)')
         command.add_argument('--apply', action='store_true', help='Run the printed sudo steps: install the Caddy site, reload Caddy, restart the service')
@@ -73,15 +82,21 @@ def add_host(commands):
 
 
 def run_host(args, context):
-    from .. import core
+    from .. import core, hosts
     root = context.root
     if args.host_command == 'list':
         core.host_list(root, args.instance, out=print)
+    elif args.host_command == 'check':
+        hosts.check(root, args.instance, args.host, ips=args.ip, apply=args.apply, port=args.port)
+    elif args.host_command in ('disable', 'enable'):
+        hosts.set_status(root, args.instance, args.host, 'disabled' if args.host_command == 'disable' else 'pending')
     elif args.apply and args.routes_only:
         raise ValueError('Choose --apply or --routes-only')
+    elif args.host_command == 'add' and args.live and args.routes_only:
+        raise ValueError('--live changes no routes.py; leave out --routes-only')
     elif args.host_command == 'add':
         core.host_add(root, args.instance, args.host, args.root, apply=args.apply, ips=args.ip, port=args.port,
-                      routes_only=args.routes_only, out=print)
+                      routes_only=args.routes_only, live=args.live, out=print)
     else:
         core.host_remove(root, args.instance, args.host, apply=args.apply, port=args.port, routes_only=args.routes_only, out=print)
 
