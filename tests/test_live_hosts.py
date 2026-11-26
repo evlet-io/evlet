@@ -91,7 +91,6 @@ def test_a_host_written_by_one_application_is_served_by_another_within_a_second(
         row = hosts.add_host(writer.business, 'www.acme.com', 'shop.shop', actor='admin')
         assert row['status'] == 'pending' and not row['served']
         # Pending: not served, and Caddy gets no certificate for it.
-        time.sleep(1.05)
         assert http(reader, 'GET', '/_/tls-allowed?domain=www.acme.com')[0] == 404
         [checked] = hosts.check_hosts(writer.business, ['www.acme.com'], actor='admin', addresses=['203.0.113.7'], resolve=here)
         assert checked['status'] == 'active' and checked['records'] == '203.0.113.7' and checked['served']
@@ -106,7 +105,6 @@ def test_a_host_written_by_one_application_is_served_by_another_within_a_second(
         assert reader.business.auth.hosts >= {b'www.acme.com', b'erp.acme.com'}
         # Disabled: it stops being served by both, and the certificate check refuses it.
         hosts.set_host_status(writer.business, 'www.acme.com', 'disabled', actor='admin')
-        time.sleep(1.05)
         assert http(reader, 'GET', '/_/tls-allowed?domain=www.acme.com')[0] == 404
         assert http(reader, 'GET', '/', headers=on('www.acme.com'))[0] != 200
         assert b'www.acme.com' not in reader.business.auth.hosts and reader.routes.data_hosts() == ()

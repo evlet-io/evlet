@@ -14,7 +14,7 @@ from .controls_system import System
 from .customization import Customization, activated, instance_fields
 from .fields import Layer
 from .fields import Link
-from .adapter import Column, IntegrityError, TableDefinition
+from .adapter import Column, IntegrityError, OperationalError, TableDefinition
 from .database import NotFoundError
 from .identity import path_id
 from .models import ValidationError, checked_body
@@ -322,6 +322,8 @@ class Controls:
         self.business, self.database, self.registry = business, business.database, business.registry
         self.file = self.base = business.policy
         self.routes = None
+        # Whether evlet_hosts_version can be read with the config version (False before the 0019_hosts step).
+        self._hosts_version = True
         self.ready, self.version, self.lock = False, None, Lock()
         self.apps, self.app_of, self.app_roles, self.scopes = [], {}, {}, {}
         self.roles, self.settings, self.problems = {}, self.files(), []
@@ -369,7 +371,11 @@ class Controls:
         if not self.ready:
             return
         with self.database._connection() as connection:
-            version = connection.run(qb.select('evlet_config', 'version').where(id=1)).value()
+            version, hosts = self._versions(connection)
+        live = getattr(self.business, 'live_routes', None)
+        if live is not None and hosts is not None:
+            # The same read tells whether hosts from data changed in another process (evlet.hosts).
+            live.seen(hosts)
         if version == self.version and not force:
             return
         with self.lock:
@@ -383,6 +389,17 @@ class Controls:
                 fields = [(row[0], row[1], json.loads(row[2])) for row in connection.run(
                     qb.select('evlet_custom_fields', 'model', 'name', 'definition').order_by('created_at', 'name'))]
             self.apply(version, roles, stored, fields)
+
+    def _versions(self, connection):
+        """The config version and the hosts version (None before the 0019_hosts step), in one indexed read."""
+        if self._hosts_version:
+            try:
+                row = connection.run(qb.select('evlet_config', 'version', qb.named(
+                    qb.select('evlet_hosts_version', 'version').where(id=1), 'hosts')).where(id=1)).one()
+                return (row[0], row[1]) if row is not None else (None, None)
+            except OperationalError:
+                self._hosts_version = False
+        return connection.run(qb.select('evlet_config', 'version').where(id=1)).value(), None
 
     def apply(self, version, roles, stored, fields=()):
         """Build the Policy, settings and model customization, then swap in the database's new Layer.
