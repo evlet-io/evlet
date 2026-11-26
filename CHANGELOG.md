@@ -31,8 +31,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   files in its output should allow it.
 - A response that sets its own `Cache-Control` (the web app manifest, the service worker, a site's pages and
   hashed files) no longer also carries the default `no-store`; every other response keeps `no-store`.
-- **Site collections need no migration.** The role flag **Manage sites** is a new `evlet_roles.manage_sites`
-  column, added on start like `customize_workspaces` (off for every role but admin). A site folder named `_site/`
+- **Run `evlet migrate NAME` once more for site collections.** The framework migration `0022_manage_sites` adds
+  `evlet_roles.manage_sites`, the role flag **Manage sites** (off for every role; admin always has it); serving
+  refuses until it has run. A site folder named `_site/`
   is now the site's sources: it is published with each release and never served. A site that served files
   from a `_site/` folder before should move them.
 - **The Playground's public role reads finished projects** (title, state, start date and progress) for the news

@@ -609,7 +609,7 @@ def test_a_0_4_3_database_opens_unchanged(tmp_path):
     path = restore(tmp_path)
     # 0.4.6 adds the state manager's activity columns (framework step 0011) and 0.4.7 the session generations (0012), create receipts (0013) and unsaved change versions (0014) and the company sign-in tickets (0015), and 0016 renames the journal tables to activity; after that the file stays as it is.
     upgraded = Database(path, upgrade_fixture.registry(), migrations=upgrade_fixture.MIGRATIONS)
-    assert upgrade(upgraded) == ['0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets', '0016_activity', '0017_prompt_tickets', '0018_instance_id', '0019_hosts', '0021_sites']
+    assert upgrade(upgraded) == ['0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets', '0016_activity', '0017_prompt_tickets', '0018_instance_id', '0019_hosts', '0021_sites', '0022_manage_sites']
     upgraded.close()
     before = contents(path)
     database = Database(path, upgrade_fixture.registry(), migrations=upgrade_fixture.MIGRATIONS)

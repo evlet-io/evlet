@@ -22,7 +22,7 @@ restart.
 ## What a site is
 
 A site is a row of the framework table `evlet_sites` (added by the framework migration
-`0021_sites`) and a folder of the instance:
+`0021_sites`; `0022_manage_sites` adds the role flag Manage sites) and a folder of the instance:
 
 ```text
 instances/acme/sites/home/

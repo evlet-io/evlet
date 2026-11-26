@@ -177,7 +177,7 @@ that users still have can't be deleted; deleting one removes its permission over
 
 **Manage sites** is a role flag like "Customize workspaces": admin always has it, portal roles
 never do, and only admins turn it on or off for a desk role (Roles page, `PATCH
-/api/_controls/roles/<id>` `{"manage_sites": true}`, audited under Roles). It gives the instance's
+/api/_controls/roles/<id>` `{"manage_sites": true}`, audited under Roles; the column `evlet_roles.manage_sites` comes with the framework migration `0022_manage_sites`). It gives the instance's
 sites ([sites.md](sites.md#site-tools-and-manage-sites)): the `/api/_sites` routes and the site
 tools of the instance MCP and Eva (`site_list`, `site_files_list`, `site_file_read`,
 `site_files_write`, `site_publish`, `site_rollback`). It holds for the person's own sessions, their

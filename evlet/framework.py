@@ -274,6 +274,11 @@ def _sites(connection):
     from .sites import ensure
     ensure(connection)
 
+def _manage_sites(connection):
+    """The role flag Manage sites (evlet_roles.manage_sites): off for every role; admin always has it (evlet/sites.py)."""
+    if connection.table_exists('evlet_roles') and 'manage_sites' not in connection.columns('evlet_roles'):
+        connection.add_column('evlet_roles', Column('manage_sites', 'INTEGER', required=True), default=0)
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -311,6 +316,8 @@ STEPS = (
                   'evlet_hosts_version, the row each process checks to pick up a change.', _hosts),
     FrameworkStep('0021_sites', 'Add evlet_sites, the public sites an instance keeps itself: their routing, CSP '
                   'origins, public API scopes, current release and limits; their files are in the instance sites folder.', _sites),
+    FrameworkStep('0022_manage_sites', 'Add the role flag Manage sites, off for every role: who manages the instance '
+                  "sites through the site routes and the site tools. Admin always does.", _manage_sites),
 )
 
 LEDGER = TableDefinition('evlet_framework_migrations', (
