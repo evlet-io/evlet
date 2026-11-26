@@ -5,8 +5,8 @@ sends the instance's management token as `Authorization: Bearer ...`. Anything e
 so the routes do not show from outside. The token is made by the endpoint; the instance keeps only its SHA-256 in
 `instances/<name>/control.key` (0600), read on each call. An instance without that file has no management channel.
 
-It serves health, version, apps.lock, the instance id, Controls overrides and app settings, hosts from data and site
-files. It never reads or writes records. Writes to Controls overrides, app settings and site files are refused (403)
+It serves health, version, apps.lock, the instance id, Controls overrides and app settings, hosts from data, the hosts
+it serves now (for the endpoint's Caddy routes) and site files. It never reads or writes records. Writes to Controls overrides, app settings and site files are refused (403)
 in production; host changes are allowed in both modes. Every write is audited on the instance with the actor
 `project`. The token authenticates these routes only: it is no session, API key or OAuth token anywhere else.
 """
@@ -26,7 +26,7 @@ ACTOR = 'project'
 ROUTES = (
     ('GET', 'health'), ('GET', 'version'), ('GET', 'lock'), ('GET', 'id'),
     ('GET', 'overrides'), ('POST', 'overrides'), ('GET', 'settings'), ('POST', 'settings'),
-    ('GET', 'hosts'), ('POST', 'hosts/add'), ('POST', 'hosts/remove'), ('POST', 'hosts/check'),
+    ('GET', 'hosts'), ('GET', 'hosts/served'), ('POST', 'hosts/add'), ('POST', 'hosts/remove'), ('POST', 'hosts/check'),
     ('GET', 'sites'), ('GET', 'sites/files'), ('GET', 'sites/releases'), ('POST', 'sites/files'),
     ('POST', 'sites/publish'), ('POST', 'sites/rollback'),
 )
@@ -112,6 +112,18 @@ class Manage:
     def do_get_hosts(self, business, body, query):
         from .hosts import list_hosts
         return {'hosts': list_hosts(business)}
+
+    def do_get_hosts_served(self, business, body, query):
+        """The hosts this instance serves now, for the endpoint's Caddy routes (evlet/cli/caddy.py): the primary host,
+        the sub-hosts of routes.py and the active hosts from data, each with whether it is a sub-host and a public one.
+        The same route table answers /_/tls-allowed, so the two never disagree."""
+        if business.live_routes is not None:
+            business.live_routes.refresh()  # one indexed read: a host made active a moment ago is listed now
+        routes = business.routes
+        if not routes.primary:
+            return {'hosts': []}
+        subs = set(routes.sub_hosts())
+        return {'hosts': [{'host': host, 'sub': host in subs, 'public': routes.public(host)} for host in routes.hosts()]}
 
     def do_get_sites(self, business, body, query):
         from .sites import list_sites

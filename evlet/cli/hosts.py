@@ -184,11 +184,11 @@ def proxy_files(root, name, app, port, user=None, out=print):
     """Write deploy/evlet-<name>.caddy, the service unit and the global options, as evlet setup --host does.
 
     Returns the rendered texts, which --apply installs (never the copies in deploy/)."""
-    from . import proxy, site
+    from . import caddy, proxy, site
     trusted = app.business.auth.trusted_proxies
     account, chosen = site.service_account(name, user)
     texts = {'unit': proxy.systemd_unit(root, name, port, account),
-             'site': proxy.caddy(app.routes, port, name, trusted, global_options=False), 'options': proxy.GLOBAL_OPTIONS}
+             'site': proxy.caddy(app.routes, port, name, trusted, global_options=False), 'options': caddy.global_options(root)}
     (root / 'deploy').mkdir(mode=0o755, exist_ok=True)
     written = [proxy.write(root / 'deploy' / f'evlet-{name}.caddy', texts['site']),
                proxy.write(root / 'deploy' / f'evlet-{name}.service', texts['unit']),

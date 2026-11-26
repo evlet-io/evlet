@@ -240,12 +240,20 @@ def _server(application, scope, host, definition, rest, config, user):
     return result.status, Download(body), [(b'content-type', result.content_type.encode()), (b'content-security-policy', CSP.encode())]
 
 
+def _loopback(application, scope):
+    """Whether the request comes from this server itself, read through the trusted proxies as auth reads it."""
+    try:
+        peer = application.business.auth.client_address(scope) if application.business else (scope.get('client') or ('',))[0]
+        return ipaddress.ip_address(peer).is_loopback
+    except ValueError:
+        return False
+
+
 def _tls_allowed(application, scope):
     """Caddy on-demand TLS asks here before it requests a certificate: 200 only for this instance's hosts."""
     from ..app import HTTPError
+    loopback = _loopback(application, scope)
     try:
-        peer = application.business.auth.client_address(scope) if application.business else (scope.get('client') or ('',))[0]
-        loopback = ipaddress.ip_address(peer).is_loopback
         query = parse_qs(scope.get('query_string', b'').decode('ascii'), strict_parsing=True, max_num_fields=1)
     except (ValueError, UnicodeError):
         loopback, query = False, {}
@@ -255,3 +263,5 @@ def _tls_allowed(application, scope):
     if not application.routes.primary or domain not in application.routes.hosts():
         raise HTTPError(404, 'Not served here')
     return 200, {'allowed': domain}, []
+
+

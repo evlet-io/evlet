@@ -45,6 +45,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   files in its output should allow it.
 - A response that sets its own `Cache-Control` (the web app manifest, the service worker, a site's pages and
   hashed files) no longer also carries the default `no-store`; every other response keeps `no-store`.
+- **With an endpoint and Caddy, load the base config once.** Run `evlet setup --endpoint --endpoint-host HOST`
+  again (it writes `deploy/evlet-global.caddy` with the admin API and the one `ask`), or put the output of
+  `evlet proxy --endpoint --caddy` first in your Caddyfile, and reload Caddy. Then the instances' own Caddy files
+  are no longer needed. Set `"caddy_admin": null` in `.evlet/endpoint.json` to keep managing Caddy files yourself.
+  A project without an endpoint keeps today's `evlet proxy` files, unchanged.
 
 ### Added
 
@@ -91,6 +96,20 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   app settings (writes in development only), hosts from data and site files, never records; writes are audited as
   `project`. The token authenticates nothing else (a test walks every route).
 - A recorded MCP session against a real endpoint in both modes: `docs/internal/project-mcp-demo.md`.
+- **Caddy through its admin API, with one TLS ask** ([docs/project-endpoint.md](docs/project-endpoint.md#caddy)).
+  A project endpoint with a public host keeps two objects in Caddy's running config, `@id` `evlet-<project id>`
+  (each instance's hosts to its port, with the `evlet proxy` refusals) and `evlet-<project id>-tls` (those hosts on
+  demand), pushed on start, when an instance starts or stops and when its hosts change, and restored after a
+  `caddy reload`. It never touches the rest of the config. A load Caddy refuses is logged and retried with backoff;
+  the endpoint keeps running and the portal and `project_status` (`caddy`) show the error. The endpoint's
+  `/_/tls-allowed` answers for its own host and every instance's hosts. `caddy_admin` in `.evlet/endpoint.json`
+  sets the admin address (loopback only; `null` turns it off).
+- **`evlet proxy --endpoint --caddy`** prints the one-time global options for that (admin API on loopback, the
+  on-demand `ask` pointing at the endpoint, strict SNI); `evlet setup --endpoint --endpoint-host` writes and installs
+  them as `deploy/evlet-global.caddy`.
+- **`GET /_/manage/hosts/served` on every instance the endpoint runs** (its management channel): the hosts it
+  serves now, from the route table that answers `/_/tls-allowed`, which the endpoint's Caddy push reads.
+
 - **Hosts from data, served without a restart** ([docs/routing.md](docs/routing.md#hosts-from-data)). A
   sub-host can be a row of `evlet_hosts` (host, target frontend, status `pending`/`active`/`disabled`, the
   last DNS check and its error) instead of a `Host(...)` in `routes.py`. Each request reads a version row in

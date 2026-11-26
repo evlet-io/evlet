@@ -10,7 +10,9 @@ import { cell } from '../evlet/reactive';
 import { Button, EmptyState, StatusPill, openModal, toast, type Tint } from '../evlet/ui';
 
 export interface Instance { name: string; id: string | null; host: string | null; version: string | null; apps: Record<string, string>; status: string; health: boolean; port: number | null; restarts: number; error: string | null }
-export interface Status { id: string; created: string; mode: string; endpoint: string; mcp: string; two_step: boolean; instances: Instance[]; running: { operation: number; kind: string } | null; tools?: Record<string, 'operate' | 'develop'> }
+export interface Status { id: string; created: string; mode: string; endpoint: string; mcp: string; two_step: boolean; instances: Instance[]; running: { operation: number; kind: string } | null; caddy?: Caddy | null; tools?: Record<string, 'operate' | 'develop'> }
+/** The endpoint's push of the instances' hosts to Caddy's admin API; null without one. */
+export interface Caddy { admin: string; state: string; error: string | null; pushed_at: number | null; hosts: number }
 export interface Operation { id: number; kind: string; instance: string; origin: string; arguments: Record<string, unknown>; started: string; finished: string | null; result: string; error: string; lines?: number; output?: string[] }
 
 type Client = ReturnType<typeof createClient>;
@@ -146,6 +148,11 @@ export function Portal(api: ProjectApi, options: { refresh?: number } = {}) {
     <td>${item.id}</td><td>${item.kind}</td><td>${item.instance || 'project'}</td><td>${item.origin}</td>
     <td>${StatusPill({ label: item.result, tint: tintOf(item.result) })}</td><td>${item.started}</td><td>${item.finished ?? ''}</td></tr>`;
 
+  const caddyCard = (caddy: Caddy) => html`<section class="pp-card" data-caddy><h2>Caddy</h2>
+    <p>${StatusPill({ label: caddy.state, tint: tintOf(caddy.state) })}
+      <span class="pp-muted">Admin API <code>${caddy.admin}</code> · ${caddy.hosts} host${caddy.hosts === 1 ? '' : 's'} routed</span></p>
+    ${caddy.error ? html`<p class="pp-error" data-caddy-error>${caddy.error}</p>` : ''}</section>`;
+
   const signedOut = () => html`<main class="pp" data-signed-out>
     ${EmptyState({ icon: 'lock', title: 'Project endpoint', text: 'Sign in as the owner to see and run the project. In development, evlet endpoint link prints a one-time link.',
       action: html`<a class="btn primary" href="/login">Sign in</a>` as HTMLElement })}</main>`;
@@ -157,6 +164,7 @@ export function Portal(api: ProjectApi, options: { refresh?: number } = {}) {
       <div class="pp-actions">${Button({ label: 'Refresh', onClick: () => void load() })}
         ${Button({ label: 'Sign out', variant: 'ghost', onClick: () => void api.logout().then(() => signedIn.set(false)) })}</div></header>
     <section class="pp-card"><h2>MCP</h2><p>Connect an MCP client to <code data-mcp>${current.mcp}</code>; it signs in as you.</p></section>
+    ${current.caddy ? caddyCard(current.caddy) : ''}
     <section class="pp-card"><h2>Instances</h2>
       ${current.instances.length ? html`<table class="pp-table"><thead><tr><th>Instance</th><th>Host</th><th>Evlet</th><th>Apps</th><th>Status</th><th></th></tr></thead>
         <tbody>${current.instances.map(instanceRow)}</tbody></table>` : html`<p>No instances yet: evlet instance NAME.</p>`}

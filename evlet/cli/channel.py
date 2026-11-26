@@ -50,7 +50,7 @@ def token(root, name):
     return value
 
 
-def call(root, name, port, method, route, body=None, *, query=None):
+def call(root, name, port, method, route, body=None, *, query=None, timeout=TIMEOUT):
     """One management call to the instance on 127.0.0.1:port. Raises ChannelError with the instance's answer."""
     from urllib.parse import urlencode
     address = f'http://127.0.0.1:{port}/_/manage/{route}' + ('?' + urlencode(query) if query else '')
@@ -58,7 +58,7 @@ def call(root, name, port, method, route, body=None, *, query=None):
                                      headers={'Authorization': 'Bearer ' + token(root, name), 'Content-Type': 'application/json'})
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     try:
-        with opener.open(request, timeout=TIMEOUT) as response:
+        with opener.open(request, timeout=timeout) as response:
             return json.loads(response.read() or b'null')
     except urllib.error.HTTPError as error:
         try:

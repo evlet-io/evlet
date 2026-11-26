@@ -254,7 +254,7 @@ def privileged_steps(root, name, texts, restart=False):
         ('install', str(deploy / site.name), str(site), texts['site']),
         ('install', str(deploy / GLOBAL_FILE), str(options), texts['options']),
         ('import', str(site)),
-        ('import-first', str(options)),
+        ('import-first', str(options), texts['options']),
         ['sudo', 'systemctl', 'daemon-reload'],
         ['sudo', 'systemctl', 'enable', '--now', f'evlet-{name}'],
         *([['sudo', 'systemctl', 'restart', f'evlet-{name}']] if restart else []),
@@ -340,10 +340,13 @@ def run_privileged(commands, run=None, out=print):
             if line in text.splitlines():
                 continue
             if global_block(text):
-                if 'strict_sni_host' in text:
+                # The endpoint's options (evlet/cli/caddy.py) add the admin API and the one on-demand TLS ask.
+                options = command[2] if len(command) > 2 else ''
+                if 'strict_sni_host' in text and ('on_demand_tls' not in options or 'on_demand_tls' in text):
                     continue
-                raise ValueError(f'{CADDYFILE} has its own global options block. Add these lines inside it, then reload Caddy:\n'
-                                 '\tservers :443 {\n\t\tstrict_sni_host on\n\t}')
+                inside = options.split('{', 1)[1].rsplit('}', 1)[0].strip('\n') if 'on_demand_tls' in options \
+                    else '\tservers :443 {\n\t\tstrict_sni_host on\n\t}'
+                raise ValueError(f'{CADDYFILE} has its own global options block. Add these lines inside it, then reload Caddy:\n' + inside)
             run(['sudo', 'sed', '-i', '1i ' + line, str(caddyfile)], check=True)
         else:
             run(command, check=True)
@@ -353,7 +356,7 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
     """Prepare a Caddy site for host: administrator, domain, files, DNS check, then the privileged steps."""
     from ..auth import trusted_proxies_line
     from ..instances import load_runtime
-    from . import proxy
+    from . import caddy, proxy
     from .instance import set_domain
     path = child(root, 'instances', name)
     with step('administrator'):
@@ -371,7 +374,7 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
         account, chosen = service_account(name, user)
         trusted = app.business.auth.trusted_proxies
         texts = {'unit': proxy.systemd_unit(root, name, port, account),
-                 'site': proxy.caddy(app.routes, port, name, trusted, global_options=False), 'options': proxy.GLOBAL_OPTIONS}
+                 'site': proxy.caddy(app.routes, port, name, trusted, global_options=False), 'options': caddy.global_options(root)}
         (root / 'deploy').mkdir(mode=0o755, exist_ok=True)
         site = proxy.write(root / 'deploy' / f'evlet-{name}.caddy', texts['site'])
         proxy.write(root / 'deploy' / GLOBAL_FILE, texts['options'])
@@ -494,13 +497,15 @@ def endpoint_site(root, args, *, ask=None, run=None):
     with step('Caddy and service files'):
         account, chosen = service_account('project', getattr(args, 'service_user', None))
         unit, site = endpoint.write_service_files(root, account)
-        print(f'Wrote {root / "deploy" / (endpoint.UNIT + ".caddy")}\nWrote {root / "deploy" / (endpoint.UNIT + ".service")}')
+        print(f'Wrote {root / "deploy" / (endpoint.UNIT + ".caddy")}\nWrote {root / "deploy" / (endpoint.UNIT + ".service")}\n'
+              f'Wrote {root / "deploy" / GLOBAL_FILE}: Caddy\'s admin API on loopback and the one on-demand TLS ask. The endpoint '
+              'adds each instance\'s hosts to Caddy itself, so instances need no Caddy file of their own')
         note = account_note(account, chosen)
         if note:
             print(note)
     commands = endpoint.install_steps(root, unit, site)
     if not args.apply:
-        print('Review the two files, then run these steps with sudo:')
+        print('Review the three files, then run these steps with sudo:')
         print('\n'.join('    ' + describe(command) for command in commands))
         print('Or run the same command again with --apply to run them. Each one is shown first and sudo asks for your password.')
     else:

@@ -223,6 +223,13 @@ writes runs it); without it, run `evlet host check NAME`. A row the route table 
 stops the instance from starting: it is skipped and listed under Needs attention. Back up and
 restore `evlet_hosts` with the database like any framework table.
 
+With a project endpoint, Caddy needs no file per instance: the endpoint answers the one on-demand TLS ask and
+pushes each instance's hosts into its own `@id` subtree of Caddy's config through the admin API on loopback
+([project-endpoint.md](project-endpoint.md#caddy)). Keep the admin API on loopback (`admin localhost:2019`, the
+base config `evlet setup --endpoint --endpoint-host` installs). A load Caddy refuses leaves its last good config in
+place; the endpoint retries with backoff and shows the error in the portal and `project_status`. After a
+`systemctl reload caddy` the endpoint restores its routes within about 10 seconds.
+
 ## Monitoring and capacity
 
 Monitor request/error latency, 401/403/429/503 rates, CPU, memory, open connections,
