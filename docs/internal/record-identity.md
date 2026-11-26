@@ -59,6 +59,10 @@ above 2^53):
 Writes accept the text form. They also accept a JSON integer below 2^53 so that existing clients
 keep working; responses never contain one.
 
+**Project and instance ids** use the same format, made with `new_id()` and written with `encode`
+([cli.md](../cli.md#project-and-instance-ids)). They are stored as text: the project id in
+`project.json`, the instance id in `evlet_instance`.
+
 **Not record ids.** Framework rows that are not models keep their own integer keys: users, API
 keys, activity entry numbers, jobs, attachments, events and tool calls. Where one of them names a
 record (`record_id`), that value is a record id and uses the text form.

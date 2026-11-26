@@ -13,7 +13,7 @@ const settings = { 'security.password_min': { file: 15, value: 15 }, 'security.s
 const notes = { id: 'notes', title: 'Notes', version: '0.1.0', source: 'apps/notes', models: ['NotesItem'], connectors: [], permissions: 2, schedules: ['nightly'],
   frontends: [{ name: 'notes.desk', path: '/notes', host: 'localhost', realm: 'desk' }], update: { from: '0.1.0', to: '0.2.0', error: null }, restart: false };
 const state = () => ({
-  instance: { name: 'Acme', host: 'localhost', evlet: '0.1.3', version: 2, slug: 'acme', managed: true },
+  instance: { name: 'Acme', host: 'localhost', evlet: '0.1.3', version: 2, slug: 'acme', managed: true, id: '01hc1sd9vc1ye', project: '01hc1rz2k8m4p' },
   me: { id: 1, username: 'owner', role: 'admin' }, apps: [notes], jobs: { failed: 1 },
   roles: [{ id: 'admin', kind: 'framework', base: null, realm: 'desk', opens_controls: true, description: '', users: 1, app: null, declared: true }],
   models: [], scopes: { '': 'All records' }, settings, controls: { allow_ips: [], require_two_step: false },
@@ -93,6 +93,14 @@ function open(path: string) {
 }
 
 describe('Controls system pages', () => {
+  it('shows the instance id and project id on the Overview', async () => {
+    const { host } = open('/controls');
+    await until(() => expect(text(host)).toContain('Instance id'));
+    const card = byText(host, '.ctl-card', /Config version/);
+    expect(text(card)).toContain('Instance id01hc1sd9vc1ye');
+    expect(text(card)).toContain('Project id01hc1rz2k8m4p');
+  });
+
   it('shows the period lock in DD-MM-YYYY and moves it for an admin', async () => {
     const { host, sent } = open('/controls/periods');
     await until(() => expect(text(host)).toContain('31-03-2026'));

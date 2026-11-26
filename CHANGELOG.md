@@ -4,6 +4,33 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Upgrading
+
+- **Run `evlet migrate <instance>` once per instance.** Framework step `0018_instance_id` adds `evlet_instance`,
+  the instance id; serving refuses until it has run, as for any framework step. It writes nothing else.
+- **Commit `project.json`.** The first project command you run in an existing project writes it and prints the
+  new id once on stderr (`Project id: 01hc1sd9vc1ye`). A clone shares the id on purpose; a fork runs
+  `evlet project new-id`.
+- **`evlet instance --list` has a third column**, the instance id. A script that split its lines in two by tab
+  reads three fields now.
+- No renamed names, no app changes. A project with no endpoint behaves as before apart from the ids.
+
+### Added
+
+- **Project and instance ids** ([docs/cli.md](docs/cli.md#project-and-instance-ids)), in the record id format:
+  13 lowercase Crockford base32 characters, DNS-label safe, time ordered. The project id lives in `project.json`
+  (`{"id", "created", "mode"}`), which `evlet setup` writes; the instance id lives in the instance database and
+  survives backups and restores. Ids are made locally, so their uniqueness is not promised; Evlet Cloud is the
+  registry and refuses a duplicate.
+- **`evlet project`** prints the project id, creation date, mode, endpoint (`none` for now) and each instance with
+  its id. `evlet project new-id` gives a fork its own id; `evlet project mode development|production` rewrites only
+  the `mode` key (shell only, no HTTP route).
+- **A copied instance folder refuses to serve.** When two instances of a project have the same id, the one whose id
+  was made for another folder stops at startup and names `evlet instance new-id <name>`, which gives it its own.
+- **Controls Overview shows the instance id and project id** to admins on the Controls host.
+
 ## 0.4.21 (22-11-2026)
 
 ### Upgrading to 0.4.21

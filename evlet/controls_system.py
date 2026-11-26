@@ -59,6 +59,17 @@ class System:
     def instance_name(self):
         return None if self.path is None else self.path.name
 
+    def project_id(self):
+        """The id in the project's project.json, or None outside a project or before it has one."""
+        if self.path is None:
+            return None
+        from .instances import read_project
+        try:
+            record = read_project(self.path.parent.parent)
+        except (OSError, ValueError):
+            return None
+        return record['id'] if record else None
+
     def write_audit(self, actor, area, target, detail, before=None, after=None):
         with self.controls.database.transaction() as tx:
             self.controls.audit(tx.connection, actor, area, target, detail, before, after)
