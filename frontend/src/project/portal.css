@@ -1,0 +1,22 @@
+.pp-root { min-height: 100vh; background: var(--bg, Canvas); color: var(--text, CanvasText); }
+.pp { max-width: 72rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; display: grid; gap: 1rem; }
+.pp-head { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-start; justify-content: space-between; }
+.pp-head h1 { margin: 0 0 .25rem; font-size: 1.4rem; }
+.pp-card { border: 1px solid var(--border, #d0d4dc); border-radius: 10px; padding: 1rem; overflow-x: auto; }
+.pp-card h2 { margin: 0 0 .75rem; font-size: 1.05rem; }
+.pp-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.pp-table th, .pp-table td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid var(--border, #e3e6ec); vertical-align: top; }
+.pp-row { cursor: pointer; }
+.pp-row:hover, .pp-row:focus-visible { background: var(--hover, rgba(127, 127, 127, .08)); }
+.pp-actions { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin-top: .5rem; }
+.pp-id { font-family: var(--mono, ui-monospace, monospace); font-size: .85em; opacity: .8; }
+.pp-muted { opacity: .7; font-size: .85rem; }
+.pp-error { color: var(--danger, #c0283e); }
+.pp-output { width: min(44rem, 80vw); max-height: 60vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: .8rem/1.45 var(--mono, ui-monospace, monospace);
+  background: var(--subtle, rgba(127, 127, 127, .1)); padding: .75rem; border-radius: 6px; margin: 0; }
+.pp-op { display: grid; gap: .75rem; }
+.pp-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .4rem; }
+.pp-list li { display: flex; gap: .75rem; align-items: center; justify-content: space-between; }
+.pp-form { display: grid; gap: .75rem; }
+.pp-form label { display: grid; gap: .25rem; }
+.pp-wide { max-width: min(48rem, 94vw); width: auto; }

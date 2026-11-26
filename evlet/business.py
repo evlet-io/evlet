@@ -267,6 +267,8 @@ class Business:
             self.unsaved.schedule()
             # After the queue's tables exist, so a new database gets the schedule on its first start.
             self.schedule_image_purge()
+            from .hosts import register_task
+            register_task(self)
             if self.application is not None:
                 with self.database._connection() as connection:
                     namespace = connection.run(qb.select('evlet_job_namespace', 'namespace').where(id=1)).value()

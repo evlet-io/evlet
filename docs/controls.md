@@ -11,6 +11,11 @@ must use two-step sign-in but can't because the `cryptography` package is
 missing or the secret key file is refused. An application without a secret key (not an instance)
 has no two-step sign-in, and nothing is listed for it.
 
+Its Instance card shows the instance's name, primary host, Evlet version and, for an instance of a
+project, its **Instance id** and **Project id** ([cli.md](cli.md#project-and-instance-ids)). An
+application built in Python has an instance id too, made when its database is first set up. The ids
+are in the Controls state only, which signed-out visitors and sub-hosts never get.
+
 ## Access
 
 - Served on the primary host only. Sub-hosts get 404 for the page, every
@@ -485,6 +490,13 @@ locked state, and the hosts: the primary host, each sub-host and the sign-in rea
 Both need a primary host (`routes.py` or `Instance.domain`); without one the page shows why.
 Each person can check hosts once every 10 seconds, and each DNS lookup gives up after 5 seconds.
 Change routes in the instance's `routes.py`.
+
+**Hosts from data** ([routing.md](routing.md#hosts-from-data)) are the one part admins change here:
+Add host (a hostname and the static or server frontend it serves, such as `site.www`), and per host
+Check (its DNS; a pass makes a pending host active), Disable or Enable, and Remove. Each change is
+saved at once, audited under Hosts and served by every process within about a second, without a
+restart. Other roles that open Controls see the hosts but get 403 on these routes. A row the route
+table skips is listed under Needs attention with the reason.
 
 ## Jobs
 
@@ -1044,6 +1056,7 @@ newest first, 50 rows at a time.
 | `POST /api/_controls/naming/<Model>/try` | `{values, series?}`: the matching series and name, and a check of each draft series. No counter changes |
 | `GET /api/_controls/overrides/export?kind=&key=` | Export as code: `[{file, code}]` |
 | `GET /api/_controls/routing`, `POST /api/_controls/routing/check` | Route table, hosts and proxy config; DNS and certificate check |
+| `GET`/`POST /api/_controls/routing/hosts`, `DELETE /api/_controls/routing/hosts/<host>`, `POST .../<host>/check`, `POST .../<host>/status` | Hosts from data, admins only: list, add `{host, target}`, remove, check DNS, set `{status: "disabled" \| "pending"}` |
 | `GET /api/_controls/jobs` | Schedules and recent jobs |
 | `GET /api/_controls/unsaved`, `POST /api/_controls/unsaved/clear` | Unsaved changes: `{entries, bytes, oldest, limits, people}` (counts and sizes only); clear `{"days"}` older than that, audited |
 | `POST /api/_controls/jobs/schedules/<name>` | `{active}`: pause or resume |

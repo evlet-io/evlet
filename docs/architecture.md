@@ -97,8 +97,8 @@ points upward; every module must be in the map.
 | 2 | `access` | Who may do what | auth, permissions |
 | 3 | `data` | SQL, files, migrations | database, sqlite, migrations, ledger, writes, storage, object_storage, secrets, sequences, images |
 | 4 | `engine` | Document behaviour | documents, statemanager, guards, activity, measures, unsaved, mentions, meaning, prompts |
-| 5 | `web` | HTTP application and routes | app, runtime, oidc, routing, business, forms, workspaces, services, events, jobs, framework, devlink, discovery, search |
-| 6 | `admin` | Controls and settings | controls, controls_export, controls_system, customization, settings, printing |
+| 5 | `web` | HTTP application and routes | app, runtime, oidc, routing, business, forms, workspaces, services, events, jobs, framework, devlink, discovery, search, hosts, sites |
+| 6 | `admin` | Controls and settings | controls, controls_export, controls_system, customization, settings, printing, manage |
 | 7 | `ai` | Eva, MCP, tools | eva, tools, mcp, connector, connectors, assistants, mailboxes |
 | 8 | `site` | Sites, apps, deployment, app tests | instances, packages, builds, deployment, tenancy, serverless, testing |
 
@@ -117,6 +117,16 @@ these imports by package and module (`ui.metadata`, `cli.project`) and `ALLOWED_
 that exist today, at module or function level; it only shrinks the same way. Most reach the
 model-screen schema compiler in `evlet/ui/metadata.py` and `evlet/ui/scripts.py`, or the generic
 helpers in `evlet/cli/project.py`.
+
+The lifecycle work of the CLI (install, migrate, back up, restore, restart, upgrade, hosts) lives in
+`evlet/cli/core.py`, which takes confirmation as an argument and returns an `Outcome` instead of printing; the
+commands in `evlet/cli/commands/` print it and keep their prompts ([cli.md](cli.md#lifecycle-core)). Code that
+needs the same lifecycle steps calls that module from `evlet/cli/`, above the layers. The project endpoint
+([project-endpoint.md](project-endpoint.md)) is such code: `evlet/cli/endpoint.py` builds an `Application` over
+project.db, `evlet/cli/project_tools.py` holds its services, `evlet/cli/supervisor.py` runs the instances and
+`evlet/cli/oplog.py` the operation log the core's functions append to. `evlet/cli/project_files.py` is what the
+develop tools may read and write, and `evlet/cli/channel.py` the endpoint's side of the management channel, whose
+instance side is `evlet/manage.py` in the admin layer (it reads Controls, settings, hosts and sites, never records).
 
 Building a model class or a `Registry` runs steps that belong to higher layers (ledger options,
 state manager hooks, rule guards, sequences, measures, activities, API access). `evlet/models.py`

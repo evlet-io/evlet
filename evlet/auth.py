@@ -560,6 +560,13 @@ class LocalAuth:
         if not isinstance(role, str) or not connection.run(qb.select('evlet_roles', 'id').where(id=role)).one():
             raise ValidationError({'role': 'Choose an existing role'})
 
+    def reroute(self, origins, realms):
+        """Serve a new set of origins and realms (keyed by Host header bytes): the live route table adds and
+        removes hosts from data with it (evlet.hosts). Each attribute is replaced whole, never changed in place."""
+        from .routing import authority
+        origins = frozenset(origins)
+        self.hosts, self.realms, self.origins = {authority(origin).encode() for origin in origins}, dict(realms), origins
+
     def guard(self, scope, navigation=False):
         """Reject requests from unknown hosts or origins, cross-site requests and unprotected writes.
         navigation=True is passed only by browser page routes: a cross-site request is then let through

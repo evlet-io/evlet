@@ -165,7 +165,7 @@ def _docs_access(application, scope):
 def _frontend(application, scope, host, identity, base, rest):
     """Serve an app frontend: the evlet shell under its base, a static dist folder or a server handler."""
     from ..app import HTTPError
-    from .serving import frontend_response, static_response
+    from .serving import frontend_response, site_response, static_response
     definition = application.routes.frontend(identity)
     user = _frontend_user(application, scope, definition)
     # A public host's pages carry no config block: nothing about the instance, its apps or its version.
@@ -175,6 +175,10 @@ def _frontend(application, scope, host, identity, base, rest):
         if match is None or match[1] and match[1] not in application.registry.exposed or not _record_segment(match[2]):
             raise HTTPError(404, 'Route not found')
         response = static_response('/', config)
+    elif definition.kind == 'static' and '.' not in identity:
+        # An instance site (evlet.sites): only ever on its own public host, with cache headers and ETags.
+        response = site_response(application.routes.dist(identity), rest, base, definition.csp.get('connect-src', ()),
+                                 definition.routing, scope.get('query_string', b''), dict(scope.get('headers', [])).get(b'if-none-match', b''))
     elif definition.kind == 'static':
         response = frontend_response(application.routes.dist(identity), rest, config, base, definition.csp.get('connect-src', ()),
                                      definition.routing, scope.get('query_string', b''))
@@ -236,12 +240,20 @@ def _server(application, scope, host, definition, rest, config, user):
     return result.status, Download(body), [(b'content-type', result.content_type.encode()), (b'content-security-policy', CSP.encode())]
 
 
+def _loopback(application, scope):
+    """Whether the request comes from this server itself, read through the trusted proxies as auth reads it."""
+    try:
+        peer = application.business.auth.client_address(scope) if application.business else (scope.get('client') or ('',))[0]
+        return ipaddress.ip_address(peer).is_loopback
+    except ValueError:
+        return False
+
+
 def _tls_allowed(application, scope):
     """Caddy on-demand TLS asks here before it requests a certificate: 200 only for this instance's hosts."""
     from ..app import HTTPError
+    loopback = _loopback(application, scope)
     try:
-        peer = application.business.auth.client_address(scope) if application.business else (scope.get('client') or ('',))[0]
-        loopback = ipaddress.ip_address(peer).is_loopback
         query = parse_qs(scope.get('query_string', b'').decode('ascii'), strict_parsing=True, max_num_fields=1)
     except (ValueError, UnicodeError):
         loopback, query = False, {}
@@ -251,3 +263,5 @@ def _tls_allowed(application, scope):
     if not application.routes.primary or domain not in application.routes.hosts():
         raise HTTPError(404, 'Not served here')
     return 200, {'allowed': domain}, []
+
+

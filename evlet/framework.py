@@ -221,6 +221,59 @@ def _prompt_tickets(connection):
     from .prompts import ensure_tickets
     ensure_tickets(connection)
 
+
+# The instance id: one row, made once per database and kept by backups and restores (a restore is the same
+# instance). `name` is the instance folder it was made for (None for an application built in Python), so a
+# copied folder, which carries the same row, is told apart from the original (evlet.instances.check_identity).
+INSTANCE = TableDefinition('evlet_instance', (
+    Column('id', 'TEXT', primary=True),
+    Column('name', 'TEXT'),
+    Column('created', 'INTEGER', required=True),
+))
+
+
+def _instance_id(connection):
+    """0018: give the database its instance id, unless it has one."""
+    connection.ensure_table(INSTANCE)
+    if connection.run(qb.select('evlet_instance', qb.count())).value() == 0:
+        from .identity import encode, new_id
+        connection.run(qb.insert('evlet_instance', id=encode(new_id()), name=None, created=int(time.time())))
+
+
+def instance_identity(connection):
+    """{'id', 'name', 'created'} of the database's instance, or None before 0018_instance_id has run."""
+    if not connection.table_exists('evlet_instance'):
+        return None
+    row = connection.run(qb.select('evlet_instance', 'id', 'name', 'created').order_by('created', 'id').limit(1)).one()
+    return None if row is None else {'id': row[0], 'name': row[1], 'created': row[2]}
+
+
+def name_instance(connection, name):
+    """Record the instance folder an id was made for, once: a copy keeps the original's name (evlet install)."""
+    _instance_id(connection)
+    connection.run(qb.update('evlet_instance', name=name).where(qb.is_null('name')))
+
+
+def new_instance_id(connection, name):
+    """Replace the instance id with a new one made for `name` (evlet instance new-id). Returns the new id."""
+    from .identity import encode, new_id
+    connection.ensure_table(INSTANCE)
+    connection.run(qb.delete('evlet_instance'))
+    value = encode(new_id())
+    connection.run(qb.insert('evlet_instance', id=value, name=name, created=int(time.time())))
+    return value
+
+
+def _hosts(connection):
+    """Sub-hosts kept as data, served without a restart, and their version row (evlet/hosts.py)."""
+    from .hosts import ensure
+    ensure(connection)
+
+def _sites(connection):
+    """Instance sites: their settings, current release and limits (evlet/sites.py)."""
+    from .sites import ensure
+    ensure(connection)
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -252,6 +305,12 @@ STEPS = (
                   _activity),
     FrameworkStep('0017_prompt_tickets', 'Add evlet_prompt_tickets, the single-use tickets of prompts shown over HTTP, '
                   'and drop evlet_operations, the receipts of the removed dialogs and slips.', _prompt_tickets),
+    FrameworkStep('0018_instance_id', 'Add evlet_instance, the one row holding the instance id that tells this '
+                  'instance apart from every other one.', _instance_id),
+    FrameworkStep('0019_hosts', 'Add evlet_hosts, the sub-hosts kept as data and served without a restart, and '
+                  'evlet_hosts_version, the row each process checks to pick up a change.', _hosts),
+    FrameworkStep('0021_sites', 'Add evlet_sites, the public sites an instance keeps itself: their routing, CSP '
+                  'origins, public API scopes, current release and limits; their files are in the instance sites folder.', _sites),
 )
 
 LEDGER = TableDefinition('evlet_framework_migrations', (

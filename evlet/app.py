@@ -33,10 +33,15 @@ OIDC_PATHS = ('/_/oidc/start', '/_/oidc/callback', '/_/oidc/finish')
 PUBLIC_PATHS = MCP_PATHS + MAIL_PATHS + OIDC_PATHS
 # The Caddy on-demand TLS check answers loopback callers only; the proxy refuses it from outside.
 TLS_CHECK = '/_/tls-allowed'
+# The project endpoint's management channel (evlet/manage.py): loopback with the instance's token, 404 otherwise.
+MANAGE = '/_/manage/'
+MANAGE_BODY_BYTES = 16 * 1024 * 1024  # site files arrive base64 encoded: a 10 MiB file and its envelope
 
 
 def request_body_limit(path, image_bytes=None):
     """JSON envelope ceilings shared with reverse-proxy generation; image_bytes includes current policy."""
+    if path == MANAGE + 'sites/files':
+        return MANAGE_BODY_BYTES
     if image_bytes is None:
         return MAX_BODY_BYTES
     if path.endswith(('/attachments', '/_images')):
@@ -138,6 +143,9 @@ class Application:
         self.registry = database.registry
         if auth is None and (policy is not None or children or attachments or storage is not None or jobs is not None or events is not None):
             raise ValueError("Business features require authentication")
+        self.live_routes = None
+        # evlet.manage.Manage of an instance the project endpoint runs; None answers 404 on /_/manage/.
+        self.manage = None
         self.business = None if auth is None else Business(database, auth, policy=policy, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
             from .routing import authority
@@ -156,6 +164,9 @@ class Application:
             from .printing import Prints
             self.business.prints = Prints(self.business, prints)
             self.business.controls.routes = self.routes
+            # Sub-hosts from evlet_hosts join the table without a restart (evlet.hosts).
+            from .hosts import LiveRoutes
+            self.live_routes = self.business.live_routes = LiveRoutes(self)
             for connector in connectors:
                 self.business.connectors.register('app', connector)
             # Secrets are sealed with a key outside the database: EVLET_SECRET_KEY or secret_key, shared with
@@ -266,7 +277,8 @@ class Application:
                     await self._eva_stream(scope, receive, send)
                     return
                 body = None
-                internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/')) and scope['path'] != TLS_CHECK
+                internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/')) and scope['path'] != TLS_CHECK \
+                    and not scope['path'].startswith(MANAGE)
                 if internal:
                     # OAuth and the remote MCP endpoint read their own bodies (JSON or form), at most 64 KiB like /api.
                     data = bytearray()
@@ -349,8 +361,10 @@ class Application:
                 logger.exception("Response encoding failed", extra={'request_id': scope.get('evlet.request_id')})
                 status, headers, download = 500, [], False
                 encoded = b'{"error": "Internal server error"}'
-            response_headers = [(b"x-content-type-options", b"nosniff"), (b"cache-control", b"no-store"), *headers]
-            if status != 204:
+            # no-store unless the response chose its own caching (a site's pages and hashed files, the manifest).
+            cached = any(name == b"cache-control" for name, _ in headers)
+            response_headers = [(b"x-content-type-options", b"nosniff"), *(() if cached else ((b"cache-control", b"no-store"),)), *headers]
+            if status not in (204, 304):
                 if not download:
                     response_headers.append((b"content-type", b"application/json; charset=utf-8"))
                 response_headers.append((b"content-length", str(len(encoded)).encode()))
@@ -654,6 +668,10 @@ class Application:
 
     def _dispatch(self, scope, body):
         path, method = scope["path"], scope["method"]
+        if path.startswith(MANAGE):
+            if self.manage is None:
+                raise HTTPError(404, 'Route not found')
+            return self.manage.dispatch(self, scope, body)
         if path == "/health" and not self.routes.public(dict(scope.get('headers', [])).get(b'host', b'')):
             self._method(method, ["GET"])
             self.database.check()
@@ -726,6 +744,8 @@ class Application:
         upgrade(self.database, apply=not self.managed_framework)
         if self.business:
             self.business.initialize()
+        if self.live_routes is not None:
+            self.live_routes.refresh(force=True)
 
     def stop(self):
         """Stop admission and end live streams before server shutdown. Safe from any thread."""

@@ -68,7 +68,12 @@ def nginx_refuses(text, paths):
 
 
 def test_every_framework_route_under_underscore_is_public_or_the_tls_check():
-    assert served_paths() == set(PUBLIC_PATHS) | {TLS_CHECK}
+    # The TLS check and the management channel answer loopback only, and the proxy refuses them from outside; the
+    # /_/project/ routes are the project endpoint's own shell routes, loopback only too.
+    from evlet.app import MANAGE
+    shell = {path for path in served_paths() if path.startswith('/_/project/')}
+    assert shell <= {'/_/project/', '/_/project/restart', '/_/project/upgrade', '/_/project/operation'}
+    assert served_paths() == set(PUBLIC_PATHS) | {TLS_CHECK, MANAGE} | shell
     assert PUBLIC_PATHS == MCP_PATHS + MAIL_PATHS + OIDC_PATHS and TLS_CHECK not in PUBLIC_PATHS
 
 

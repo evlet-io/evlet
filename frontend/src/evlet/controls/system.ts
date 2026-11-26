@@ -7,7 +7,9 @@ import { Button, Icon, ProgressBar, StatusPill, Switch } from '../ui/base';
 import { exactTime, RelativeTime, relativeTime } from '../ui/time';
 import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
-import type { AppInfo, AuditRow, CodeFile, HostCheck, JobRow, Jobs, OverrideItem, Routing } from './client';
+import type { AppInfo, AuditRow, CodeFile, DataHost, HostCheck, JobRow, Jobs, OverrideItem, Routing } from './client';
+import { ask, field } from '../ui/settings-helpers';
+import { ValidationError } from '../api';
 import { describe, idOf } from './drafts';
 import { message, Select } from './people';
 import { UnsavedSection } from './unsaved';
@@ -82,12 +84,53 @@ const SOURCES: Record<string, () => Node> = {
   locked: () => html`<span class="ctl-line muted">${Icon('lock', { size: 'xs' })}Locked</span>`,
   framework: () => html`<span class="ctl-src s-file"><i></i>Framework</span>`,
   'routes.py': () => html`<span class="ctl-src s-ov"><i></i>routes.py</span>`,
+  data: () => html`<span class="ctl-src s-app"><i></i>Data</span>`,
 };
+const HOST_STATUS: Record<DataHost['status'], [string, 'green' | 'amber' | 'slate']> = { active: ['Active', 'green'], pending: ['Pending', 'amber'], disabled: ['Disabled', 'slate'] };
+
+/** Hosts from data: added here or with evlet host add --live, served without a restart once their DNS points here. Admins only. */
+function DataHosts(ctx: ControlsContext, items: DataHost[], reload: () => void): HTMLElement {
+  const busy = cell(false);
+  const run = async (action: () => Promise<unknown>, done: string) => {
+    busy.set(true);
+    try { await action(); toast(done); reload(); } catch (failure) { toast(message(failure), { tone: 'error' }); } finally { busy.set(false); }
+  };
+  const add = () => {
+    const host = cell(''), target = cell(''), error = cell<string | null>(null);
+    const submit = async (close: () => void) => {
+      try { await ctx.api.addHost(host.peek().trim().toLowerCase(), target.peek().trim()); close(); toast(`${host.peek()} added, pending its DNS check`); reload(); }
+      catch (failure) { if (failure instanceof ValidationError) error.set(failure.message); else toast(message(failure), { tone: 'error' }); }
+    };
+    openModal({ title: 'Add host', icon: 'globe', tint: 'blue', narrow: true,
+      body: () => html`<div class="ctl-form">
+        ${field('Host', 'ctl-h-host', html`<input class="input" id="ctl-h-host" autocomplete="off" placeholder="www.example.com" prop:value=${host}
+          on:input=${(event: Event) => { host.set((event.target as HTMLInputElement).value); error.set(null); }}>`, () => null, () => error.get())}
+        ${field('Serves', 'ctl-h-target', html`<input class="input" id="ctl-h-target" autocomplete="off" placeholder="site.www" prop:value=${target}
+          on:input=${(event: Event) => { target.set((event.target as HTMLInputElement).value); error.set(null); }}>`, () => 'A static or server frontend, as app.frontend')}</div>`,
+      footer: close => DialogFooter({ cancel: close, submit: { label: 'Add host', onClick: () => void submit(close) } }) });
+  };
+  const dnsText = (item: DataHost) => item.problem ?? item.error ?? (item.records ? `Points here: ${item.records}` : item.checked_at ? '' : 'Not checked');
+  return html`<section class="ctl-card ctl-gap"><div class="ctl-card-head"><div><h2>Hosts from data</h2>
+      <p>Served without a restart once their DNS points here. Pending hosts are checked every minute.</p></div>
+      ${Button({ label: 'Add host', icon: 'plus', onClick: add })}</div>
+    ${items.length ? html`<div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Host</th><th>Serves</th><th>Status</th><th>DNS</th><th>Checked</th><th></th></tr></thead><tbody>
+      ${items.map(item => html`<tr><td class="strong">${item.host}</td><td class="mono muted">${item.target}</td>
+        <td>${StatusPill({ label: item.status === 'active' && !item.served ? 'Not served' : HOST_STATUS[item.status][0], tint: item.status === 'active' && !item.served ? 'rose' : HOST_STATUS[item.status][1] })}</td>
+        <td class="muted ctl-small">${dnsText(item)}</td><td class="muted num">${stamp(item.checked_at)}</td>
+        <td><div class="ctl-line">
+          ${Button({ label: 'Check', size: 'small', disabled: () => busy.get() || item.status === 'disabled', onClick: () => void run(() => ctx.api.checkHost(item.host), `${item.host} checked`) })}
+          ${Button({ label: item.status === 'disabled' ? 'Enable' : 'Disable', size: 'small', disabled: busy,
+            onClick: () => void run(() => ctx.api.hostStatus(item.host, item.status === 'disabled' ? 'pending' : 'disabled'), item.status === 'disabled' ? `${item.host} is pending again` : `${item.host} disabled`) })}
+          ${Button({ label: 'Remove', size: 'small', disabled: busy, onClick: () => ask(`Remove ${item.host}?`, 'The instance stops serving it within a second.', 'Remove',
+            () => run(() => ctx.api.removeHost(item.host), `${item.host} removed`), true) })}</div></td></tr>`)}
+      </tbody></table></div>` : html`<div class="ctl-empty">No hosts from data. Add one here or with <code>evlet host add --live</code>.</div>`}</section>` as HTMLElement;
+}
 const source = (value: string) => (SOURCES[value] ?? (() => html`<span class="ctl-src s-app"><i></i>${value.replace(/^app /, 'App ')}</span>`))();
 
 export function RoutingPage(ctx: ControlsContext): HTMLElement {
   const routing = cell<Routing | null>(null), checks = cell<Map<string, HostCheck>>(new Map()), notes = cell<string[]>([]), checking = cell(false);
-  void ctx.api.routing().then(value => routing.set(value), failure => toast(message(failure), { tone: 'error' }));
+  const load = () => void ctx.api.routing().then(value => routing.set(value), failure => toast(message(failure), { tone: 'error' }));
+  load();
   const check = async () => {
     checking.set(true);
     try {
@@ -118,15 +161,16 @@ export function RoutingPage(ctx: ControlsContext): HTMLElement {
       Button({ label: 'Proxy config', icon: 'file-text', disabled: !routing.get()!.proxy, tip: routing.get()!.proxy_error, onClick: proxy }),
       Button({ label: () => checking.get() ? 'Checking…' : 'Check hosts', icon: 'rotate-ccw', variant: 'primary', disabled: () => checking.get() || !routing.get()!.proxy,
         onClick: () => void check() })] : null)}
-    ${Callout('info', 'info', html`To move a frontend or add a host, edit <code>routes.py</code> in the instance folder and restart. Locked paths belong to the framework, and no app can take them.`)}
+    ${Callout('info', 'info', html`To move a frontend, edit <code>routes.py</code> in the instance folder and restart. A host added below needs no restart; <code>routes.py</code> wins a clash. Locked paths belong to the framework, and no app can take them.`)}
     ${() => { const value = routing.get(); if (!value) return html`<div class="ctl-empty">Loading routes…</div>`; return [
       value.proxy_error ? Callout('warn', 'info', value.proxy_error) : null,
       html`<section class="ctl-card ctl-gap"><div class="ctl-card-head"><div><h2>Hosts</h2><p>Each host must point at this server before a certificate is issued</p></div></div>
         <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Host</th><th>Kind</th><th>Sign-in</th><th>DNS</th><th>Certificate</th><th>Points to</th><th>Renews</th></tr></thead><tbody>
-        ${value.hosts.map(host => html`<tr><td class="strong">${host.host}</td><td>${host.primary ? StatusPill({ label: 'Primary', tint: 'violet' }) : host.sub ? StatusPill({ label: 'Sub-host', tint: 'teal' }) : html`<span class="muted">Local</span>`}</td><td>${host.realm}</td>
+        ${value.hosts.map(host => html`<tr><td class="strong">${host.host}</td><td>${host.primary ? StatusPill({ label: 'Primary', tint: 'violet' }) : host.data ? StatusPill({ label: 'From data', tint: 'teal' }) : host.sub ? StatusPill({ label: 'Sub-host', tint: 'teal' }) : html`<span class="muted">Local</span>`}</td><td>${host.realm}</td>
           <td>${() => dns(checks.get().get(host.host))}</td><td>${() => cert(checks.get().get(host.host))}</td>
           <td class="mono">${() => checks.get().get(host.host)?.records || ''}</td><td class="muted num">${() => stamp(checks.get().get(host.host)?.expires)}</td></tr>`)}
         </tbody></table></div>${() => notes.get().map(note => html`<p class="muted ctl-small ctl-pad">${note}</p>`)}</section>`,
+      value.data_hosts && ctx.state.peek().me.role === 'admin' ? DataHosts(ctx, value.data_hosts, load) : null,
       html`<section class="ctl-card"><div class="ctl-card-head"><div><h2>Routes</h2><p>${plural(value.rows.length, 'route')} resolved, no clashes</p></div></div>
         <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Host</th><th>Path</th><th>Serves</th><th>Sign-in</th><th>Source</th></tr></thead><tbody>
         ${value.rows.map(row => html`<tr><td>${row.host}</td><td class="mono strong">${row.path}</td><td class="mono muted">${row.serves}</td><td>${row.realm}</td><td>${source(row.source)}</td></tr>`)}

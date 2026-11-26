@@ -313,7 +313,9 @@ function Overview(ctx: ControlsContext): HTMLElement {
       <div class="ctl-stack">
         <section class="ctl-card pad"><h2>Instance</h2>
           <dl class="ctl-kv"><dt>Name</dt><dd>${() => s().instance.name}</dd><dt>Primary host</dt><dd>${() => s().instance.host}</dd>
-            <dt>Evlet</dt><dd>${() => s().instance.evlet || 'Development'}</dd><dt>Config version</dt><dd class="num">${() => s().instance.version}</dd></dl></section>
+            <dt>Evlet</dt><dd>${() => s().instance.evlet || 'Development'}</dd><dt>Config version</dt><dd class="num">${() => s().instance.version}</dd>
+            ${() => s().instance.id ? html`<dt>Instance id</dt><dd class="mono">${s().instance.id}</dd>` : null}
+            ${() => s().instance.project ? html`<dt>Project id</dt><dd class="mono">${s().instance.project}</dd>` : null}</dl></section>
         <section class="ctl-card pad"><h2>How Controls works</h2>
           <p class="muted ctl-small">Apps, models and permissions are read from the installed apps each time the instance starts. A change made here is stored in this instance's database as an override. App files are never edited.</p>
           <p class="muted ctl-small">Reset an override to go back to the file value, or export it as code to move it into the app.</p>

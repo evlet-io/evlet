@@ -1,6 +1,7 @@
 """Serve the bundled browser runtime and app frontends; all record APIs keep their own guards."""
 
 from functools import cache
+import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -213,3 +214,42 @@ def frontend_response(folder, rest, config, base, connect=(), routing="app", que
         # A page of a multi-page site keeps its own relative links, so only app routing gets a base element.
         content = with_config(content, config, None if pages else base.rstrip("/") + "/")
     return page(content, FRONTEND_TYPES[suffix], _csp(connect))
+
+
+# A file name with a content hash before its type, as bundlers write them (index-3f9a1c2e.js, app.BdK3x9aQ.css):
+# 8 or more letters, digits and _ after - or ., holding at least one digit and one letter (so a date is no hash).
+HASHED = re.compile(r".+[-.]([A-Za-z0-9_]{8,})\.[A-Za-z0-9]+")
+IMMUTABLE = b"public, max-age=31536000, immutable"
+
+
+def hashed(path):
+    """Whether the last segment of path carries a content hash, so its content never changes under that name."""
+    found = HASHED.fullmatch(path.rsplit("/", 1)[-1])
+    token = found[1] if found else ""
+    return any(item.isdigit() for item in token) and any(item.isalpha() for item in token)
+
+
+def _matches(header, tag):
+    values = [value.strip() for value in header.decode("latin-1").split(",")]
+    return "*" in values or tag in values or "W/" + tag in values
+
+
+def site_response(folder, rest, base, connect=(), routing="app", query=b"", if_none_match=b""):
+    """A file of an instance site's current release (evlet.sites), with its cache headers.
+
+    Pages (HTML) carry an ETag of their bytes with no-cache, and a matching If-None-Match gets 304. A file whose
+    name carries a content hash is immutable for a year. Every other response keeps the default no-store."""
+    response = frontend_response(folder, rest, None, base, connect, routing, query)
+    if response is None or response[0] != 200:
+        return response
+    status, download, headers = response
+    content_type = dict(headers)[b"content-type"]
+    if content_type.startswith(b"text/html"):
+        tag = '"' + hashlib.sha256(download.content).hexdigest()[:32] + '"'
+        headers = [*headers, (b"etag", tag.encode()), (b"cache-control", b"no-cache")]
+        if if_none_match and _matches(if_none_match, tag):
+            return 304, Download(b""), [(name, value) for name, value in headers if name != b"content-type"]
+        return status, download, headers
+    if hashed(rest):
+        return status, download, [*headers, (b"cache-control", IMMUTABLE)]
+    return response

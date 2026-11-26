@@ -36,10 +36,11 @@ const workerAssets = () => {
     },
   }
 }
-// index.html is the production app. evlet.html (the component Library) is served by the dev server only.
+// index.html is the production app and project.html the project endpoint's portal. evlet.html (the component
+// Library) is served by the dev server only.
 export default defineConfig({
   plugins: [workerAssets()],
   server: { port: 5173, proxy }, preview: { port: 4173, proxy },
-  build: { target: 'es2022', sourcemap: false },
+  build: { target: 'es2022', sourcemap: false, rollupOptions: { input: { index: resolve(import.meta.dirname, 'index.html'), project: resolve(import.meta.dirname, 'project.html') } } },
   test: { environment: 'jsdom', include: ['src/**/*.test.ts', 'scripts/*.test.mjs'], setupFiles: ['./src/evlet/tests/setup.ts'], maxWorkers: 2 },
 })
