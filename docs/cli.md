@@ -66,6 +66,12 @@ The steps run in this order, each through the code of its own command:
    ([below](#serve-a-site-on-a-domain-in-one-go)). With neither, it stops after
    installing and prints the command that starts the site.
 
+`--endpoint` gives the project an endpoint that runs its instances, with a portal and a project MCP; in
+development it then serves on 127.0.0.1:7999 and prints a sign-in link. `evlet setup --endpoint` without a folder
+adds one to the project you are in, and `--endpoint-host HOSTNAME` prepares it behind Caddy for a server
+([project endpoint](project-endpoint.md)). It cannot be combined with `--dev` or `--host`: the endpoint runs the
+instances.
+
 `--app` and `--get` take comma lists, can be repeated and can be combined. Git URLs
 follow the [fetch rules](#dependencies-and-git): HTTPS or `ssh://`, no passwords;
 write `ssh://git@github.com/co/crm.git`, not `git@github.com:co/crm.git`. `--trust`
@@ -116,6 +122,7 @@ evlet backup --instance acme
 evlet restore instances/acme/data/backups/20261112T061500000000Z.sqlite3 --instance acme
 evlet routes acme
 evlet proxy acme --caddy --check
+evlet proxy --endpoint --caddy
 evlet host add acme www.example.com --root site.www --apply
 evlet host remove acme www.example.com --apply
 evlet host list acme
@@ -180,11 +187,17 @@ instance registers with it.
   it its own id (stop it first; other commands still work on it). A backup of one instance restored
   into another is a copy in the same way.
 
-`evlet project` prints the project id, its creation date, mode, endpoint (`none` for now) and each
-instance with its id. `evlet instance --list` adds the id as a third column. Controls shows both
+`evlet project` prints the project id, its creation date, mode, endpoint (its address and whether it
+answers, or `none`; see [project endpoint](project-endpoint.md)) and each instance with its id. `evlet instance --list` adds the id as a third column. Controls shows both
 ids on its Overview ([controls.md](controls.md)); they are never shown to signed-out visitors or
 on public hosts. `evlet project mode production|development` rewrites only the `mode` key of
-`project.json`; it is a shell command, and no HTTP route can change it.
+`project.json`; it is a shell command, and no HTTP route can change it. With an endpoint, `production`
+refuses until the endpoint has a public host and the owner has set up two-step sign-in. The project tools follow the
+new mode from their next call (in production the develop tools are gone); restart the endpoint so its instances,
+Docs and sign-in follow it too.
+
+`evlet endpoint` serves the project endpoint and runs every instance as its child process; `evlet endpoint link`
+prints a new one-time sign-in link for the owner in development ([project endpoint](project-endpoint.md)).
 
 `python -m evlet` accepts the same commands. It drops the working directory from
 `sys.path` before loading apps, but modules Python imports at startup can still be
@@ -607,6 +620,10 @@ On a server set up with `evlet setup --host --apply`, restart an instance with:
 evlet restart acme
 ```
 
+While a [project endpoint](project-endpoint.md#evlet-restart-and-evlet-upgrade) runs the instances, `evlet restart
+NAME` and `evlet upgrade` ask it to restart or upgrade them instead (no `sudo`) and print its operation's output;
+`--check` and `--service` still use systemd.
+
 Run it on the server as the service user, inside the project or with `--project`. It
 checks the instance first, so a working site is never restarted into a broken one. Each
 check prints one line, `ok` or the problem in plain words:
@@ -816,6 +833,11 @@ app.example.com {
 that turns on `strict_sni_host`. Put that block first in `/etc/caddy/Caddyfile`, or add its
 `servers :443 { strict_sni_host on }` lines to the global options block you have.
 
+With a [project endpoint](project-endpoint.md#caddy), skip the block per instance: `evlet proxy --endpoint --caddy`
+prints the one-time global options (the admin API on loopback and the endpoint's one on-demand TLS `ask`), and the
+endpoint adds every instance's hosts to Caddy through the admin API itself. `evlet proxy NAME --caddy` still prints
+an instance's own file, with a note on stderr.
+
 Caddy obtains the certificate and passes the original Host header, which must
 match `domain`. Then run:
 
@@ -931,6 +953,55 @@ Do not remove app source used by an instance. Calendar `@cron` schedules reconci
 changes while preserving operator-disabled state and history. Changing a legacy
 interval schedule's task, payload or interval needs a later explicit
 schedule-update API; unchanged schedules retain their due time and activation.
+
+### Lifecycle core
+
+The lifecycle commands are thin wrappers over `evlet/cli/core.py`, so a caller without a terminal (such as a later
+project endpoint) runs the same code as the CLI. The module is internal: it is not exported from `evlet` and may
+change within 0.4.x. Every function takes the project root first and returns an `Outcome`; none reads stdin or
+writes stdout.
+
+| Function | Command |
+| --- | --- |
+| `install_app(root, instance, app, *, trust, confirm, hosts='offer', ask, out)` | `evlet install` (`hosts`: `'offer'`, `'take'` for `--yes`, `'skip'` for `--no-host`) |
+| `migrate(root, instance, *, trust, confirm, recompute_posted, allow_destructive, allow_maintenance, out)` | `evlet migrate` |
+| `migration_plan(root, instance, *, trust, confirm, out)` | `evlet migrate --plan` |
+| `make_migration(root, app, instance, *, name, trust, confirm, out)` | `evlet makemigration` |
+| `backup_create(root, instance, *, to, with_files, out)` | `evlet backup` |
+| `backup_list(root, instance, *, out)` | the sets in `data/backups`, newest first |
+| `backup_restore(root, instance, source, *, yes, confirm, out)` | `evlet restore` |
+| `restart_instance(root, instance, *, service, check_only, yes, confirm, timeout, capture, out)` | `evlet restart` |
+| `upgrade_evlet(root, instance, *, to, service, yes, confirm, all_instances, capture, out, supervised)` | `evlet upgrade` (`supervised`: the project endpoint stopped the instances and starts them, so no systemd unit is used) |
+| `host_add`, `host_remove`, `host_list`, `host_check` | `evlet host add`, `remove`, `list`; `host_check` checks a host and its DNS and writes nothing |
+| `app_create`, `app_fetch`, `build`, `instance_create` | `evlet app NAME`, `evlet app --get`, `evlet build`, `evlet instance NAME` |
+| `app_update_plan(root, instance, app, ref, *, trust, confirm, out)` | the new commits of an app fetched from Git and the migration plan on them |
+| `app_update(root, instance, app, ref, *, trust, confirm, stop, start, healthy, out)` | plan, back up, stop, migrate, start, health check; the previous commit and the backup come back on a failure |
+| `instance_delete(root, name, *, yes, confirm, out)` | the project tool `instance_delete`: moves the stopped instance's folder to `.evlet/deleted/<name>-<time>/` |
+| `tests_run(root, target='', *, seconds=300, out)` | the project tool `tests_run`: pytest in the project's `.venv` on `apps/` or `apps/<target>`, stopped after `seconds`; `ok` when it passed, `value` its exit code |
+
+`Outcome(ok, steps, messages, backup, before, after, value)` is a frozen dataclass. `messages` are the lines the
+command prints, in order; `out(line)`, when given, receives each one as it happens, which is how the CLI prints
+(`out=print`). `steps` are the stages it completed: the commands it ran (`sudo systemctl restart evlet-acme`) or
+names such as `backup`, `migrations`, `framework`, `restore` and `host <name>`. `backup` is the main file of a
+backup it wrote, `before` and `after` the instance's `apps.lock` state around the change, and `value` the
+function's own result (the written paths, the plan, the manifest).
+
+Confirmation is an argument. `yes=True` (or `trust=True` for app source) goes ahead; otherwise `confirm(question)`
+must return true, and without `confirm` the function refuses as the CLI does without a terminal. An error that
+stops a command is raised, the same exception and message the CLI prints; a command that ran but did not go ahead
+(a failed restart check, a declined or failed upgrade) returns `ok=False`. A declined `upgrade_evlet` is a plan
+only: it stages the release and plans every instance, and `messages` hold the plans. `capture=True`, the default,
+captures the output of `systemctl`, `pip` and the evlet subprocesses into `messages`; the CLI passes `False`
+so they write to the terminal.
+
+The instance lock still applies. `migrate`, `install_app` and `backup_restore` need the instance stopped (they
+take its exclusive lock); `upgrade_evlet` stops and restarts the services itself; `backup_create`,
+`migration_plan` and the restart checks take the shared lock a running server holds. `host_add` and `host_remove`
+with `apply=True` run `sudo` steps, which ask for a password in a terminal.
+
+When the project has an endpoint, each of these functions that changes something appends to its operation log as it
+starts and ends ([project endpoint](project-endpoint.md#the-operation-log)); `backup_list`, `migration_plan`,
+`host_list` and `host_check` only read and are not logged.
 
 ## Schedules
 

@@ -79,8 +79,16 @@ levels. For MCP clients:
 | --- | --- |
 | Read, search, totals, files | Run |
 | Create or change a record | Run; the client asks its user |
-| Move a document, app actions, business services, publish or roll back a site | Approved in Evlet |
+| Move a document, app actions, business services (POST), publish or roll back a site | Approved in Evlet |
 | Delete, a move into a final step | Approved in Evlet |
+
+A business service declared with `method='GET'` reads (its context is read only), so `call_service` runs it
+without asking, as it runs the other read tools.
+
+The project endpoint's tools ([project-endpoint.md](project-endpoint.md#approvals)) are services with two more
+hooks, set by the framework, not by `@api`: one leaves a service out of `list_services` and answers a call with 403
+and its reason (the develop tier in production), and one decides per call whether it asks: always (with a warning on
+the approval card, such as what a restore loses), never, or as above.
 
 An app action that only opens a prompt (its body is `return SomePrompt` or `return SomePrompt(...)`
 with constant arguments, or the action declares `inputs=`) writes nothing, so `run_action` runs it

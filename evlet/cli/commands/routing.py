@@ -22,7 +22,9 @@ def run_routes(args, context):
 
 def add_proxy(commands):
     proxy = commands.add_parser('proxy', help='Print or write a Caddy or nginx configuration for the instance hosts')
-    proxy.add_argument('instance', help=INSTANCE_HELP)
+    proxy.add_argument('instance', nargs='?', help=INSTANCE_HELP)
+    proxy.add_argument('--endpoint', action='store_true',
+                       help="With --caddy: the one-time global options for a project endpoint that adds the hosts through Caddy's admin API")
     kind = proxy.add_mutually_exclusive_group(required=True)
     kind.add_argument('--caddy', action='store_true')
     kind.add_argument('--nginx', action='store_true')
@@ -33,8 +35,16 @@ def add_proxy(commands):
 
 
 def run_proxy(args, context):
+    import sys
     from ...instances import load_runtime
-    from .. import proxy
+    from .. import caddy, proxy
+    if args.endpoint:
+        return run_endpoint_proxy(args, context)
+    if args.instance is None:
+        raise ValueError('Name the instance: evlet proxy NAME --caddy, or evlet proxy --endpoint --caddy for a project endpoint')
+    if caddy.global_options(context.root) != proxy.GLOBAL_OPTIONS:
+        print('Note: this project\'s endpoint adds every instance\'s hosts to Caddy through its admin API. Load its one-time '
+              'global options instead of a file per instance: evlet proxy --endpoint --caddy', file=sys.stderr)
     app = load_runtime(context.root, args.instance, port=args.port)
     app.database.close()
     trusted = app.business.auth.trusted_proxies
@@ -51,6 +61,21 @@ def run_proxy(args, context):
         print(report)
         if not ok:
             raise SystemExit(1)
+
+
+def run_endpoint_proxy(args, context):
+    from .. import caddy, oplog, proxy
+    from ..endpoint import read_settings
+    if not args.caddy or args.instance or args.check:
+        raise ValueError('Use evlet proxy --endpoint --caddy, with no instance: the endpoint routes every instance itself')
+    if not oplog.exists(context.root):
+        raise ValueError(f'This project has no endpoint. Add one with: evlet setup {context.root} --endpoint')
+    settings = read_settings(context.root)
+    text = caddy.base_config(settings['port'], caddy.admin_address(settings) or caddy.DEFAULT_ADMIN)
+    if args.write:
+        print(f'Wrote {proxy.write(args.write, text)}. Import it on the first line of your Caddyfile, then reload Caddy.')
+    else:
+        print(text, end='')
 
 
 def add_host(commands):
@@ -83,10 +108,10 @@ def add_host(commands):
 
 
 def run_host(args, context):
-    from .. import hosts
+    from .. import core, hosts
     root = context.root
     if args.host_command == 'list':
-        print(hosts.listing(root, args.instance))
+        core.host_list(root, args.instance, out=print)
     elif args.host_command == 'check':
         hosts.check(root, args.instance, args.host, ips=args.ip, apply=args.apply, port=args.port)
     elif args.host_command in ('disable', 'enable'):
@@ -96,10 +121,10 @@ def run_host(args, context):
     elif args.host_command == 'add' and args.live and args.routes_only:
         raise ValueError('--live changes no routes.py; leave out --routes-only')
     elif args.host_command == 'add':
-        hosts.add(root, args.instance, args.host, args.root, apply=args.apply, ips=args.ip, port=args.port, routes_only=args.routes_only,
-                  live=args.live)
+        core.host_add(root, args.instance, args.host, args.root, apply=args.apply, ips=args.ip, port=args.port,
+                      routes_only=args.routes_only, live=args.live, out=print)
     else:
-        hosts.remove(root, args.instance, args.host, apply=args.apply, port=args.port, routes_only=args.routes_only)
+        core.host_remove(root, args.instance, args.host, apply=args.apply, port=args.port, routes_only=args.routes_only, out=print)
 
 
 COMMANDS = {'routes': (add_routes, run_routes), 'proxy': (add_proxy, run_proxy), 'host': (add_host, run_host)}

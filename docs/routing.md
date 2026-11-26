@@ -573,5 +573,10 @@ a host from data gets 200 there only once it is active.
 Add the `strict_sni_host` global option to this Caddyfile too.
 
 Caddy takes one `ask` URL, so with several instances on different ports, keep one site
-block per instance (the `evlet proxy` output) or put a small script in front that asks
-each instance in turn.
+block per instance (the `evlet proxy` output), or give the project an endpoint: it answers the one
+ask for every instance and adds each instance's hosts to Caddy through its admin API
+([project-endpoint.md](project-endpoint.md#caddy)). For that, each instance also answers
+`GET /_/manage/hosts/served` on its management channel (loopback, with the instance's token;
+[project-endpoint.md](project-endpoint.md#the-management-channel)) with the hosts it serves now (primary,
+`routes.py` sub-hosts and active hosts from data), from the same route table as `/_/tls-allowed`; the
+`evlet proxy` output refuses it from outside like every internal `/_/` path.

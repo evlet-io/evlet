@@ -33,10 +33,15 @@ OIDC_PATHS = ('/_/oidc/start', '/_/oidc/callback', '/_/oidc/finish')
 PUBLIC_PATHS = MCP_PATHS + MAIL_PATHS + OIDC_PATHS
 # The Caddy on-demand TLS check answers loopback callers only; the proxy refuses it from outside.
 TLS_CHECK = '/_/tls-allowed'
+# The project endpoint's management channel (evlet/manage.py): loopback with the instance's token, 404 otherwise.
+MANAGE = '/_/manage/'
+MANAGE_BODY_BYTES = 16 * 1024 * 1024  # site files arrive base64 encoded: a 10 MiB file and its envelope
 
 
 def request_body_limit(path, image_bytes=None):
     """JSON envelope ceilings shared with reverse-proxy generation; image_bytes includes current policy."""
+    if path == MANAGE + 'sites/files':
+        return MANAGE_BODY_BYTES
     if image_bytes is None:
         return MAX_BODY_BYTES
     if path.endswith(('/attachments', '/_images')):
@@ -139,6 +144,8 @@ class Application:
         if auth is None and (policy is not None or children or attachments or storage is not None or jobs is not None or events is not None):
             raise ValueError("Business features require authentication")
         self.live_routes = None
+        # evlet.manage.Manage of an instance the project endpoint runs; None answers 404 on /_/manage/.
+        self.manage = None
         self.business = None if auth is None else Business(database, auth, policy=policy, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
             from .routing import authority
@@ -270,7 +277,8 @@ class Application:
                     await self._eva_stream(scope, receive, send)
                     return
                 body = None
-                internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/')) and scope['path'] != TLS_CHECK
+                internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/')) and scope['path'] != TLS_CHECK \
+                    and not scope['path'].startswith(MANAGE)
                 if internal:
                     # OAuth and the remote MCP endpoint read their own bodies (JSON or form), at most 64 KiB like /api.
                     data = bytearray()
@@ -660,6 +668,10 @@ class Application:
 
     def _dispatch(self, scope, body):
         path, method = scope["path"], scope["method"]
+        if path.startswith(MANAGE):
+            if self.manage is None:
+                raise HTTPError(404, 'Route not found')
+            return self.manage.dispatch(self, scope, body)
         if path == "/health" and not self.routes.public(dict(scope.get('headers', [])).get(b'host', b'')):
             self._method(method, ["GET"])
             self.database.check()

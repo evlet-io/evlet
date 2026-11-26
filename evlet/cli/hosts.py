@@ -180,47 +180,48 @@ def _port(root, name, port):
     return 8000
 
 
-def proxy_files(root, name, app, port, user=None):
+def proxy_files(root, name, app, port, user=None, out=print):
     """Write deploy/evlet-<name>.caddy, the service unit and the global options, as evlet setup --host does.
 
     Returns the rendered texts, which --apply installs (never the copies in deploy/)."""
-    from . import proxy, site
+    from . import caddy, proxy, site
     trusted = app.business.auth.trusted_proxies
     account, chosen = site.service_account(name, user)
     texts = {'unit': proxy.systemd_unit(root, name, port, account),
-             'site': proxy.caddy(app.routes, port, name, trusted, global_options=False), 'options': proxy.GLOBAL_OPTIONS}
+             'site': proxy.caddy(app.routes, port, name, trusted, global_options=False), 'options': caddy.global_options(root)}
     (root / 'deploy').mkdir(mode=0o755, exist_ok=True)
     written = [proxy.write(root / 'deploy' / f'evlet-{name}.caddy', texts['site']),
                proxy.write(root / 'deploy' / f'evlet-{name}.service', texts['unit']),
                proxy.write(root / 'deploy' / site.GLOBAL_FILE, texts['options'])]
     for path in written:
-        print(f'Wrote {path}')
+        out(f'Wrote {path}')
     note = site.account_note(account, chosen)
     if note:
-        print(note)
+        out(note)
     return texts
 
 
-def _finish(root, name, port, apply, run, user, app, restart=True):
+def _finish(root, name, port, apply, run, user, app, out=print, restart=True):
     from . import site
-    texts = proxy_files(root, name, app, port, user)
+    texts = proxy_files(root, name, app, port, user, out)
     # The instance reads routes.py when it starts, so the service restarts after Caddy has the new site.
     # A host from data needs no restart: the running instance picks it up by itself.
     commands = site.privileged_steps(root, name, texts, restart=restart)
     if not apply:
-        print('Review the files, then run these steps with sudo:')
-        print('\n'.join('    ' + site.describe(command) for command in commands))
-        print('Or run the same command again with --apply to run them. Each one is shown first and sudo asks for your password.')
+        out('Review the files, then run these steps with sudo:')
+        out('\n'.join('    ' + site.describe(command) for command in commands))
+        out('Or run the same command again with --apply to run them. Each one is shown first and sudo asks for your password.')
         return
     with site.step('install the Caddy site and restart the service'):
-        site.run_privileged(commands, run=run)
+        site.run_privileged(commands, run=run, out=out)
 
 
-def add(root, name, host, frontend, *, apply=False, ips=None, port=None, routes_only=False, run=None, user=None, live=False):
+def add(root, name, host, frontend, *, apply=False, ips=None, port=None, routes_only=False, run=None, user=None, live=False,
+        out=print):
     """evlet host add: routes.py, the DNS check, the Caddy file, then with apply the sudo steps. live adds a host from data."""
     from . import proxy, site
     if live:
-        return add_live(root, name, host, frontend, apply=apply, ips=ips, port=port, run=run, user=user)
+        return add_live(root, name, host, frontend, apply=apply, ips=ips, port=port, run=run, user=user, out=out)
     check_host(root, name, host, frontend)
     if host in _data_rows(root, name):
         raise ValueError(f'{host} is a host from data. Remove it with evlet host remove {name} {host} first, or keep it there')
@@ -228,33 +229,33 @@ def add(root, name, host, frontend, *, apply=False, ips=None, port=None, routes_
     if not routes_only:
         saved = None if ips else site.saved_addresses(root)
         report, ok = proxy.check(None, ips or saved, hosts=(host,))
-        print(report)
+        out(report)
         if not ok:
             raise ValueError(f'{host} has no usable A or AAAA record yet. Point it at this server, or pass --ip with the public address. Nothing was changed')
     changed, app = _checked(root, name, lambda: add_host_line(path, host, frontend))
-    print(f'Added {host} to instances/{name}/routes.py, served by {frontend}' if changed else f'instances/{name}/routes.py already serves {host} with {frontend}')
+    out(f'Added {host} to instances/{name}/routes.py, served by {frontend}' if changed else f'instances/{name}/routes.py already serves {host} with {frontend}')
     if routes_only:
-        print(f'Restart the instance to serve it: evlet restart {name}. '
+        out(f'Restart the instance to serve it: evlet restart {name}. '
               'Caddy with on-demand TLS gets its certificate on the first visit.')
         return
-    _finish(root, name, _port(root, name, port), apply, run, user, app)
+    _finish(root, name, _port(root, name, port), apply, run, user, app, out)
     if apply:
-        print(site.site_answers(host))
+        out(site.site_answers(host))
 
 
-def remove(root, name, host, *, apply=False, port=None, routes_only=False, run=None, user=None):
+def remove(root, name, host, *, apply=False, port=None, routes_only=False, run=None, user=None, out=print):
     """evlet host remove: take the host out of routes.py and the Caddy file, or remove a host from data."""
     path = child(root, 'instances', name)
     changed, app = _checked(root, name, lambda: remove_host_line(path, host))
     if not changed and host in _data_rows(root, name):
-        return remove_live(root, name, host, apply=apply, port=port, run=run, user=user)
+        return remove_live(root, name, host, apply=apply, port=port, run=run, user=user, out=out)
     if not changed:
         raise ValueError(f'instances/{name}/routes.py does not list {host}')
-    print(f'Removed {host} from instances/{name}/routes.py')
+    out(f'Removed {host} from instances/{name}/routes.py')
     if routes_only:
-        print(f'Restart the instance to stop serving it: evlet restart {name}')
+        out(f'Restart the instance to stop serving it: evlet restart {name}')
         return
-    _finish(root, name, _port(root, name, port), apply, run, user, app)
+    _finish(root, name, _port(root, name, port), apply, run, user, app, out)
 
 
 def _table(rows):
@@ -306,46 +307,46 @@ def listing(root, name):
     return text
 
 
-def _after_live(root, name, app, active, apply, port, run, user):
+def _after_live(root, name, app, active, apply, port, run, user, out=print):
     """What a host from data needs from Caddy: nothing with on-demand TLS; with a Caddy site per host, the site again."""
     if apply:
-        _finish(root, name, _port(root, name, port), True, run, user, app, restart=False)
+        _finish(root, name, _port(root, name, port), True, run, user, app, out, restart=False)
     elif active:
-        print(f'With Caddy on-demand TLS nothing else is needed. With a Caddy site per host, run evlet host check {name} --apply '
+        out(f'With Caddy on-demand TLS nothing else is needed. With a Caddy site per host, run evlet host check {name} --apply '
               'to write it again and reload Caddy; the service keeps running.')
 
 
-def add_live(root, name, host, frontend, *, apply=False, ips=None, port=None, run=None, user=None):
+def add_live(root, name, host, frontend, *, apply=False, ips=None, port=None, run=None, user=None, out=print):
     """evlet host add --live: a pending host in evlet_hosts, checked at once; served when the check passes."""
     from ..hosts import add_host, check_hosts
     check_host(root, name, host, frontend, site=True)
     app = _open(root, name)
     try:
         add_host(app.business, host, frontend, actor='cli')
-        print(f'Added {host} to the hosts of {name}, served by {frontend}. It is pending until its DNS points here.')
+        out(f'Added {host} to the hosts of {name}, served by {frontend}. It is pending until its DNS points here.')
         row = check_hosts(app.business, [host], actor='cli', addresses=ips)[0]
-        print(_data_table([row]))
+        out(_data_table([row]))
         active = row['status'] == 'active'
-        print('Active: the running instance serves it within a second, without a restart.' if active else
+        out('Active: the running instance serves it within a second, without a restart.' if active else
               'The instance checks pending hosts every minute and serves this one once its A or AAAA record points here.')
-        _after_live(root, name, app, active, apply, port, run, user)
+        _after_live(root, name, app, active, apply, port, run, user, out)
     finally:
         app.database.close()
 
 
-def remove_live(root, name, host, *, apply=False, port=None, run=None, user=None):
+def remove_live(root, name, host, *, apply=False, port=None, run=None, user=None, out=print):
     from ..hosts import remove_host
     app = _open(root, name)
     try:
         remove_host(app.business, host, actor='cli')
-        print(f'Removed {host} from the hosts of {name}. The running instance stops serving it within a second.')
+        out(f'Removed {host} from the hosts of {name}. The running instance stops serving it within a second.')
         if apply:
-            _finish(root, name, _port(root, name, port), True, run, user, app, restart=False)
+            _finish(root, name, _port(root, name, port), True, run, user, app, out, restart=False)
     finally:
         app.database.close()
 
 
-def check(root, name, hosts=(), *, ips=None, apply=False, port=None, run=None, user=None):
+def check(root, name, hosts=(), *, ips=None, apply=False, port=None, run=None, user=None, out=print):
     """evlet host check: the DNS check of hosts from data (default: all but disabled); a pass makes a pending host active."""
     from ..hosts import check_hosts
     app = _open(root, name)
@@ -353,15 +354,15 @@ def check(root, name, hosts=(), *, ips=None, apply=False, port=None, run=None, u
         before = set(app.routes.data_hosts())
         rows = check_hosts(app.business, list(hosts) or None, actor='cli', addresses=ips)
         if not rows:
-            print(f'Instance {name} has no hosts from data to check. Add one with evlet host add {name} HOST --root APP.FRONTEND --live')
+            out(f'Instance {name} has no hosts from data to check. Add one with evlet host add {name} HOST --root APP.FRONTEND --live')
             return
-        print(_data_table(rows))
-        _after_live(root, name, app, set(app.routes.data_hosts()) != before, apply, port, run, user)
+        out(_data_table(rows))
+        _after_live(root, name, app, set(app.routes.data_hosts()) != before, apply, port, run, user, out)
     finally:
         app.database.close()
 
 
-def set_status(root, name, host, status):
+def set_status(root, name, host, status, out=print):
     """evlet host disable / enable: stop serving a host from data, or set it back to pending for the next check."""
     from ..hosts import set_host_status
     app = _open(root, name)
@@ -369,11 +370,11 @@ def set_status(root, name, host, status):
         set_host_status(app.business, host, status, actor='cli')
     finally:
         app.database.close()
-    print(f'Disabled {host}; the running instance stops serving it within a second' if status == 'disabled' else
+    out(f'Disabled {host}; the running instance stops serving it within a second' if status == 'disabled' else
           f'{host} is pending again; it is served once a DNS check passes (evlet host check {name} {host})')
 
 
-def suggest(root, name, apps, *, yes=False, skip=False, ask=None):
+def suggest(root, name, apps, *, yes=False, skip=False, ask=None, out=print):
     """After evlet install adds apps: offer <label>.<instance domain> for each frontend with suggested_host.
 
     yes takes each suggestion, skip offers nothing. Without a terminal (and without yes) it only prints the
@@ -393,7 +394,7 @@ def suggest(root, name, apps, *, yes=False, skip=False, ask=None):
         if yes:
             host = offer
         elif ask is None:
-            print(f'{identity} suggests the host {offer}. Serve it with: evlet host add {name} {offer} --root {identity}')
+            out(f'{identity} suggests the host {offer}. Serve it with: evlet host add {name} {offer} --root {identity}')
             continue
         else:
             answer = ask(f'Serve {identity} on its own host? Press Enter for {offer}, type your own domain, or type no: ').strip().lower()
@@ -403,7 +404,7 @@ def suggest(root, name, apps, *, yes=False, skip=False, ask=None):
         check_host(root, name, host, identity)
         path = child(root, 'instances', name)
         _checked(root, name, lambda: add_host_line(path, host, identity))
-        print(f'Added {host} to instances/{name}/routes.py, served by {identity}')
-        print(f'Next: evlet host add {name} {host} --root {identity} --apply checks DNS, updates Caddy and restarts the service')
+        out(f'Added {host} to instances/{name}/routes.py, served by {identity}')
+        out(f'Next: evlet host add {name} {host} --root {identity} --apply checks DNS, updates Caddy and restarts the service')
         added.append(host)
     return added

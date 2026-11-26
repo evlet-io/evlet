@@ -47,6 +47,13 @@ def run_project(args, context):
     if args.project_command == 'mode':
         changed = set_project_mode(root, args.mode)
         print(f'Mode: {args.mode}' + ('' if changed else ' (unchanged)'))
+        from ..endpoint import exists, running
+        if changed and exists(root):
+            print('The project tools follow the new mode from their next call: '
+                  + ('the develop tools are gone.' if args.mode == 'production' else 'the develop tools are back.'))
+            if running(root):
+                print('Restart the endpoint so its instances, Docs and sign-in follow it too '
+                      '(sudo systemctl restart evlet-project, or stop and start evlet endpoint).')
         return
     record, _ = ensure_project(root)
     if record is None:
@@ -54,7 +61,8 @@ def run_project(args, context):
     print(f'Project id: {record["id"]}')
     print(f'Created: {record["created"]}')
     print(f'Mode: {record["mode"]}')
-    print('Endpoint: none')
+    from ..endpoint import describe
+    print(f'Endpoint: {describe(root)}')
     lines = instance_lines(root)
     print('Instances:' + ('' if lines else ' none'))
     width = max((len(name) for name, _ in lines), default=0)

@@ -21,7 +21,7 @@ def check_framework_source(framework):
 
 def add_setup(commands):
     setup = commands.add_parser('setup', help='Create apps/, instances/ and an isolated .venv')
-    setup.add_argument('directory')
+    setup.add_argument('directory', nargs='?', help='The project folder to create; with --endpoint alone, the project you are in')
     setup.add_argument('--framework', help='Reviewed local framework wheel or source for offline/development setup')
     setup.add_argument('--app', action='append', metavar='NAMES', help='Create these new apps; a comma list such as notes,crm')
     setup.add_argument('--get', action='append', metavar='GIT_URLS', help='Fetch these apps from Git like evlet app --get; a comma list')
@@ -33,12 +33,21 @@ def add_setup(commands):
     setup.add_argument('--port', type=int, default=8000, help='Port evlet dev or the service listens on (default: 8000)')
     setup.add_argument('--ip', action='append', help="With --host: this server's public address, for an exact DNS match; optional, kept in deploy/server.json")
     setup.add_argument('--apply', action='store_true', help='With --host: run the printed sudo steps; each is shown first')
-    setup.add_argument('--service-user', metavar='USER', help='With --host: run the service as this unprivileged account instead of you (also EVLET_SERVICE_USER)')
+    setup.add_argument('--service-user', metavar='USER', help='With --host or --endpoint-host: run the service as this unprivileged account instead of you (also EVLET_SERVICE_USER)')
+    setup.add_argument('--endpoint', action='store_true', help='Give the project an endpoint (project.db, the portal and the project MCP) that runs its instances; '
+                       'in development it then serves on 127.0.0.1:7999 and prints a sign-in link')
+    setup.add_argument('--endpoint-host', metavar='HOSTNAME', help='With --endpoint: serve it on this public hostname behind Caddy over HTTPS (production)')
 
 
 def run_setup(args, context):
     from ..setup import setup
     from .. import site
+    if args.directory is None:
+        if not args.endpoint:
+            raise ValueError('Name the project folder to create: evlet setup NAME')
+        from ..project import project_root
+        args.directory = str(project_root(args.project))
+        args.project = None
     directory = Path(args.project) / args.directory if args.project else args.directory
     check_framework_source(args.framework)
     if not site.wanted(args):

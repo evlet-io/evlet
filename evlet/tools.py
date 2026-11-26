@@ -389,9 +389,10 @@ class Tools:
 
     def services(self, user):
         """Business services an app marked for assistants (@api(..., tool=True)) that this user may call."""
+        from .services import refusal
         found = []
         for endpoint in self.business.apis:
-            if not getattr(endpoint, 'tool', False) or endpoint.public:
+            if not getattr(endpoint, 'tool', False) or endpoint.public or refusal(endpoint):
                 continue
             try:
                 model = self.business.registry.resolve(endpoint.permission[0])
@@ -542,11 +543,21 @@ class Tools:
         if name in SITE_NAMES:
             return self.site_call(user, origin, tool, values, run_id, client, request)
         if name == 'call_service':
+            from .services import refusal
             endpoint = next((item for item in self.services(user) if item.name == values['service']), None)
             if endpoint is None:
-                raise ConnectorError(404, 'Service not found')
-            return self.approved(user, origin, tool, values, run_id, client, {'service': endpoint.name, 'arguments': values.get('arguments', {})},
-                                 lambda: self.call_service(request, endpoint, values.get('arguments', {})))
+                # A tool service that exists but may not run now says why (Endpoint.available), as its route does.
+                hidden = next((item for item in self.business.apis if item.name == values['service'] and getattr(item, 'tool', False)
+                               and not item.public and refusal(item)), None)
+                raise ConnectorError(403, refusal(hidden)) if hidden is not None else ConnectorError(404, 'Service not found')
+            arguments = values.get('arguments', {})
+            ask = endpoint.ask(arguments) if getattr(endpoint, 'ask', None) is not None else None
+            if endpoint.method == 'GET' and not isinstance(ask, dict) or ask is False:
+                # A GET service reads: its context is read only, as for the other read tools. ask False: never asks.
+                return self.call_service(request, endpoint, arguments)
+            summary = {'service': endpoint.name, 'arguments': arguments, **(ask if isinstance(ask, dict) else {})}
+            return self.approved(user, origin, tool, values, run_id, client, summary, lambda: self.call_service(request, endpoint, arguments),
+                                 group='destructive' if isinstance(ask, dict) else None)
         if name == 'answer_prompt':
             # The prompt's own routes check the ticket, its user and the presenting action again.
             route, body = f"/api/_prompts/{values['ticket']}/", {'values': values.get('values', {})}
