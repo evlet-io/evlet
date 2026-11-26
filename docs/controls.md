@@ -396,6 +396,9 @@ the writing transaction. Each change writes an audit row in area `Periods` ("Loc
 31-03-2026" or "Opened") with the earlier and the new date. Overrides in Controls never change
 locks, and trusted code that writes a closed period with `unlocked_periods(reason)` writes an
 audit row too.
+Trusted code sets the same locks with `evlet.periods.set_lock(context, model, scope_id, date, reason)`, under the
+same rules (moving a lock earlier is for an admin), and its audit row carries the reason
+([model-engine.md](model-engine.md#reading-and-setting-locks-from-code)).
 
 ## Currencies
 

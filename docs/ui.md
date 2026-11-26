@@ -122,6 +122,17 @@ Created and Modified (who and when), the record ID with a copy button, and a Cop
 record's address; More has Copy link and Copy record ID too, and More > Duplicate starts a copy
 ([below](#duplicate)). The side column is 370 px wide.
 
+### Remembered values and Import
+
+A new record's form starts with the person's last saved value of each `remember=True` field
+(`GET /api/<model>/remembered`), below the address's values, an outcome's values and a Duplicate's copy
+([model-engine.md](model-engine.md#remembered-values)). A list whose model has `Meta.importable = True` shows
+**Import** beside New to a role that may create: choose a CSV, map its columns (saved mappings and matching names
+come filled in), pick a key column for files with Table rows, **Check** it and **Import** it. The check lists the
+first errors by line and offers the failing rows as a CSV with an Error column; nothing is created until every
+record passes ([model-engine.md](model-engine.md#csv-import)). A report column with `report=` links each cell to
+that report with filters from the row ([reports.md](reports.md#drill-down)).
+
 ### Duplicate
 
 The More menu of a saved record has **Duplicate** (Alt+Shift+D, ⌥⇧D on a Mac), on its page and in a
