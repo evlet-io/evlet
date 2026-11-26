@@ -16,6 +16,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **`evlet instance --list` has a third column**, the instance id. A script that split its lines in two by tab
   reads three fields now.
 - No renamed names, no app changes. A project with no endpoint behaves as before apart from the ids.
+- **A project endpoint is optional.** Nothing changes until you run `evlet setup --endpoint`. With one, the endpoint
+  runs the instances: stop and disable their `evlet-<instance>` units (or do not install them) so two processes do
+  not serve one instance, and use the portal or the project tools to restart them. `evlet restart` and
+  `evlet upgrade` from the shell still use systemd.
 
 ### Added
 
@@ -30,6 +34,23 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **A copied instance folder refuses to serve.** When two instances of a project have the same id, the one whose id
   was made for another folder stops at startup and names `evlet instance new-id <name>`, which gives it its own.
 - **Controls Overview shows the instance id and project id** to admins on the Controls host.
+- **The project endpoint** ([docs/project-endpoint.md](docs/project-endpoint.md)). `evlet setup myproject --endpoint`
+  (or `evlet setup --endpoint` in an existing project) makes `.evlet/project.sqlite3` with one owner account and
+  serves the endpoint on 127.0.0.1:7999 with a one-time sign-in link; `--endpoint-host project.example.com` prepares
+  it behind Caddy over HTTPS as the project's only systemd unit. `evlet endpoint` serves it and runs every instance as
+  a child process, restarted with backoff after a crash and stopped around operations that need the instance's
+  exclusive lock. The portal at `/` shows the project id and mode, the instances (id, host, version, apps, status,
+  health), the operation log with live output and the MCP address, with a button for each operate tool:
+  `project_status`, `operation_log`, `operation_status`, `instance_logs`, `instance_restart`, `instance_stop`,
+  `instance_start`, `backup_create`, `backup_list`, `backup_restore` (always asks), `app_update_plan`, `app_update`,
+  `app_install` (production: only from the `sources` in `project.json`), `evlet_upgrade_plan` and `evlet_upgrade`.
+  MCP clients reach the same tools at `/_/mcp`.
+- **The operation log.** With an endpoint, every lifecycle command (`install`, `migrate`, `makemigration`, `backup`,
+  `restore`, `restart`, `upgrade`, `host add`/`remove`, `app`, `build`, `instance`) appends a start and an end row to
+  project.db's append-only operation log, with its origin (`cli`, `portal` or `mcp`), arguments, result, times,
+  output and the `apps.lock` before it. `evlet project` prints the endpoint's address and whether it answers.
+- **`evlet project mode production` refuses** on a project with an endpoint until the endpoint has a public host and
+  the owner has set up two-step sign-in.
 
 ### Internal
 
@@ -38,6 +59,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   as an argument, never read stdin or print, and return an `Outcome` with the steps, the printed lines, the backup
   and the `apps.lock` state before and after ([docs/cli.md](docs/cli.md#lifecycle-core)). The commands call it, so
   their output, prompts, flags and exit codes are unchanged. It is internal and not exported.
+- **The core updates apps from Git.** `app_update_plan` and `app_update` update an installed app from its recorded
+  Git source to a tag, branch or commit (plan, backup, stop, migrate, start, health check, restore on failure), and
+  `upgrade_evlet(..., supervised=True)` upgrades instances the endpoint runs without any systemd unit.
 
 ## 0.4.21 (22-11-2026)
 

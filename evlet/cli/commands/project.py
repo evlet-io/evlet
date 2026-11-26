@@ -54,7 +54,8 @@ def run_project(args, context):
     print(f'Project id: {record["id"]}')
     print(f'Created: {record["created"]}')
     print(f'Mode: {record["mode"]}')
-    print('Endpoint: none')
+    from ..endpoint import describe
+    print(f'Endpoint: {describe(root)}')
     lines = instance_lines(root)
     print('Instances:' + ('' if lines else ' none'))
     width = max((len(name) for name, _ in lines), default=0)

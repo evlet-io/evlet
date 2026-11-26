@@ -55,19 +55,21 @@ def upgrade(root, name, *, to=None, service=None, yes=False, all_instances=False
 
 
 def upgrade_project(root, name, *, to=None, service=None, yes=False, confirm=None, all_instances=False, unit_dir=None,
-                    run=None, which=None, out=print, capture=False, backups=None):
+                    run=None, which=None, out=print, capture=False, backups=None, supervised=False):
     """upgrade without reading stdin: confirm(question) -> bool decides unless yes; None means no one can answer.
 
     capture=True runs every command with its output captured and passed to out, so nothing reaches stdout.
-    backups, when given, is a dict that receives {instance: main backup file} as each backup is written."""
+    backups, when given, is a dict that receives {instance: main backup file} as each backup is written.
+    supervised: the project endpoint runs the instances and has stopped them, so no instance needs a systemd unit;
+    the endpoint starts them again afterwards."""
     root = Path(root).absolute()
     with file_lock(root / '.evlet-upgrade.lock'):
         return _upgrade(root, name, to=to, service=service, yes=yes, all_instances=all_instances, unit_dir=unit_dir,
                         run=run, which=which, confirm=confirm, out=out, capture=capture,
-                        backups={} if backups is None else backups)
+                        backups={} if backups is None else backups, supervised=supervised)
 
 
-def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, which, confirm, out, capture, backups):
+def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, which, confirm, out, capture, backups, supervised=False):
     run = run or subprocess.run
     if not (root / '.venv' / 'evlet-project.json').is_file():
         raise ValueError('This project has no .venv made by evlet setup. Upgrade Evlet with pip in its environment yourself')
@@ -92,14 +94,14 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
             raise ValueError(f'Evlet is installed from source at {source[0]}, so --to does not apply. '
                              f'Check out the version you want with git, then run evlet upgrade {name} again')
         return _from_source(root, name, names, source, service=service, yes=yes, unit_dir=unit_dir, run=run,
-                            which=which, confirm=confirm, out=out, capture=capture, backups=backups)
+                            which=which, confirm=confirm, out=out, capture=capture, backups=backups, supervised=supervised)
     requirement = allowed(before, to)
     units = Path(unit_dir or site.SYSTEMD_DIR)
     for item in names:
         child(root, 'instances', item)
         # A sibling with no installed unit is not served (a dev or test instance): it is backed up and migrated
         # with the others, but there is no service to stop or restart.
-        if item != name and not (units / f'{services[item]}.service').exists():
+        if supervised or item != name and not (units / f'{services[item]}.service').exists():
             services[item] = None
             continue
         try:
@@ -242,7 +244,7 @@ def _backup_line(saved):
     return next((line[len('Backup: '):].strip() for line in saved.stdout.splitlines() if line.startswith('Backup: ')), None) if saved else None
 
 
-def _from_source(root, name, names, source, *, service, yes, unit_dir, run, which, confirm, out, capture, backups):
+def _from_source(root, name, names, source, *, service, yes, unit_dir, run, which, confirm, out, capture, backups, supervised=False):
     """Evlet runs from source (an editable install of a git clone, say): pip must not replace it, so the
     framework is left to git and only the instance steps run: stop, back up, migrate and restart."""
     place, editable = source
@@ -254,7 +256,7 @@ def _from_source(root, name, names, source, *, service, yes, unit_dir, run, whic
     for item in names:
         unit = service_name(item, service if item == name else None)
         # A development project usually has no unit: there is nothing to stop or restart.
-        if not (item == name and service) and not (units / f'{unit}.service').exists():
+        if supervised or not (item == name and service) and not (units / f'{unit}.service').exists():
             services[item] = None
             continue
         try:

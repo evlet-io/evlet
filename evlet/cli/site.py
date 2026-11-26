@@ -21,7 +21,7 @@ GLOBAL_FILE = 'evlet-global.caddy'
 SYSTEMD_DIR = '/etc/systemd/system'
 # This server's public addresses, saved by the first DNS check that passed with --ip.
 SERVER_FILE = 'server.json'
-STEP_OPTIONS = ('app', 'get', 'instance', 'dev', 'host', 'trust', 'apply', 'ip')
+STEP_OPTIONS = ('app', 'get', 'instance', 'dev', 'host', 'trust', 'apply', 'ip', 'endpoint', 'endpoint_host')
 
 
 def wanted(args):
@@ -47,6 +47,11 @@ def check(args):
     from ..packages import validate_url
     if args.dev and args.host:
         raise ValueError('Choose --dev or --host, not both. Development servers stay on loopback')
+    endpoint = getattr(args, 'endpoint', False)
+    if getattr(args, 'endpoint_host', None) and not endpoint:
+        raise ValueError('--endpoint-host only works with --endpoint')
+    if endpoint and (args.dev or args.host):
+        raise ValueError('With --endpoint the endpoint runs the instances; leave out --dev and --host')
     apps, urls = split_list(args.app), split_list(args.get)
     for name in apps:
         valid_name(name)
@@ -56,22 +61,27 @@ def check(args):
         valid_name(args.instance)
     if (args.dev or args.host) and not (args.instance and (apps or urls)):
         raise ValueError('--dev and --host need --instance and at least one --app or --get')
-    if (args.apply or args.ip) and not args.host:
-        raise ValueError('--apply and --ip only work with --host')
-    if args.port != 8000 and not (args.dev or args.host):
-        raise ValueError('--port only works with --dev or --host')
-    if args.host:
-        from ..tenancy import hostname
-        try:
-            host = hostname(args.host)
-        except ValueError:
-            host = None
-        if host != args.host or host.endswith('.localhost'):
-            raise ValueError('--host takes a public lowercase hostname, such as erp.example.com, without a scheme or port')
-        import os
-        if hasattr(os, 'geteuid') and os.geteuid() == 0:
-            raise ValueError('Run evlet setup --host as the user that will run the service, not as root. It asks before using sudo')
+    if args.ip and not args.host or args.apply and not (args.host or getattr(args, 'endpoint_host', None)):
+        raise ValueError('--apply and --ip only work with --host; --apply also with --endpoint-host')
+    if args.port != 8000 and not (args.dev or args.host or endpoint):
+        raise ValueError('--port only works with --dev or --host, or with --endpoint for the endpoint')
+    for given in (args.host, getattr(args, 'endpoint_host', None)):
+        if given:
+            public_host(given, '--host' if given == args.host else '--endpoint-host')
     return apps, urls
+
+
+def public_host(value, option):
+    from ..tenancy import hostname
+    try:
+        host = hostname(value)
+    except ValueError:
+        host = None
+    if host != value or host.endswith('.localhost'):
+        raise ValueError(f'{option} takes a public lowercase hostname, such as erp.example.com, without a scheme or port')
+    import os
+    if hasattr(os, 'geteuid') and os.geteuid() == 0:
+        raise ValueError(f'Run evlet setup {option} as the user that will run the service, not as root. It asks before using sudo')
 
 
 @contextmanager
@@ -430,6 +440,9 @@ def run(root, args, *, confirm=None, ask=None):
             if existing not in names:
                 names.append(existing)
     if not args.instance:
+        if getattr(args, 'endpoint', False):
+            endpoint_site(root, args, ask=ask)
+            return
         print('Next: evlet instance NAME, then evlet install APP --instance NAME')
         return
     name = args.instance
@@ -457,6 +470,46 @@ def run(root, args, *, confirm=None, ask=None):
     elif args.host:
         public_site(root, name, args.host, port=args.port, ips=args.ip, apply=args.apply, ask=ask,
                     user=getattr(args, 'service_user', None))
+    elif getattr(args, 'endpoint', False):
+        endpoint_site(root, args, ask=ask)
     else:
         where = shlex.quote(str(root))
         print(f'Next: cd {where} && evlet dev --instance {name}\nOr serve it with: evlet serve {name}')
+
+
+def endpoint_site(root, args, *, ask=None, run=None):
+    """--endpoint: make project.db, then serve the endpoint in development, or prepare its Caddy site and its one
+    systemd unit for --endpoint-host (docs/project-endpoint.md)."""
+    from . import endpoint
+    host = getattr(args, 'endpoint_host', None)
+    with step('endpoint'):
+        made = endpoint.create(root, host=host, port=args.port if args.port != 8000 else None)
+        print(('Endpoint created: ' if made else 'Endpoint exists: ') + str(endpoint.database_path(root)))
+    if not host:
+        print('The endpoint runs every instance of the project; serve it again later with: evlet endpoint')
+        with step('evlet endpoint'):
+            endpoint.serve(root)
+        return
+    with step('owner'):
+        if endpoint.owner_has_password(root):
+            print('The owner (admin) has a password. If nobody knows it, run evlet setup again after removing .evlet/project.sqlite3')
+        else:
+            endpoint.set_owner_password(root, (ask or ask_admin)())
+            print('Password set for the owner (admin)')
+    with step('Caddy and service files'):
+        account, chosen = service_account('project', getattr(args, 'service_user', None))
+        unit, site = endpoint.write_service_files(root, account)
+        print(f'Wrote {root / "deploy" / (endpoint.UNIT + ".caddy")}\nWrote {root / "deploy" / (endpoint.UNIT + ".service")}')
+        note = account_note(account, chosen)
+        if note:
+            print(note)
+    commands = endpoint.install_steps(root, unit, site)
+    if not args.apply:
+        print('Review the two files, then run these steps with sudo:')
+        print('\n'.join('    ' + describe(command) for command in commands))
+        print('Or run the same command again with --apply to run them. Each one is shown first and sudo asks for your password.')
+    else:
+        with step('install the endpoint service and Caddy site'):
+            run_privileged(commands, run=run)
+        print(f'Serving https://{host} through Caddy. The endpoint listens on 127.0.0.1:{endpoint.read_settings(root)["port"]} only.')
+    print('Sign in as admin, set up two-step sign-in in Settings, then switch with: evlet project mode production')

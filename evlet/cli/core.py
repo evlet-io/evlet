@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import time
 
+from .oplog import logged
 from .project import child
 
 
@@ -70,6 +71,7 @@ def _agreed(yes, confirm, question):
 # Install and migrate
 
 
+@logged('install_app')
 def install_app(root, instance, app, *, trust=False, confirm=None, hosts='offer', ask=None, out=None):
     """evlet install APP --instance INSTANCE: install a trusted app and its app dependencies, then offer hosts.
 
@@ -81,6 +83,7 @@ def install_app(root, instance, app, *, trust=False, confirm=None, hosts='offer'
     return _install(root, instance, app, trust=trust, confirm=confirm, hosts=hosts, ask=ask, out=out)
 
 
+@logged('migrate')
 def migrate(root, instance, *, trust=False, confirm=None, recompute_posted=False, allow_destructive=False,
             allow_maintenance=False, out=None):
     """evlet migrate INSTANCE: back up, migrate the installed apps and the framework, or recover an interrupted install."""
@@ -156,6 +159,7 @@ def migration_plan(root, instance, *, trust=False, confirm=None, out=None):
     return log.outcome(before=state, after=state, value=(result, suggestions, packages, steps))
 
 
+@logged('make_migration')
 def make_migration(root, app, instance, *, name='changes', trust=False, confirm=None, out=None):
     """evlet makemigration APP --instance INSTANCE: write the suggested migration. value is (file, needs editing)."""
     from .install import makemigration
@@ -171,6 +175,7 @@ def make_migration(root, app, instance, *, name='changes', trust=False, confirm=
 # Backups
 
 
+@logged('backup_create')
 def backup_create(root, instance, *, to=None, with_files=False, out=None):
     """evlet backup --instance INSTANCE: the four database files as one set. value is the written paths."""
     from .backup import backup
@@ -205,6 +210,7 @@ def backup_list(root, instance, *, out=None):
     return log.outcome(value=tuple(found))
 
 
+@logged('backup_restore')
 def backup_restore(root, instance, source, *, yes=False, confirm=None, out=None):
     """evlet restore SOURCE --instance INSTANCE: replace the database files with a backup set. Needs the server stopped.
 
@@ -231,6 +237,7 @@ def backup_restore(root, instance, source, *, yes=False, confirm=None, out=None)
 # Services: restart and upgrade
 
 
+@logged('restart_instance')
 def restart_instance(root, instance, *, service=None, check_only=False, yes=False, confirm=None, timeout=30.0,
                      capture=True, out=None, unit_dir=None, run=None, which=None, fetch=None, sleep=time.sleep,
                      clock=time.monotonic):
@@ -250,19 +257,22 @@ def restart_instance(root, instance, *, service=None, check_only=False, yes=Fals
     return log.outcome(ok, before=state, after=state)
 
 
+@logged('upgrade_evlet')
 def upgrade_evlet(root, instance, *, to=None, service=None, yes=False, confirm=None, all_instances=False, capture=True,
-                  out=None, unit_dir=None, run=None, which=None):
+                  out=None, unit_dir=None, run=None, which=None, supervised=False):
     """evlet upgrade INSTANCE: stage a newer Evlet, plan, stop, back up, migrate and restart the instances.
 
     confirm is asked once, after the staged plans and before anything stops; a confirm that answers False is a plan
     only, with the plans in messages and nothing changed. backup is the instance's backup and value every backup
-    written, by instance. capture=False lets the commands write to the terminal, as the CLI does."""
+    written, by instance. capture=False lets the commands write to the terminal, as the CLI does. supervised: the
+    project endpoint stopped the instances and starts them again, so no systemd unit is needed or used."""
     from .upgrade import upgrade_project
     log, root = _Log(out), Path(root)
     before = lock_state(root, instance)
     backups = {}
     ok = upgrade_project(root, instance, to=to, service=service, yes=yes, confirm=confirm, all_instances=all_instances,
-                         unit_dir=unit_dir, run=run, which=which, out=log, capture=capture, backups=backups)
+                         unit_dir=unit_dir, run=run, which=which, out=log, capture=capture, backups=backups,
+                         supervised=supervised)
     return log.outcome(ok, backup=backups.get(instance), before=before, after=lock_state(root, instance),
                        value={item: path for item, path in backups.items() if path})
 
@@ -270,6 +280,7 @@ def upgrade_evlet(root, instance, *, to=None, service=None, yes=False, confirm=N
 # Hosts
 
 
+@logged('host_add')
 def host_add(root, instance, host, frontend, *, apply=False, ips=None, port=None, routes_only=False, out=None, run=None,
              user=None):
     """evlet host add INSTANCE HOST --root APP.FRONTEND: routes.py, the DNS check, the Caddy files, with apply the sudo steps."""
@@ -281,6 +292,7 @@ def host_add(root, instance, host, frontend, *, apply=False, ips=None, port=None
     return log.outcome()
 
 
+@logged('host_remove')
 def host_remove(root, instance, host, *, apply=False, port=None, routes_only=False, out=None, run=None, user=None):
     """evlet host remove INSTANCE HOST: take the host out of routes.py and the Caddy files."""
     from . import hosts
@@ -311,6 +323,7 @@ def host_check(root, instance, host, frontend=None, *, ips=None, out=None):
 # Apps, builds and instances
 
 
+@logged('app_create', instance=None)
 def app_create(root, name, *, legacy=False, out=None):
     """evlet app NAME: scaffold an app. value is its folder."""
     from .app import create_app
@@ -320,6 +333,7 @@ def app_create(root, name, *, legacy=False, out=None):
     return log.outcome(value=target)
 
 
+@logged('app_fetch', instance=None)
 def app_fetch(root, url, *, trust=False, confirm=None, out=None):
     """evlet app --get URL: fetch statically, then prepare and build after trust. value is the Package."""
     from .app import get_app
@@ -328,6 +342,7 @@ def app_fetch(root, url, *, trust=False, confirm=None, out=None):
     return log.outcome(value=package)
 
 
+@logged('build', instance=None)
 def build(root, *, trust=False, confirm=None, out=None):
     """evlet build: a versioned generation of the project's apps, without activating or migrating it. value is its manifest."""
     from .app import prepare_dependencies
@@ -342,6 +357,7 @@ def build(root, *, trust=False, confirm=None, out=None):
     return log.outcome(value=manifest)
 
 
+@logged('instance_create', instance='name')
 def instance_create(root, name, *, out=None):
     """evlet instance NAME: an empty instance folder. value is its path."""
     from .instance import create_instance
@@ -349,3 +365,121 @@ def instance_create(root, name, *, out=None):
     target = create_instance(Path(root), name)
     log(f'Instance created: {target}')
     return log.outcome(after=lock_state(root, name), value=target)
+
+
+# App updates from the recorded Git source
+
+
+# Git transports an app update may not use, as for evlet app --get: local files and external helpers.
+GIT_PROTOCOLS = ('-c', 'protocol.file.allow=never', '-c', 'protocol.ext.allow=never')
+
+
+def _git(path, *arguments, timeout=120):
+    """Run git in an app folder with the clone's safety settings (evlet.cli.app.fetch_app); return its output."""
+    import os
+    import subprocess
+    environment = {key: value for key, value in os.environ.items() if not key.startswith('GIT_CONFIG')}
+    environment.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull, GIT_TERMINAL_PROMPT='0', GIT_LFS_SKIP_SMUDGE='1')
+    result = subprocess.run(['git', '-c', 'core.hooksPath=' + os.devnull, *GIT_PROTOCOLS, '-C', str(path), *arguments],
+                            env=environment, capture_output=True, text=True, timeout=timeout)
+    if result.returncode:
+        raise ValueError(f'git {arguments[0]} failed in {path.name}: ' + (result.stderr.strip() or result.stdout.strip()))
+    return result.stdout.strip()
+
+
+def _app_target(root, instance, app, ref):
+    """(app folder, current commit, target commit, commits between) for updating app to ref from its Git source."""
+    import re
+    path = child(Path(root), 'apps', app)
+    state = lock_state(root, instance)
+    if state is None or app not in state['apps']:
+        raise ValueError(f'{app} is not installed in {instance}')
+    if not (path / '.git').is_dir():
+        raise ValueError(f'apps/{app} has no Git source: it was not fetched with evlet app --get, so it has nothing to update from')
+    if not isinstance(ref, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,199}', ref) or '..' in ref:
+        raise ValueError('Name a tag, branch or commit, such as v1.2.0')
+    if _git(path, 'status', '--porcelain'):
+        raise ValueError(f'apps/{app} has local changes. Commit or remove them before updating it')
+    current = _git(path, 'rev-parse', 'HEAD')
+    _git(path, 'fetch', '--tags', '--no-recurse-submodules', 'origin')
+    try:
+        target = _git(path, 'rev-parse', '--verify', '--end-of-options', f'{ref}^{{commit}}')
+    except ValueError:
+        target = _git(path, 'rev-parse', '--verify', '--end-of-options', f'origin/{ref}^{{commit}}')
+    commits = _git(path, 'log', '--oneline', '--no-decorate', '-n', '50', f'{current}..{target}').splitlines() if current != target else []
+    return path, current, target, commits
+
+
+@logged('app_update_plan')
+def app_update_plan(root, instance, app, ref, *, trust=False, confirm=None, out=None):
+    """What updating app to ref would do in instance: the commits, then the migration plan worked out on the new
+    source. The app's folder is back on its current commit afterwards; nothing else is written. value is
+    {'current', 'target', 'commits'}."""
+    log = _Log(out)
+    path, current, target, commits = _app_target(root, instance, app, ref)
+    log(f'{app}: {current[:12]} -> {target[:12]} ({ref})')
+    value = {'current': current, 'target': target, 'commits': commits}
+    if current == target:
+        log(f'{app} is already at {ref}.')
+        return log.outcome(value=value)
+    log(f'{len(commits)} new commit' + ('' if len(commits) == 1 else 's') + ':')
+    for line in commits:
+        log('  ' + line)
+    _git(path, 'checkout', '--quiet', '--detach', target)
+    try:
+        migration_plan(root, instance, trust=trust, confirm=confirm, out=log)
+    finally:
+        _git(path, 'checkout', '--quiet', '--detach', current)
+    return log.outcome(value=value)
+
+
+@logged('app_update')
+def app_update(root, instance, app, ref, *, trust=False, confirm=None, stop=None, start=None, healthy=None, out=None):
+    """Update an installed app to ref from its recorded Git source: plan the migration first, then back up, stop,
+    migrate, start and check /health. When a step after the backup fails, the app's previous commit and the backup
+    come back and the instance starts again on them.
+
+    stop(), start() and healthy() -> bool run the instance; without them the instance must not be served (migrate
+    needs its exclusive lock). value is {'current', 'target', 'backup', 'restored'}."""
+    log = _Log(out)
+    path, current, target, commits = _app_target(root, instance, app, ref)
+    value = {'current': current, 'target': target, 'backup': None, 'restored': False}
+    if current == target:
+        log(f'{app} is already at {ref}; nothing to update.')
+        return log.outcome(value=value)
+    log(f'Updating {app} in {instance}: {current[:12]} -> {target[:12]} ({ref}), {len(commits)} commits')
+    _git(path, 'checkout', '--quiet', '--detach', target)
+    try:
+        log.step('plan')
+        migration_plan(root, instance, trust=trust, confirm=confirm, out=log)
+    except BaseException:
+        _git(path, 'checkout', '--quiet', '--detach', current)
+        log(f'The migration plan failed; {app} is back on {current[:12]} and nothing else changed.')
+        raise
+    before = lock_state(root, instance)
+    saved = backup_create(root, instance, out=log).backup
+    value['backup'] = saved
+    if stop is not None:
+        stop()
+        log.step('stop')
+    try:
+        migrate(root, instance, trust=True, out=log)
+        log.step('migrate')
+        if start is not None:
+            start()
+            log.step('start')
+        if healthy is not None and not healthy():
+            raise ValueError(f'{instance} did not answer /health after the update')
+        log.step('health')
+    except Exception as exc:
+        log(f'The update failed: {exc}. Restoring {app} {current[:12]} and the backup {saved}.')
+        if stop is not None:
+            stop()
+        _git(path, 'checkout', '--quiet', '--detach', current)
+        backup_restore(root, instance, saved, yes=True, out=log)
+        value['restored'] = True
+        if start is not None:
+            start()
+        return log.outcome(False, backup=saved, before=before, after=lock_state(root, instance), value=value)
+    log(f'{app} in {instance} runs {ref} ({target[:12]}).')
+    return log.outcome(backup=saved, before=before, after=lock_state(root, instance), value=value)

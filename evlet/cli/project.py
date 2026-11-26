@@ -104,12 +104,22 @@ def new_project_id(root):
 
 
 def set_project_mode(root, mode):
-    """Rewrite the mode key of project.json (evlet project mode); the shell only, never an HTTP route."""
+    """Rewrite the mode key of project.json (evlet project mode); the shell only, never an HTTP route.
+
+    With an endpoint, production refuses until the endpoint has a public host and the owner's two-step sign-in is set up."""
     from ..instances import PROJECT_FILE, PROJECT_MODES, read_project
     if mode not in PROJECT_MODES:
         raise ValueError('Use evlet project mode development or evlet project mode production')
     root = Path(root)
     ensure_project(root)
+    if mode == 'production':
+        from .endpoint import exists, read_settings, two_step_ready
+        if exists(root) and not read_settings(root)['host']:
+            raise ValueError('The endpoint has no public host yet. Add one with evlet setup --endpoint --endpoint-host HOSTNAME, '
+                             'then switch to production')
+        if exists(root) and not two_step_ready(root):
+            raise ValueError('Production needs the owner\'s two-step sign-in. Sign in to the endpoint as admin and set it up '
+                             'in Settings, then run evlet project mode production again')
     with file_lock(root / '.evlet' / 'project.lock'):
         record = read_project(root)
         if record is None:

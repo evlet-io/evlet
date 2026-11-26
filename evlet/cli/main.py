@@ -18,7 +18,7 @@ def confirm(message):
 # Every command in the order its parser is added, with the module of evlet.cli.commands that adds and runs it.
 # The order is the order of argparse's choices, as in "invalid choice" errors.
 COMMANDS = (
-    ('setup', 'setup'), ('project', 'project'), ('app', 'apps'), ('build', 'apps'), ('instance', 'apps'),
+    ('setup', 'setup'), ('project', 'project'), ('endpoint', 'endpoint'), ('app', 'apps'), ('build', 'apps'), ('instance', 'apps'),
     ('install', 'install'), ('migrate', 'install'), ('makemigration', 'install'), ('serve', 'serve'), ('dev', 'serve'),
     ('restart', 'lifecycle'), ('upgrade', 'lifecycle'), ('routes', 'routing'), ('proxy', 'routing'), ('host', 'routing'),
     ('link-user', 'accounts'), ('controls', 'accounts'), ('users', 'accounts'), ('secrets', 'accounts'),
@@ -43,7 +43,7 @@ POSITIONAL_INSTANCE = {
 
 # evlet --help lists the commands in these groups.
 GROUPS = (
-    ('Start', ('setup', 'project', 'app', 'instance', 'install')),
+    ('Start', ('setup', 'project', 'endpoint', 'app', 'instance', 'install')),
     ('Develop', ('dev', 'dev-link', 'playground', 'docs', 'build')),
     ('Change', ('makemigration', 'migrate', 'upgrade')),
     ('Operate', ('serve', 'restart', 'routes', 'proxy', 'host', 'link-user', 'jobs', 'ledger', 'backup')),

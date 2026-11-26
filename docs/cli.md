@@ -66,6 +66,12 @@ The steps run in this order, each through the code of its own command:
    ([below](#serve-a-site-on-a-domain-in-one-go)). With neither, it stops after
    installing and prints the command that starts the site.
 
+`--endpoint` gives the project an endpoint that runs its instances, with a portal and a project MCP; in
+development it then serves on 127.0.0.1:7999 and prints a sign-in link. `evlet setup --endpoint` without a folder
+adds one to the project you are in, and `--endpoint-host HOSTNAME` prepares it behind Caddy for a server
+([project endpoint](project-endpoint.md)). It cannot be combined with `--dev` or `--host`: the endpoint runs the
+instances.
+
 `--app` and `--get` take comma lists, can be repeated and can be combined. Git URLs
 follow the [fetch rules](#dependencies-and-git): HTTPS or `ssh://`, no passwords;
 write `ssh://git@github.com/co/crm.git`, not `git@github.com:co/crm.git`. `--trust`
@@ -176,11 +182,15 @@ instance registers with it.
   it its own id (stop it first; other commands still work on it). A backup of one instance restored
   into another is a copy in the same way.
 
-`evlet project` prints the project id, its creation date, mode, endpoint (`none` for now) and each
-instance with its id. `evlet instance --list` adds the id as a third column. Controls shows both
+`evlet project` prints the project id, its creation date, mode, endpoint (its address and whether it
+answers, or `none`; see [project endpoint](project-endpoint.md)) and each instance with its id. `evlet instance --list` adds the id as a third column. Controls shows both
 ids on its Overview ([controls.md](controls.md)); they are never shown to signed-out visitors or
 on public hosts. `evlet project mode production|development` rewrites only the `mode` key of
-`project.json`; it is a shell command, and no HTTP route can change it.
+`project.json`; it is a shell command, and no HTTP route can change it. With an endpoint, `production`
+refuses until the endpoint has a public host and the owner has set up two-step sign-in.
+
+`evlet endpoint` serves the project endpoint and runs every instance as its child process; `evlet endpoint link`
+prints a new one-time sign-in link for the owner in development ([project endpoint](project-endpoint.md)).
 
 `python -m evlet` accepts the same commands. It drops the working directory from
 `sys.path` before loading apps, but modules Python imports at startup can still be
@@ -939,9 +949,11 @@ writes stdout.
 | `backup_list(root, instance, *, out)` | the sets in `data/backups`, newest first |
 | `backup_restore(root, instance, source, *, yes, confirm, out)` | `evlet restore` |
 | `restart_instance(root, instance, *, service, check_only, yes, confirm, timeout, capture, out)` | `evlet restart` |
-| `upgrade_evlet(root, instance, *, to, service, yes, confirm, all_instances, capture, out)` | `evlet upgrade` |
+| `upgrade_evlet(root, instance, *, to, service, yes, confirm, all_instances, capture, out, supervised)` | `evlet upgrade` (`supervised`: the project endpoint stopped the instances and starts them, so no systemd unit is used) |
 | `host_add`, `host_remove`, `host_list`, `host_check` | `evlet host add`, `remove`, `list`; `host_check` checks a host and its DNS and writes nothing |
 | `app_create`, `app_fetch`, `build`, `instance_create` | `evlet app NAME`, `evlet app --get`, `evlet build`, `evlet instance NAME` |
+| `app_update_plan(root, instance, app, ref, *, trust, confirm, out)` | the new commits of an app fetched from Git and the migration plan on them |
+| `app_update(root, instance, app, ref, *, trust, confirm, stop, start, healthy, out)` | plan, back up, stop, migrate, start, health check; the previous commit and the backup come back on a failure |
 
 `Outcome(ok, steps, messages, backup, before, after, value)` is a frozen dataclass. `messages` are the lines the
 command prints, in order; `out(line)`, when given, receives each one as it happens, which is how the CLI prints
@@ -962,6 +974,10 @@ The instance lock still applies. `migrate`, `install_app` and `backup_restore` n
 take its exclusive lock); `upgrade_evlet` stops and restarts the services itself; `backup_create`,
 `migration_plan` and the restart checks take the shared lock a running server holds. `host_add` and `host_remove`
 with `apply=True` run `sudo` steps, which ask for a password in a terminal.
+
+When the project has an endpoint, each of these functions that changes something appends to its operation log as it
+starts and ends ([project endpoint](project-endpoint.md#the-operation-log)); `backup_list`, `migration_plan`,
+`host_list` and `host_check` only read and are not logged.
 
 ## Schedules
 

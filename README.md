@@ -74,6 +74,8 @@ For virtual environment setup and each step explained, read
 - [Prompts](docs/prompts.md): the form an action opens, and bound records in Python.
 - [Model scripts](docs/model-scripts.md): browser behaviour a model cannot declare, in one JavaScript file.
 - [Routing](docs/routing.md): frontends, reserved paths, `routes.py` and `evlet routes`.
+- [Project endpoint](docs/project-endpoint.md): one process that runs a project's instances, with a portal, an
+  operation log and a project MCP.
 - [API stability](docs/api-stability.md): the names apps can rely on, deprecations and what is internal.
 - [UI framework](docs/ui-framework.md): Evlet's own browser framework and components.
 
