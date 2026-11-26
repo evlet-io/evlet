@@ -377,7 +377,7 @@ from the table.
 
 `routes.py` is read once at start, and a clash there fails the boot. A sub-host can also be
 kept as data, in the framework table `evlet_hosts` (added by the framework migration
-`0018_hosts`), and served without a restart:
+`0019_hosts`), and served without a restart:
 
 ```sh
 evlet host add acme www.acme.com --root site.www --live

@@ -54,7 +54,7 @@ DNS = ('points here', 'may point here', 'points elsewhere', 'no A or AAAA record
 
 
 def ensure(connection):
-    """The framework step 0018_hosts: the hosts table and its version row."""
+    """The framework step 0019_hosts: the hosts table and its version row."""
     connection.ensure_table(HOSTS)
     connection.ensure_table(VERSION)
     if connection.run(qb.select('evlet_hosts_version', 'version').where(id=1)).one() is None:

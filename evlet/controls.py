@@ -1243,6 +1243,8 @@ class Controls:
             overrides = connection.run(qb.select('evlet_overrides', qb.count())).value()
             active, total = connection.run(qb.select('evlet_users', qb.sum('active'), qb.count())).one()
             recent = [dict(row) for row in connection.run(qb.select('evlet_audit', 'id', 'at', 'actor', 'area', 'target', 'detail').order_by('-id').limit(5))]
+            from .framework import instance_identity
+            identity = instance_identity(connection)
         models = []
         for name, model in self.models().items():
             fields = model.__declared_fields__
@@ -1266,7 +1268,9 @@ class Controls:
         return {
             'instance': {'name': self.business.application.get('name', 'Evlet') if self.business.application else 'Evlet',
                          'host': self.routes.primary or host_name(dict(scope.get('headers', [])).get(b'host', b'')) or 'localhost', 'evlet': version, 'version': self.version,
-                         'slug': self.system.instance_name(), 'managed': self.system.path is not None},
+                         'slug': self.system.instance_name(), 'managed': self.system.path is not None,
+                         # Admins on a Controls host only, like the rest of this state; never on a public page.
+                         'id': identity['id'] if identity else None, 'project': self.system.project_id()},
             'me': user.public(), 'apps': apps, 'models': models, 'roles': self.role_list(), 'jobs': {'failed': failed},
             'routes': [{'host': row.host, 'path': row.path, 'serves': row.serves, 'realm': row.realm, 'source': row.source, 'locked': row.locked} for row in self.routes.rows()],
             'scopes': {key or '': label for key, label in LABELS.items()} | {key: key.replace('_', ' ').capitalize() for key in self.scopes},

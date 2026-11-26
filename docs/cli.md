@@ -85,12 +85,16 @@ exactly as before and refuses an existing folder.
 evlet setup myproject
 evlet setup myproject --app notes,crm --instance acme --dev
 evlet setup myproject --app notes --instance acme --host erp.example.com
+evlet project
+evlet project new-id
+evlet project mode production
 evlet app notes
 evlet app --get https://github.com/company/notes.git
 evlet app --list
 evlet build --trust
 evlet instance acme
 evlet instance --list
+evlet instance new-id acme
 evlet install notes --instance acme --trust
 evlet install site --instance acme --trust --yes
 evlet serve acme --port 8000
@@ -125,7 +129,7 @@ evlet playground --port 8000
 evlet docs --port 8001
 ```
 
-`evlet --help` lists the commands in groups: Start (`setup`, `app`, `instance`, `install`),
+`evlet --help` lists the commands in groups: Start (`setup`, `project`, `app`, `instance`, `install`),
 Develop (`dev`, `dev-link`, `playground`, `docs`, `build`), Change (`makemigration`, `migrate`,
 `upgrade`), Operate (`serve`, `restart`, `routes`, `proxy`, `host`, `link-user`, `jobs`,
 `ledger`, `backup`), Recover (`restore`, `users`, `controls`, `secrets`, `ids`, `activity`) and
@@ -143,9 +147,40 @@ one; the others always need the name. Giving two different names is refused.
 models, as on a first install, also when the instance already has other apps; the app's
 existing migrations are recorded without running (their seed steps run). It prints the app
 (`Tables created from the models of sales`) and that later changes need a migration. On a new
-instance the framework's own steps are summarised (`Framework tables: created (17 framework
+instance the framework's own steps are summarised (`Framework tables: created (18 framework
 migrations recorded)`); on an existing database each one that ran is listed. Applied app
 migrations are named as `notes 0001_changes`.
+
+### Project and instance ids
+
+Every project and every instance has an id, in the [record id](internal/record-identity.md) format:
+13 lowercase letters and digits such as `01hc1sd9vc1ye`, safe as a DNS label, ordered by time, with
+the creation date readable from it. They are made locally, so nothing here can promise they are
+unique across the world: two ids collide only when they are made in the same millisecond and draw
+the same 21 random bits. Evlet Cloud keeps the registry and refuses a duplicate when a project or
+instance registers with it.
+
+- **The project id** is in `project.json` at the project root: `{"id", "created", "mode"}`, with
+  `mode` `development` unless set otherwise. `evlet setup` writes it. A project made before project ids
+  gets one the first time any project command runs, which prints it once on stderr
+  (`Project id: 01hc1sd9vc1ye`). Commit `project.json` with the project: a clone has the same id on
+  purpose. Run `evlet project new-id` to give a fork its own id; its instances keep theirs. When the
+  project folder cannot be written (a service account that may only read it), commands run without
+  an id until its owner runs one.
+- **The instance id** is in the instance's database, in the one-row table `evlet_instance` that
+  framework step `0018_instance_id` adds, so an existing instance gets its id when it migrates.
+  Backups and restores keep it: a restore is the same instance. The row also names the instance
+  folder the id was made for.
+- **A copied folder.** When two instances of a project report the same id, the one whose id was
+  made for another folder refuses to serve and names the fix: `evlet instance new-id <name>` gives
+  it its own id (stop it first; other commands still work on it). A backup of one instance restored
+  into another is a copy in the same way.
+
+`evlet project` prints the project id, its creation date, mode, endpoint (`none` for now) and each
+instance with its id. `evlet instance --list` adds the id as a third column. Controls shows both
+ids on its Overview ([controls.md](controls.md)); they are never shown to signed-out visitors or
+on public hosts. `evlet project mode production|development` rewrites only the `mode` key of
+`project.json`; it is a shell command, and no HTTP route can change it.
 
 `python -m evlet` accepts the same commands. It drops the working directory from
 `sys.path` before loading apps, but modules Python imports at startup can still be

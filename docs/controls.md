@@ -11,6 +11,11 @@ must use two-step sign-in but can't because the `cryptography` package is
 missing or the secret key file is refused. An application without a secret key (not an instance)
 has no two-step sign-in, and nothing is listed for it.
 
+Its Instance card shows the instance's name, primary host, Evlet version and, for an instance of a
+project, its **Instance id** and **Project id** ([cli.md](cli.md#project-and-instance-ids)). An
+application built in Python has an instance id too, made when its database is first set up. The ids
+are in the Controls state only, which signed-out visitors and sub-hosts never get.
+
 ## Access
 
 - Served on the primary host only. Sub-hosts get 404 for the page, every

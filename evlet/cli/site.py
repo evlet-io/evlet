@@ -82,6 +82,11 @@ def step(label):
         raise ValueError(f'Step "{label}" failed: {exc}\nFix it, then run the same command again. Finished steps are skipped.') from None
 
 
+def project_line(root):
+    from ..instances import read_project
+    return f'Project id: {read_project(root)["id"]}'
+
+
 def project(directory, framework=None):
     """Create the project, or reuse it when this command already made it."""
     from .project import project_root
@@ -96,6 +101,7 @@ def project(directory, framework=None):
             return root
         root = setup(target, framework=framework).resolve()
         print(f'Project created: {root}')
+        print(project_line(root))
         return root
 
 
