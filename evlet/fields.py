@@ -191,7 +191,7 @@ class Field:
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
                  initial=None, applies_when=None, required_when=None, locked_when=None, visible_when=None, versioned=True, tracking="value",
-                 panel=True, copy=True, column=True, derived=False, on_change=None, look=None, control=None):
+                 panel=True, copy=True, column=True, derived=False, on_change=None, look=None, control=None, remember=False):
         if tracking not in ("value", "mask", "exclude"):
             raise ValueError("tracking is value, mask or exclude")
         self.tracking = tracking
@@ -284,6 +284,14 @@ class Field:
         self.versioned = versioned
         if compute is not None or query is not None:
             self.read_only = True
+        # remember=True: a new record's form suggests the value this person last saved in the field (docs/model-engine.md).
+        if type(remember) is not bool:
+            raise ValueError("remember must be True or False")
+        if remember and (compute is not None or query is not None or fetch is not None or not stored or read_only
+                         or self.kind in ('sequence', 'state', 'image', 'reference')):
+            raise ValueError("remember=True suggests a value people enter: a stored, editable field that is not calculated, "
+                             "fetched, a Sequence, a State, an Image or an AnyLink")
+        self.remember = remember
 
     def __set_name__(self, owner, name):
         if self.name and self.name != name:

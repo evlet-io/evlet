@@ -102,6 +102,7 @@ def nginx(routes, port=8000, instance='<name>', trusted=()):
         ('~ ^/api/.*/(attachments|_images)$', '/api/model/_images'),
         ('~ ^/api/_controls/prints', '/api/_controls/prints'),
         ('~ ^/api/_unsaved/', '/api/_unsaved/item'),
+        ('~ ^/api/[^/]+/import(/check)?$', '/api/model/import'),
     )
     uploads = ''.join(f'    location {match} {{\n        {_nginx_proxy(port, request_body_limit(path, image_bytes))}\n    }}\n'
                       for match, path in upload_routes)

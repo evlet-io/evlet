@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 MAX_BODY_BYTES = 64 * 1024
 # Unsaved changes may be up to 1 MB (the unsaved.entry_kb maximum); the route checks the instance limit.
 UNSAVED_BODY = 1024 * 1024 + 4096
+# A CSV import carries the file as JSON text: up to 2,000,000 characters (evlet/imports.py), escaped.
+IMPORT_BODY = 4 * 1024 * 1024
 # Framework routes under /_/ that clients on the internet must reach: the remote MCP endpoint, its
 # OAuth 2.1 sign-in, and the return from a personal mailbox's OAuth sign-in. The Caddy and nginx files
 # that evlet proxy and evlet setup write pass exactly these and refuse every other /_/ path.
@@ -49,6 +51,8 @@ def request_body_limit(path, image_bytes=None):
         return 300000
     if path.startswith('/api/_unsaved/'):
         return UNSAVED_BODY
+    if path.startswith('/api/') and path.endswith(('/import', '/import/check')):
+        return IMPORT_BODY
     return MAX_BODY_BYTES
 
 
