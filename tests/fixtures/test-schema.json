@@ -620,6 +620,7 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "remember": true,
           "default_kind": "static",
           "default": "AED"
         },

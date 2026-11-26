@@ -300,6 +300,7 @@
         "update": true,
         "delete": true
       },
+      "importable": true,
       "child_only": false,
       "children": [],
       "actions": [
@@ -1075,6 +1076,7 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "remember": true,
           "default_kind": "static",
           "default": "AED",
           "stored": true,
@@ -10764,6 +10766,7 @@
         "update": true,
         "delete": true
       },
+      "importable": true,
       "child_only": false,
       "children": [
         {
@@ -12360,7 +12363,14 @@
           "label": null,
           "link": "customer",
           "total": false,
-          "unit": null
+          "unit": null,
+          "report": "InvoiceRegister",
+          "filters": {
+            "customer": "customer",
+            "status": "status",
+            "from_date": "from_date",
+            "to_date": "to_date"
+          }
         },
         {
           "name": "invoices",
@@ -12455,6 +12465,112 @@
         "entries",
         "amount"
       ],
+      "export": true,
+      "group_by": null,
+      "chart": null
+    },
+    {
+      "name": "CustomerStatement",
+      "label": "Customer statement",
+      "fields": [
+        {
+          "name": "customer",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "minimum": 1,
+          "maximum": null,
+          "target": "customer",
+          "label": "Customer",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        }
+      ],
+      "behavior": {
+        "customer": {}
+      },
+      "children": [],
+      "sources": {},
+      "source_fields": [],
+      "autorun": false,
+      "columns": [
+        {
+          "name": "id",
+          "type": "link",
+          "label": "Invoice",
+          "link": "invoice",
+          "total": false,
+          "unit": null
+        },
+        {
+          "name": "posting_date",
+          "type": "date",
+          "label": "Posted",
+          "link": null,
+          "total": false,
+          "unit": null
+        },
+        {
+          "name": "status",
+          "type": "text",
+          "label": null,
+          "link": null,
+          "total": false,
+          "unit": null
+        },
+        {
+          "name": "total",
+          "type": "currency",
+          "label": null,
+          "link": null,
+          "total": true,
+          "unit": null,
+          "unit_from_filters": true
+        }
+      ],
+      "group": "Sales",
+      "model": "invoice",
+      "source_kind": "model",
+      "sortable": [],
+      "export": true,
+      "group_by": null,
+      "chart": null
+    },
+    {
+      "name": "PointsByCustomer",
+      "label": "Points by customer",
+      "fields": [],
+      "behavior": {},
+      "children": [],
+      "sources": {},
+      "source_fields": [],
+      "autorun": true,
+      "columns": [
+        {
+          "name": "customer",
+          "type": "link",
+          "label": null,
+          "link": "customer",
+          "total": false,
+          "unit": null
+        },
+        {
+          "name": "points",
+          "type": "integer",
+          "label": null,
+          "link": null,
+          "total": true,
+          "unit": "points"
+        }
+      ],
+      "group": "Sales",
+      "model": null,
+      "source_kind": "ledger",
+      "sortable": [],
       "export": true,
       "group_by": null,
       "chart": null
@@ -12679,6 +12795,13 @@
               "label": "Quick invoice",
               "api": "playground.quick_invoice",
               "icon": "zap"
+            },
+            {
+              "key": "api:playground.close_period",
+              "kind": "api",
+              "label": "Close invoices",
+              "api": "playground.close_period",
+              "icon": "lock"
             }
           ]
         },
@@ -12719,6 +12842,20 @@
               "kind": "report",
               "label": "Ledger balances",
               "report": "LedgerBalances",
+              "icon": null
+            },
+            {
+              "key": "report:CustomerStatement",
+              "kind": "report",
+              "label": "Customer statement",
+              "report": "CustomerStatement",
+              "icon": null
+            },
+            {
+              "key": "report:PointsByCustomer",
+              "kind": "report",
+              "label": "Points by customer",
+              "report": "PointsByCustomer",
               "icon": null
             },
             {
