@@ -248,13 +248,8 @@ def privileged_steps(root, name, texts, restart=False):
 
 def saved_addresses(root):
     """The public addresses a passing DNS check stored in deploy/server.json, or None."""
-    try:
-        value = json.loads((root / 'deploy' / SERVER_FILE).read_text(encoding='utf-8')).get('ip')
-        if not isinstance(value, list) or not value:
-            return None
-        return [str(ipaddress.ip_address(item)) for item in value]
-    except (OSError, ValueError, TypeError, AttributeError):
-        return None
+    from ..hosts import saved_addresses
+    return saved_addresses(root)
 
 
 def save_addresses(root, ips):

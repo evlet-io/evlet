@@ -701,9 +701,13 @@ that is not a static or server frontend of an installed app. The instance needs 
 `host remove` takes a host out of `routes.py` and rewrites the Caddy file the same way. `host list`
 prints the primary host and each sub-host with its root frontend and sign-in realm.
 
+`--live` keeps the host as data instead of in `routes.py`: no restart, and the running instance
+serves it within a second once its DNS check passes. `host check`, `host disable` and
+`host enable` manage such hosts ([routing.md](routing.md#hosts-from-data)).
+
 With Caddy's on-demand TLS ([routing.md](routing.md#many-instances-on-one-server)) no Caddy file
 changes: Caddy asks the instance before it gets a certificate. Then only `routes.py` and a restart
-are needed:
+are needed (or `--live`, with neither):
 
 ```sh
 evlet host add acme www.example.com --root site.www --routes-only

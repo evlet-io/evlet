@@ -421,6 +421,9 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     services.settings, services.preferences = app.business.settings.values, app.business.settings.preferences
     app.business.build_manifest = manifest
     app._source_packages = pinned
+    # Active hosts from evlet_hosts join the table now, so evlet proxy and evlet host list show them too.
+    app.live_routes.project = path.parent.parent
+    app.live_routes.refresh(force=True)
     app.business.build_directory = path.parent.parent / '.evlet' / 'builds' / manifest['fingerprint']
     return app, tuple(schedules)
 

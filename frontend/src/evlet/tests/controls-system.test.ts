@@ -42,6 +42,7 @@ const audit = (before?: string) => ({ areas: ['Jobs', 'Security'], next: before 
   items: before ? [{ id: 8, at: 1789000000, actor: 'owner', area: 'Security', target: 'security.lockout', detail: 'Changed' }]
     : [{ id: 10, at: 1790000000, actor: 'owner', area: 'Jobs', target: 'nightly', detail: 'Paused' }] });
 const reply = (body: unknown, status = 200) => ({ status, body, etag: null });
+const dataHosts: Array<Record<string, unknown>> = [];
 // Counts and sizes only: the summary never carries what was changed.
 const unsaved = (entries = 3) => ({ entries, bytes: 24 * entries, oldest: 1790000000, limits: { server_days: 30 },
   people: [{ id: 2, username: 'sara', entries: entries - 1, bytes: 24 * (entries - 1), latest: 1790000500 }, { id: 3, username: 'omar', entries: 1, bytes: 24, latest: 1790000100 }] });
@@ -64,7 +65,16 @@ function open(path: string) {
     ['GET', /\/api\/_controls\/routing$/, () => reply({ rows: [{ host: 'localhost', path: '/controls', serves: 'evlet.controls', realm: 'control', source: 'locked', locked: true },
       { host: 'localhost', path: '/notes', serves: 'notes.desk', realm: 'desk', source: 'app notes', locked: false }],
       planned: ['/report', '/print'], hosts: [{ host: 'erp.acme.com', primary: true, sub: false, realm: 'desk' }, { host: 'portal.acme.com', primary: false, sub: true, realm: 'portal' }],
-      primary: 'erp.acme.com', proxy: { caddy: 'portal.acme.com {\n\trespond @primary_only 404\n}', nginx: 'server_name erp.acme.com portal.acme.com;' }, proxy_error: null })],
+      primary: 'erp.acme.com', proxy: { caddy: 'portal.acme.com {\n\trespond @primary_only 404\n}', nginx: 'server_name erp.acme.com portal.acme.com;' }, proxy_error: null,
+      data_hosts: dataHosts })],
+    ['POST', /\/api\/_controls\/routing\/hosts$/, (sent: Sent) => {
+      const body = sent.body as { host: string; target: string };
+      if (body.target !== 'site.www') return reply({ error: 'site.wwx is not a frontend of an installed app', fields: { host: 'site.wwx is not a frontend of an installed app' } }, 422);
+      dataHosts.push({ host: body.host, target: body.target, status: 'pending', records: '', checked_at: null, error: null, served: false, problem: null });
+      return reply({ items: dataHosts });
+    }],
+    ['POST', /\/api\/_controls\/routing\/hosts\/[^/]+\/check$/, () => { dataHosts[0] = { ...dataHosts[0], status: 'active', records: '203.0.113.7', checked_at: 1800000000, served: true }; return reply({ items: dataHosts }); }],
+    ['DELETE', /\/api\/_controls\/routing\/hosts\/[^/]+$/, () => { dataHosts.splice(0, 1); return reply({ items: dataHosts }); }],
     ['GET', /\/api\/_controls\/jobs$/, () => reply(jobs(true, rebuilds.length > 1 ? rebuilds.shift() : rebuilds[0]))],
     ['POST', /\/api\/_controls\/jobs\/schedules\/nightly$/, () => reply({ ...jobs(), schedules: [{ ...jobs().schedules[0], active: true, paused: false }] })],
     ['POST', /\/api\/_controls\/jobs\/schedules\/nightly\/run$/, () => reply({ ...jobs(), job: 8 })],
@@ -129,6 +139,29 @@ describe('Controls system pages', () => {
     expect(text(byText(host, 'tr', /Reserved/))).toContain('/report, /print');
     click(byText(host, 'button', 'Proxy config'));
     await until(() => expect(text(document.querySelector('.modal pre'))).toContain('respond @primary_only 404'));
+  });
+
+  it('adds, checks and removes a host from data without a restart', async () => {
+    dataHosts.length = 0;
+    const { host, sent } = open('/controls/routing');
+    await until(() => expect(text(host)).toContain('No hosts from data'));
+    click(byText(host, 'button', 'Add host'));
+    await until(() => expect(document.querySelector('#ctl-h-host')).toBeTruthy());
+    typeInto(document.querySelector('#ctl-h-host')!, 'www.acme.com');
+    typeInto(document.querySelector('#ctl-h-target')!, 'site.wwx');
+    click(byText(document, '.modal button', 'Add host'));
+    await until(() => expect(text(document.querySelector('.modal'))).toContain('is not a frontend of an installed app'));
+    typeInto(document.querySelector('#ctl-h-target')!, 'site.www');
+    click(byText(document, '.modal button', 'Add host'));
+    await until(() => expect(lastToast()).toBe('www.acme.com added, pending its DNS check'));
+    expect(requests(sent, 'POST', /routing\/hosts$/).at(-1)!.body).toEqual({ host: 'www.acme.com', target: 'site.www' });
+    await until(() => expect(text(byText(host, 'tr', /site\.www/))).toContain('Pending'));
+    click(byText(byText(host, 'tr', /site\.www/)!, 'button', 'Check'));
+    await until(() => expect(text(byText(host, 'tr', /site\.www/))).toContain('Points here: 203.0.113.7'));
+    expect(text(byText(host, 'tr', /site\.www/))).toContain('Active');
+    click(byText(byText(host, 'tr', /site\.www/)!, 'button', 'Remove'));
+    click(byText(document, '.modal button', 'Remove'));
+    await until(() => expect(text(host)).toContain('No hosts from data'));
   });
 
   it('shows unsaved changes as counts per person and clears old entries after asking', async () => {

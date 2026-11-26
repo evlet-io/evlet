@@ -221,6 +221,11 @@ def _prompt_tickets(connection):
     from .prompts import ensure_tickets
     ensure_tickets(connection)
 
+def _hosts(connection):
+    """Sub-hosts kept as data, served without a restart, and their version row (evlet/hosts.py)."""
+    from .hosts import ensure
+    ensure(connection)
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -252,6 +257,8 @@ STEPS = (
                   _activity),
     FrameworkStep('0017_prompt_tickets', 'Add evlet_prompt_tickets, the single-use tickets of prompts shown over HTTP, '
                   'and drop evlet_operations, the receipts of the removed dialogs and slips.', _prompt_tickets),
+    FrameworkStep('0018_hosts', 'Add evlet_hosts, the sub-hosts kept as data and served without a restart, and '
+                  'evlet_hosts_version, the row each process checks to pick up a change.', _hosts),
 )
 
 LEDGER = TableDefinition('evlet_framework_migrations', (

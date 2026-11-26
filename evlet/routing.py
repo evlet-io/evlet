@@ -1,6 +1,6 @@
 """Frontends, hosts and the frozen route table an instance resolves at start-up."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import ipaddress
 from pathlib import Path
 import re
@@ -260,6 +260,9 @@ class RouteTable:
     _frontends: MappingProxyType = _EMPTY
     _dists: MappingProxyType = _EMPTY
     _scopes: MappingProxyType = _EMPTY
+    # The API scopes of each frontend id, so a host added from data later gets the same scopes (with_hosts).
+    _frontend_scopes: MappingProxyType = _EMPTY
+    _data: tuple = ()
 
     def rows(self):
         return self._rows
@@ -269,6 +272,10 @@ class RouteTable:
 
     def sub_hosts(self):
         return tuple(self._subs)
+
+    def data_hosts(self):
+        """The sub-hosts that come from evlet_hosts rows (evlet.hosts), not from routes.py."""
+        return self._data
 
     def origins(self):
         if self.primary:
@@ -503,6 +510,70 @@ def resolve_routes(definitions=(), instance_config=None, routes_module=None, *, 
         else:
             rows.append(Route(name, '/api/*', ', '.join(served.api) + ' (scoped)' if served.api else 'sign-in only', realm, 'routes.py'))
     # 5. Freeze.
+    served = {identity: tuple(scopes[item] for item in frontend.api) for identity, frontend in by_id.items()}
     return RouteTable(host, port, docs_on, controls, tuple(rows), MappingProxyType(segments), root, docs_path,
                       docs.roles if docs else (), MappingProxyType(subs), MappingProxyType(by_id), MappingProxyType(dists),
-                      MappingProxyType({name: tuple(scopes[item] for item in by_id[identity].api) for name, identity in subs.items()}))
+                      MappingProxyType({name: served[identity] for name, identity in subs.items()}), MappingProxyType(served))
+
+
+# A site name, which a data host may serve instead of a frontend id once sites exist: one name without a dot.
+SITE = re.compile(r'[a-z][a-z0-9_-]{0,62}')
+
+
+def target_error(table, host, target, sites=None):
+    """Why table can't add host serving target from data, or None. target is a frontend id ("app.frontend")
+    of a static or server frontend, or a site name from sites ({name: (Frontend, dist folder or None)})."""
+    if not isinstance(host, str) or not HOSTNAME.fullmatch(host) or '..' in host or '.' not in host:
+        return f'{host!r} is not a lowercase hostname such as www.example.com'
+    if (table.primary is None) != host.endswith('.localhost'):
+        return (f'{host} must be a .localhost name while the instance has no domain' if table.primary is None
+                else f'{host} is a .localhost name; use a public hostname')
+    if host == table.primary:
+        return f'{host} is the primary host'
+    if host in table._subs and host not in table._data:
+        return f'{host} is a sub-host in routes.py, which wins over data'
+    if not isinstance(target, str):
+        return 'The target must be a frontend id such as site.www, or a site name'
+    if IDENTITY.fullmatch(target):
+        frontend = table._frontends.get(target)
+        if frontend is None:
+            return f'{target} is not a frontend of an installed app'
+        if frontend.kind == 'evlet':
+            return f'{target} is an evlet frontend, which stays on the primary host. Choose a static or server frontend'
+        return None
+    if SITE.fullmatch(target):
+        return None if target in (sites or {}) else f'{target} is not a site of this instance'
+    return f'{target!r} is not a frontend id such as site.www, or a site name'
+
+
+def with_hosts(table, entries, sites=None):
+    """The code table plus sub-hosts from data: entries are (host, target) pairs (evlet.hosts reads them).
+
+    Returns (table, problems). An entry the table can't serve is skipped and named in problems as
+    (host, reason); it never fails. routes.py wins a clash. A data host leaves its frontend's paths on
+    the primary host as they are, like Host(..., also_on_primary=True), so a change never moves a path.
+    sites maps a site name to (Frontend, dist folder or None) for targets that name a site."""
+    subs, frontends, dists, scopes = dict(table._subs), dict(table._frontends), dict(table._dists), dict(table._scopes)
+    rows, data, problems = list(table._rows), [], []
+    for host, target in entries:
+        error = f'{host} is listed twice' if host in data else target_error(table, host, target, sites)
+        if error:
+            problems.append((host, error))
+            continue
+        if target not in frontends:
+            frontend, folder = sites[target]
+            frontends[target] = frontend
+            if folder is not None:
+                dists[target] = Path(folder)
+        frontend = frontends[target]
+        subs[host] = target
+        data.append(host)
+        scopes[host] = table._frontend_scopes.get(target, ())
+        realm = frontend.auth or 'public'
+        rows.append(Route(host, '/', target, realm, 'data'))
+        if frontend.auth is None:
+            rows.append(Route(host, '/api/*', ', '.join(frontend.api) + ' (public endpoints)' if frontend.api else 'none', realm, 'data'))
+        else:
+            rows.append(Route(host, '/api/*', ', '.join(frontend.api) + ' (scoped)' if frontend.api else 'sign-in only', realm, 'data'))
+    return replace(table, _rows=tuple(rows), _subs=MappingProxyType(subs), _frontends=MappingProxyType(frontends),
+                   _dists=MappingProxyType(dists), _scopes=MappingProxyType(scopes), _data=tuple(data)), problems
