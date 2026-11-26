@@ -174,46 +174,26 @@ def caddy_refuses(text, paths):
 
 def server_addresses():
     """This server's outgoing addresses, found from the routing table; no packet is sent."""
-    found = set()
-    for family, probe in ((socket.AF_INET, '192.0.2.1'), (socket.AF_INET6, '2001:db8::1')):
-        try:
-            with socket.socket(family, socket.SOCK_DGRAM) as probe_socket:
-                probe_socket.connect((probe, 9))
-                found.add(probe_socket.getsockname()[0])
-        except OSError:
-            pass
-    return found
+    from ..hosts import server_addresses
+    return server_addresses()
 
 
 def check(routes, addresses=None, resolve=socket.getaddrinfo, hosts=None):
     """One line per host saying where its A/AAAA records point, then any warnings, and whether setup may go on.
 
     It checks the route table's hosts, or only hosts when given (evlet host add checks a host before adding it).
-    It stops (False) only for a host with no record, or with only private records while this server has a public address."""
+    It stops (False) only for a host with no record, or with only private records while this server has a public address.
+    Each host is checked by evlet.hosts.dns_status, which the host check job uses too."""
+    from ..hosts import dns_status
     hosts = tuple(hosts) if hosts is not None else _hosts(routes)
-    addresses = {str(ipaddress.ip_address(item)) for item in (addresses or server_addresses())}
-    lines, ok = [], True
-    # Behind NAT (most cloud servers) this server only sees private addresses, so a public record can't be
-    # matched. That is a warning, not a stop: Caddy keeps retrying its certificate until DNS is right.
-    public_here = any(ipaddress.ip_address(item).is_global for item in addresses)
-    warnings = []
+    addresses = addresses or server_addresses()
+    lines, warnings, ok = [], [], True
     width = max(len(host) for host in hosts) + 3
     for host in hosts:
-        try:
-            records = sorted({str(ipaddress.ip_address(info[4][0].split('%')[0])) for info in resolve(host, None, proto=socket.IPPROTO_TCP)})
-        except (OSError, UnicodeError):
-            records = []
-        public = any(ipaddress.ip_address(item).is_global for item in records)
-        if not records:
-            status, passed = 'no A or AAAA record', False
-        elif set(records) & addresses:
-            status, passed = 'points here', True
-        elif public or not public_here:
-            status, passed = 'may point here', True
-            warnings.append(f'{host} points at {", ".join(records)}. If that is not this server, fix its A record. Ports 80 and 443 must be open.')
-        else:
-            status, passed = 'points elsewhere', False
+        records, status, passed, warning = dns_status(host, addresses, resolve)
         ok = ok and passed
+        if warning:
+            warnings.append(warning)
         lines.append(host.ljust(width) + (', '.join(records) or '-').ljust(32) + status)
     return '\n'.join(lines + warnings), ok
 

@@ -187,6 +187,8 @@ def backup_create(root, instance, *, to=None, with_files=False, out=None):
     instance_path = root / 'instances' / instance
     if not with_files:
         log(f'Not included: {instance_path / "files"} (uploaded attachments); add --with-files to archive it.')
+    if written[-1].name.endswith(('-files.tar.gz', '-sites.tar.gz')) and (instance_path / 'sites').is_dir():
+        log(f'Sites: {instance_path / "sites"} is in {written[-1].name}; evlet restore leaves the sites folder as it is.')
     log(f'Not included: {instance_path / "secret.key"}. Without it a restored database cannot open saved connector, '
         'mailbox and two-step secrets. Keep a copy stored apart from these backups.')
     state = lock_state(root, instance)
@@ -281,13 +283,13 @@ def upgrade_evlet(root, instance, *, to=None, service=None, yes=False, confirm=N
 
 
 @logged('host_add')
-def host_add(root, instance, host, frontend, *, apply=False, ips=None, port=None, routes_only=False, out=None, run=None,
-             user=None):
+def host_add(root, instance, host, frontend, *, apply=False, ips=None, port=None, routes_only=False, live=False, out=None,
+             run=None, user=None):
     """evlet host add INSTANCE HOST --root APP.FRONTEND: routes.py, the DNS check, the Caddy files, with apply the sudo steps."""
     from . import hosts
     log = _Log(out)
     hosts.add(Path(root), instance, host, frontend, apply=apply, ips=ips, port=port, routes_only=routes_only, run=run,
-              user=user, out=log)
+              user=user, live=live, out=log)
     log.step('host ' + host)
     return log.outcome()
 

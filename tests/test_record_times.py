@@ -201,7 +201,7 @@ def test_upgrade_adds_and_fills_the_columns_from_the_activity_and_the_id(tmp_pat
                                (recent + 1, kind, actor, at))
     database = Database(path, Registry(Note))
     database.initialize()  # A table without the time columns is accepted until the framework step runs.
-    assert upgrade(database) == ['0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets', '0016_activity', '0017_prompt_tickets', '0018_instance_id']
+    assert upgrade(database) == ['0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets', '0016_activity', '0017_prompt_tickets', '0018_instance_id', '0019_hosts', '0021_sites']
     with sqlite3.connect(path) as connection:
         rows = {row[0]: row[1:] for row in connection.execute(f'SELECT id, {", ".join(audit.COLUMNS)} FROM note')}
     assert rows[42] == (None, None, None, None)

@@ -1,6 +1,5 @@
 """Controls system pages: installed apps, routing, jobs, the attention list and the audit log."""
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as Late
 import inspect
 import json
 import re
@@ -11,26 +10,13 @@ import time
 
 from . import qb
 from .auth import AccessError, User
+from .hosts import bounded
 from .models import ValidationError
 
 PAGE = 50
 PROXY_LATER = 'Proxy config and host checks arrive with sub-hosts. Until then, use evlet routes on the server.'
-LOOKUP_SECONDS = 5
 CHECK_SECONDS = 10
 DNS = ('points here', 'may point here', 'points elsewhere', 'no A or AAAA record')
-
-
-def bounded(resolve):
-    """A DNS lookup that gives up after LOOKUP_SECONDS, so a slow resolver can't hold a request."""
-    def lookup(host, port, **options):
-        pool = ThreadPoolExecutor(1)
-        try:
-            return pool.submit(resolve, host, port, **options).result(LOOKUP_SECONDS)
-        except Late:
-            raise OSError(f'{host} did not resolve within {LOOKUP_SECONDS} seconds') from None
-        finally:
-            pool.shutdown(wait=False)
-    return lookup
 
 
 def certificate(host, timeout=5):
@@ -129,8 +115,10 @@ class System:
             'rows': [{'host': row.host, 'path': row.path, 'serves': row.serves, 'realm': row.realm, 'source': row.source, 'locked': row.locked}
                      for row in routes.rows()],
             'planned': ['/' + name for name, status in RESERVED.items() if status == PLANNED],
-            'hosts': [{'host': host, 'primary': host == routes.primary, 'sub': host in subs, 'realm': routes.realm(host)} for host in routes.hosts()],
+            'hosts': [{'host': host, 'primary': host == routes.primary, 'sub': host in subs, 'realm': routes.realm(host),
+                       **({'data': True} if host in routes.data_hosts() else {})} for host in routes.hosts()],
             'primary': routes.primary, 'proxy': None, 'proxy_error': None if proxy else PROXY_LATER,
+            'data_hosts': self.data_hosts(),
         }
         if proxy is not None:
             name = self.instance_name() or '<name>'
@@ -141,16 +129,52 @@ class System:
                 result['proxy_error'] = str(exc)
         return result
 
-    def check_hosts(self, actor):
-        """The evlet proxy --check DNS report per host, and the certificate of each host that points here."""
-        proxy, routes = self.proxy(), self.controls.routes
-        if proxy is None:
-            raise AccessError(409, PROXY_LATER)
+    def data_hosts(self):
+        from .hosts import list_hosts
+        return list_hosts(self.controls.business) if self.controls.business.live_routes is not None else []
+
+    def data_host(self, actor, method, host, action, body):
+        """/api/_controls/routing/hosts[/<host>[/check|/status]]: hosts from data (evlet.hosts), for admins only.
+        GET lists them; POST adds {host, target}; DELETE removes one; POST .../check checks its DNS; POST .../status
+        sets {status: "disabled" | "pending"}. Each change is audited. Returns the list."""
+        from . import hosts
+        if actor.role != 'admin':
+            raise AccessError(403, 'Only admins change hosts.')
+        business = self.controls.business
+        if business.live_routes is None:
+            raise AccessError(404, 'Route not found')
+        try:
+            if method == 'GET' and host is None:
+                pass
+            elif method == 'POST' and host is None:
+                body = body if isinstance(body, dict) else {}
+                hosts.add_host(business, str(body.get('host', '')).strip().lower(), body.get('target'), actor=actor.username)
+            elif method == 'DELETE' and host and not action:
+                hosts.remove_host(business, host, actor=actor.username)
+            elif method == 'POST' and host and action == 'check':
+                self._limit(actor)
+                hosts.check_hosts(business, [host], actor=actor.username)
+            elif method == 'POST' and host and action == 'status':
+                hosts.set_host_status(business, host, (body or {}).get('status') if isinstance(body, dict) else None, actor=actor.username)
+            else:
+                raise AccessError(405, 'Method not allowed')
+        except ValueError as exc:
+            raise ValidationError({'host': str(exc)}) from None
+        return {'items': self.data_hosts()}
+
+    def _limit(self, actor):
         with self.check_lock:
             now = time.monotonic()
             if now - self.checked.get(actor.id, -CHECK_SECONDS) < CHECK_SECONDS:
                 raise AccessError(429, 'Hosts were just checked. Try again in a few seconds.')
             self.checked[actor.id] = now
+
+    def check_hosts(self, actor):
+        """The evlet proxy --check DNS report per host, and the certificate of each host that points here."""
+        proxy, routes = self.proxy(), self.controls.routes
+        if proxy is None:
+            raise AccessError(409, PROXY_LATER)
+        self._limit(actor)
         options = {'resolve': bounded(socket.getaddrinfo)} if 'resolve' in inspect.signature(proxy.check).parameters else {}
         try:
             report, ok = proxy.check(routes, **options)

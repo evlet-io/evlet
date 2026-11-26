@@ -1262,6 +1262,8 @@ class Controls:
                 attention.append({'tone': 'red', 'icon': 'link', 'page': 'email' if item['account'] else 'connectors',
                                   'title': f"{title} isn't connected", 'text': 'The last test failed. Check the details and test again.'})
         attention += self.proxy_attention()
+        if self.business.live_routes is not None:
+            attention += self.business.live_routes.attention()
         controls = self.routes.controls
         return {
             'instance': {'name': self.business.application.get('name', 'Evlet') if self.business.application else 'Evlet',
@@ -1466,6 +1468,9 @@ class Controls:
             return 200, self.system.routing(), []
         if path == '/routing/check' and method == 'POST':
             return 200, self.system.check_hosts(user), []
+        match = re.fullmatch(r'/routing/hosts(?:/([a-z0-9.-]{1,253})(/check|/status)?)?', path)
+        if match:
+            return 200, self.system.data_host(user, method, match[1], (match[2] or '').lstrip('/'), body), []
         if path == '/jobs' and method == 'GET':
             return 200, self.system.jobs(), []
         # Unsaved changes: counts and sizes only, never what was changed.

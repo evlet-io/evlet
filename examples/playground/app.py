@@ -15,7 +15,7 @@ from pathlib import Path
 
 from evlet import (AI, ApiScope, AppDefinition, Application, ChildTable, DevSignIn, EventStore, Frontend, Host, JobQueue, LocalAuth,
                    Policy, RecordId, Rule, Security, Sum, Task, own_customer, set_currency_display)
-from evlet import api
+from evlet import api, sites
 from evlet.routing import resolve_routes
 from evlet.services import Endpoint
 from .models import Customer, Invoice, PointBalance, PointMove, Project, ProjectTask, registry
@@ -39,7 +39,10 @@ PORTAL_RULES = {
 
 
 def playground_routes(port=8000):
-    """The portal on its own host, and at /portal on the main host too; the public website on its own host only."""
+    """The portal on its own host, and at /portal on the main host too; the public website on its own host only.
+
+    More hosts need no restart: in Controls, Routing, Add host www.localhost serving playground.site, then Check.
+    It is a row of evlet_hosts (evlet/hosts.py), served within a second at http://www.localhost:8000."""
     definition = AppDefinition(frontends=(portal, website), api_scopes=(ApiScope('portal', models=(Customer, Invoice)),))
     hosts = (Host('portal.localhost', root=portal, also_on_primary=True), Host('site.localhost', root='playground.site'))
     return resolve_routes([('playground', definition)], None, {'hosts': hosts},
@@ -56,6 +59,32 @@ def create_app():
                      # change the password minimum and two-step sign-in for everyone else. password_min=1 allows any password.
                      security=Security(session_hours=12, lockout=5, password_min=15, admin_two_step=True, two_step=False, admin_sign_in=False))
     return build_app(database, auth, routes=routes, ai=playground_ai())
+
+
+NEWS = {
+    'index.html': '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Playground news</title>'
+                  '<link rel="stylesheet" href="/assets/news-1a2b3c4d.css"></head><body><h1>Playground news</h1>'
+                  '<p>An instance site: published from Python, with no app package.</p><a href="/about/">About</a></body></html>',
+    'about/index.html': '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>About</title>'
+                        '<link rel="stylesheet" href="/assets/news-1a2b3c4d.css"></head><body><h1>About</h1><a href="/">Home</a></body></html>',
+    'assets/news-1a2b3c4d.css': 'body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; }\n',
+}
+
+
+def publish_news_site(app):
+    """An instance site (docs/sites.md): the news site, created and published once, kept by this database.
+
+    Serve it at http://news.localhost:8000 from Controls, Routing: Add host news.localhost serving news, then
+    Check. Or from a shell, after the server has started once (so the database is migrated):
+    .venv/bin/python -c "from examples.playground.app import *; app = create_app(); app.initialize(); publish_news_site(app)"
+    """
+    business = app.business
+    if 'news' not in {site['name'] for site in sites.list_sites(business)}:
+        sites.create_site(business, 'news', actor='playground', routing='pages')
+    if sites.get_site(business, 'news')['current_release'] is None:
+        sites.write_files(business, 'news', NEWS, actor='playground')
+        sites.publish(business, 'news', actor='playground', note='First edition')
+    return sites.get_site(business, 'news')
 
 
 def playground_ai():

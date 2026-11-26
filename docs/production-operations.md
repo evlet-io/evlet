@@ -188,7 +188,8 @@ For SQLite, `evlet backup --instance NAME` copies the four database files as one
 running server may keep working. `evlet restore BACKUP --instance NAME` puts a set back with the
 server stopped, after keeping the files it replaces; it also restores a single-file backup from
 before 0.4.3, which the next `evlet migrate` splits ([cli.md](cli.md#back-up-and-restore)). Backups
-hold only database files: keep `secret.key`, `files/` and the app sources with them.
+hold only database files, plus the instance's `sites/` folder when it has [sites](sites.md): keep
+`secret.key`, `files/` and the app sources with them.
 
 Database attachment bytes are transactional with their metadata. Local/S3 file
 attachments require a coordinated backup of database metadata, namespace markers,
@@ -209,6 +210,18 @@ Only route traffic after the restored application passes health and authenticate
 smoke checks. Preserve the failed state for investigation. A code rollback is safe
 only when its models accept the current schema; otherwise restore the matching
 backup in isolation and follow the same cutover checks.
+
+## Hosts without a restart
+
+Sub-hosts in `routes.py` need a restart; hosts from data do not
+([routing.md](routing.md#hosts-from-data)). `evlet host add NAME HOST --root APP.FRONTEND --live`
+adds one as pending; it is served, and Caddy's on-demand TLS gets its certificate, once its DNS
+check passes. Each process looks at the `evlet_hosts_version` row at most once a second, so every
+worker and the job runner pick a change up within about a second. The `evlet_host_check` job checks
+pending hosts every minute and needs the job queue (`evlet serve --jobs`, as the unit `evlet setup`
+writes runs it); without it, run `evlet host check NAME`. A row the route table can't serve never
+stops the instance from starting: it is skipped and listed under Needs attention. Back up and
+restore `evlet_hosts` with the database like any framework table.
 
 ## Monitoring and capacity
 

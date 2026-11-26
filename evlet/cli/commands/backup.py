@@ -9,7 +9,7 @@ def add_backup(commands):
     backup = commands.add_parser('backup', help="Copy an instance's four database files into data/backups as one set")
     add_instance_option(backup)
     backup.add_argument('--to', help='Write the set into this directory instead of data/backups')
-    backup.add_argument('--with-files', action='store_true', help="Also archive the instance's files/ folder (uploaded attachments)")
+    backup.add_argument('--with-files', action='store_true', help="Also archive the instance's files/ folder (uploaded attachments) with its sites/")
 
 
 def run_backup(args, context):

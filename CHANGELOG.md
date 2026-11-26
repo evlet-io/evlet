@@ -20,6 +20,21 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   runs the instances: stop and disable their `evlet-<instance>` units (or do not install them) so two processes do
   not serve one instance, and use the portal or the project tools to restart them. `evlet restart` and
   `evlet upgrade` from the shell still use systemd.
+- **Run `evlet migrate NAME` once.** The framework migration `0019_hosts` adds the `evlet_hosts` and
+  `evlet_hosts_version` tables; an instance refuses to serve until it is applied, as with every framework
+  step. Applications built on `Application` apply it when they start. Nothing else changes: `routes.py`, its
+  restart and its boot-time clash check work as before, and an instance with no hosts from data keeps the
+  route table it built at start.
+- `evlet.cli.proxy.check` and `server_addresses` keep their names and arguments; the per-host check moved
+  to `evlet.hosts.dns_status`, which the new host check job uses too.
+- **Run `evlet migrate NAME` once more for sites.** The framework migration `0021_sites` adds the empty
+  `evlet_sites` table; serving refuses until it has run. No folder is made until a site is created, and an
+  instance without sites serves exactly as before.
+- **`evlet backup` may write one more file**, `<time>-sites.tar.gz`, when the instance has sites; with
+  `--with-files` the sites go into `<time>-files.tar.gz`. A script that expects exactly the four database
+  files in its output should allow it.
+- A response that sets its own `Cache-Control` (the web app manifest, the service worker, a site's pages and
+  hashed files) no longer also carries the default `no-store`; every other response keeps `no-store`.
 
 ### Added
 
@@ -62,6 +77,38 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **The core updates apps from Git.** `app_update_plan` and `app_update` update an installed app from its recorded
   Git source to a tag, branch or commit (plan, backup, stop, migrate, start, health check, restore on failure), and
   `upgrade_evlet(..., supervised=True)` upgrades instances the endpoint runs without any systemd unit.
+- **Hosts from data, served without a restart** ([docs/routing.md](docs/routing.md#hosts-from-data)). A
+  sub-host can be a row of `evlet_hosts` (host, target frontend, status `pending`/`active`/`disabled`, the
+  last DNS check and its error) instead of a `Host(...)` in `routes.py`. Each process checks a version row
+  at most once a second and swaps in a rebuilt route table, with `LocalAuth`'s origins and realms, so a
+  host added by the CLI, Controls or another process is served within about a second. A host starts
+  pending and becomes active once its DNS points here (the `evlet proxy --check` logic, run every minute
+  by the framework job `evlet_host_check` on pending hosts). Only active hosts get 200 from
+  `/_/tls-allowed`. `routes.py` wins a clash; a row the table can't serve is skipped and listed under
+  Needs attention, never failing the boot. Changes are audited (area Hosts).
+- **`evlet host add --live`, `evlet host check`, `evlet host disable` and `evlet host enable`**; `evlet host
+  remove` and `evlet host list` cover hosts from data too. `evlet proxy` and the Caddy files `evlet host`
+  writes include active hosts from data; `--apply` reloads Caddy without restarting the service.
+- **Controls, Routing: Hosts from data** for admins (add, check, disable, enable, remove), with
+  `/api/_controls/routing/hosts`.
+- `evlet.hosts`: `list_hosts`, `add_host`, `remove_host`, `set_host_status` and `check_hosts` (the API the
+  CLI and Controls use), and `evlet.routing.with_hosts` / `target_error`.
+- **Instance sites** ([docs/sites.md](docs/sites.md)): public websites an instance keeps itself, with no app
+  package. A row of `evlet_sites` (routing `app`/`pages`, CSP connect origins, public API scopes, current
+  release, limits) and a folder `instances/<name>/sites/<site>/` with a `draft/` and immutable
+  `releases/<id>/`. Files go through `evlet.sites.SiteStore`: validated relative paths, the static type
+  allowlist, no dotfiles or links, and per-file, per-site and file-count limits (10 MiB, 100 MiB, 5000 by
+  default). Publishing copies the draft into a complete release folder, then switches the site's
+  `current_release` column with the hosts version bump, so every process serves it within a second;
+  rollback switches it back; the newest 10 releases are kept. A site is served only on an active host from
+  data whose target is its name, never on the primary or another host: pages get an `ETag` with `no-cache`
+  and `304` on `If-None-Match`, files with a content hash in their name `max-age=31536000, immutable`,
+  everything else `no-store`. Changes are audited (area Sites).
+- **`evlet sites`** `list`, `create`, `set`, `delete`, `files`, `put` (a file or a folder), `rm`, `publish`,
+  `rollback` and `releases`; `evlet host add NAME HOST --root SITE --live` serves a site.
+- `evlet.sites`: `create_site`, `update_site`, `get_site`, `list_sites`, `delete_site`, `write_file`,
+  `write_files`, `delete_file`, `list_files`, `read_file`, `publish`, `rollback` and `list_releases`;
+  `RouteTable.api_scopes()` lists the API scope ids a site may name.
 
 ## 0.4.21 (22-11-2026)
 
