@@ -269,6 +269,8 @@ class Business:
             self.schedule_image_purge()
             from .hosts import register_task
             register_task(self)
+            from .sites import register_task as register_render
+            register_render(self)
             if self.application is not None:
                 with self.database._connection() as connection:
                     namespace = connection.run(qb.select('evlet_job_namespace', 'namespace').where(id=1)).value()
@@ -277,6 +279,10 @@ class Business:
     def changed(self, tx, model, record_id, *, deleted=False, activity=False):
         if self.events:
             self.events.publish(tx, model, record_id, deleted=deleted, activity=activity)
+        if not activity and self.jobs:
+            # A site whose collections read this model renders again shortly (evlet.sites.changed).
+            from .sites import changed
+            changed(self, tx, model)
 
     @property
     def timezone(self):
@@ -626,6 +632,9 @@ class Business:
             return self.mailboxes.api(scope, body, user)
         if path == '/api/_controls' or path.startswith('/api/_controls/'):
             return self.controls.dispatch(scope, body, user)
+        if path == '/api/_sites' or path.startswith('/api/_sites/'):
+            from .sites import route as sites
+            return sites(self, scope, body, user)
         if path == '/api/_unsaved' or path.startswith('/api/_unsaved/'):
             return self.unsaved.api(scope, body, user)
         if path.startswith('/api/_settings/'):

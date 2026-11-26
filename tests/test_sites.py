@@ -329,6 +329,10 @@ def test_the_playground_publishes_its_news_site_and_controls_serves_it_on_a_host
     app = build_app(database, LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=False), routes=routes)
     app.initialize()
     try:
+        from examples.playground.models import Project
+        with app.database.transaction() as tx, tx.maintenance():
+            done = tx.create(Project, title='Shipped bridge', docstate='done', budget='9000.00', notes='internal only')
+            tx.create(Project, title='Secret plan', docstate='planned')
         site = publish_news_site(app)
         assert site['routing'] == 'pages' and site['current_release'] and publish_news_site(app) == site
         add_user(app, 'admin', 'admin')
@@ -342,6 +346,14 @@ def test_the_playground_publishes_its_news_site_and_controls_serves_it_on_a_host
         assert status == 200 and b'<h1>About</h1>' in page and headers[b'cache-control'] == b'no-cache'
         assert http(app, 'GET', '/assets/news-1a2b3c4d.css', headers={b'host': b'news.localhost:8000'})[2][b'cache-control'] == sites_immutable()
         assert b'<h1>About</h1>' not in str(http(app, 'GET', '/about/', headers={b'host': b'127.0.0.1:8000'})[1]).encode()
+        # Its collection: finished projects only, as the public role reads them, with no budget or notes.
+        status, page, _ = http(app, 'GET', '/projects/', headers={b'host': b'news.localhost:8000'})
+        assert status == 200 and b'Shipped bridge' in page and b'Secret plan' not in page
+        status, page, _ = http(app, 'GET', f'/projects/{done.id}.html', headers={b'host': b'news.localhost:8000'})
+        assert status == 200 and b'<h1>Shipped bridge</h1>' in page
+        data = http(app, 'GET', '/data/projects.json', headers={b'host': b'news.localhost:8000'})[1]
+        assert [item['title'] for item in data['items']] == ['Shipped bridge'] and 'budget' not in data['items'][0]
+        assert '9000' not in str(data) and 'internal only' not in str(data)
     finally:
         app.database.close()
 

@@ -10,6 +10,7 @@ The public website (site/) is served at http://site.localhost:8000 with routing=
 is /about/, and a missing page gets site/404.html. That host serves nothing else of the instance.
 """
 
+import json
 import os
 from pathlib import Path
 
@@ -35,6 +36,9 @@ PORTAL_RULES = {
     ('portal', Invoice): Rule(('read',), read_fields=('customer', 'name', 'title', 'reference', 'total', 'status', 'posting_date'), scope=own_customer()),
     # Admin prints whatever it reads; editors print invoices because their Rule names 'print'.
     ('editor', Invoice): Rule(('read', 'create', 'update', 'delete', 'print')),
+    # The news site's "Finished projects" pages (NEWS, _site/collections.json) read as the public role: finished
+    # projects only, and only these fields. Budget, customer, brief and notes never reach a public page.
+    ('public', Project): Rule(('read',), read_fields=('title', 'docstate', 'starts_on', 'progress'), scope=lambda user: {'docstate': 'done'}),
 }
 
 
@@ -64,10 +68,22 @@ def create_app():
 NEWS = {
     'index.html': '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Playground news</title>'
                   '<link rel="stylesheet" href="/assets/news-1a2b3c4d.css"></head><body><h1>Playground news</h1>'
-                  '<p>An instance site: published from Python, with no app package.</p><a href="/about/">About</a></body></html>',
+                  '<p>An instance site: published from Python, with no app package.</p><a href="/about/">About</a> <a href="/projects/">Finished projects</a></body></html>',
     'about/index.html': '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>About</title>'
                         '<link rel="stylesheet" href="/assets/news-1a2b3c4d.css"></head><body><h1>About</h1><a href="/">Home</a></body></html>',
     'assets/news-1a2b3c4d.css': 'body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; }\n',
+    # Pages made from records (docs/sites.md#collections): one page per finished project, a list of them and a JSON
+    # file, rendered at publish and again shortly after a project changes. _site/ is published, never served.
+    '_site/collections.json': json.dumps({'collections': [{
+        'name': 'projects', 'model': 'project', 'order_by': 'title', 'limit': 100,
+        'page': '/projects/{id}.html', 'template': 'project.html',
+        'index': {'path': '/projects/index.html', 'template': 'projects.html'}, 'json': '/data/projects.json'}]}),
+    '_site/partials/head.html': '<!doctype html><html lang="en"><head><meta charset="utf-8"><title>{{title}}</title>'
+                                '<link rel="stylesheet" href="/assets/news-1a2b3c4d.css"></head><body>',
+    '_site/project.html': '{{> head}}<h1>{{title}}</h1>{{#if starts_on}}<p>Started {{starts_on}}</p>{{/if}}'
+                          '<p><a href="/projects/">All finished projects</a></p></body></html>',
+    '_site/projects.html': '{{> head}}<h1>Finished projects</h1><ul>{{#each items}}<li><a href="{{_url}}">{{title}}</a></li>'
+                           '{{else}}<li>None yet</li>{{/each}}</ul><a href="/">Home</a></body></html>',
 }
 
 

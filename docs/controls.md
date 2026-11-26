@@ -173,6 +173,18 @@ An app may declare a portal role too, `roles={"reseller": "portal"}`. Declared r
 created on start when missing and can't be deleted in Controls. A role
 that users still have can't be deleted; deleting one removes its permission overrides.
 
+### Manage sites
+
+**Manage sites** is a role flag like "Customize workspaces": admin always has it, portal roles
+never do, and only admins turn it on or off for a desk role (Roles page, `PATCH
+/api/_controls/roles/<id>` `{"manage_sites": true}`, audited under Roles). It gives the instance's
+sites ([sites.md](sites.md#site-tools-and-manage-sites)): the `/api/_sites` routes and the site
+tools of the instance MCP and Eva (`site_list`, `site_files_list`, `site_file_read`,
+`site_files_write`, `site_publish`, `site_rollback`). It holds for the person's own sessions, their
+API keys and the AI assistants acting for them, and it opens nothing else in Controls. Everyone
+else gets 403 from the site routes, and the site tools are not listed for them. The role listing
+reports it as `manage_sites`.
+
 ## Overrides
 
 Overrides are stored in `evlet_overrides(kind, key, value)` and never change app files.
@@ -1049,7 +1061,7 @@ newest first, 50 rows at a time.
 | `GET/POST /api/_controls/overrides` | File value, override, who and when; save changes. `display.currencies` needs an admin |
 | `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end", "revoke_keys": false}`. Each user row counts active `keys`. `GET` takes `offset`, `limit` (1–200, default 100), `q` (username contains), `active` (`true`/`false`) and `role`, and returns `total` for the filter plus `counts` (`all`, `active`, `inactive`) for the search |
 | `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules, fresh two-step code and audit rows; refused access is a 403 there |
-| `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls", "Customize workspaces" and descriptions |
+| `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls", "Customize workspaces", "Manage sites" and descriptions |
 | `GET /api/_controls/workspaces`, `PUT/DELETE /api/_controls/workspaces/<key>` | Workspace overrides: list, save, reset ([Workspaces](#workspaces)). Admins and roles with "Customize workspaces" |
 | `POST /api/_controls/fields/<Model>`, `DELETE /api/_controls/fields/<Model>/<x_name>` | Add or remove an instance field: `{name, type, label, help_text, tooltip, required, default, options, target}` |
 | `GET/POST /api/_controls/naming/<Model>/counters` | Counters; set one with `{prefix, value, note}` |

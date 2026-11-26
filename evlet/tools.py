@@ -147,6 +147,34 @@ TOOLS = (
     Tool('delete_record', 'Delete a permitted record and owned children. This can permanently remove data.',
          {'model': MODEL, 'id': RECORD}, ('model', 'id'), kind='destructive', group='destructive', label='Deleting {model} {id}'),
 )
+# The instance's sites (docs/sites.md): for people whose role has "Manage sites", through MCP and Eva only.
+SITE = {'type': 'string', 'pattern': '^[a-z][a-z0-9_-]{0,62}$'}
+SITE_PATH = {'type': 'string', 'maxLength': 512}
+SITE_RELEASE = {'type': 'string', 'pattern': '^[0-9]{8}T[0-9]{12}Z$'}
+SITE_ORIGINS = ('eva', 'mcp')
+SITE_TOOLS = (
+    Tool('site_list', "List the instance's sites: their routing, current release, hosts and limits.", {},
+         origins=SITE_ORIGINS, label='Looking at the sites'),
+    Tool('site_files_list', "List the files of a site's draft (written, not yet published), with sizes.", {'site': SITE}, ('site',),
+         origins=SITE_ORIGINS, label='Listing the files of site {site}'),
+    Tool('site_file_read', "Read one text file of a site's draft, or of a release when release is given. "
+         'Files in _site/ are the collections, templates and partials.',
+         {'site': SITE, 'path': SITE_PATH, 'release': SITE_RELEASE}, ('site', 'path'), origins=SITE_ORIGINS,
+         label='Reading {path} of site {site}', content=True),
+    Tool('site_files_write', "Write text files into a site's draft as {path: text}. Nothing is served until site_publish. "
+         'Pages are HTML, CSS, JS, JSON, SVG and other static types; _site/collections.json declares pages rendered from '
+         'records, with templates in _site/ ({{field}}, {{#each list}}, {{#if field}}, {{else}}, {{> partial}}).',
+         {'site': SITE, 'files': {'type': 'object'}}, ('site', 'files'), kind='write', group='update', origins=SITE_ORIGINS,
+         label='Writing files of site {site}'),
+    Tool('site_publish', "Publish a site's draft as a new release, rendering its collections, and serve it on the site's hosts.",
+         {'site': SITE, 'note': {'type': 'string', 'maxLength': 500}}, ('site',), kind='write', group='confirm', origins=SITE_ORIGINS,
+         label='Publishing site {site}'),
+    Tool('site_rollback', 'Serve an earlier release of a site again: the one before the current release, or the one named.',
+         {'site': SITE, 'release': SITE_RELEASE}, ('site',), kind='write', group='confirm', origins=SITE_ORIGINS,
+         label='Rolling back site {site}'),
+)
+TOOLS = TOOLS + SITE_TOOLS
+SITE_NAMES = tuple(tool.name for tool in SITE_TOOLS)
 BY_NAME = {tool.name: tool for tool in TOOLS}
 NAMES = tuple(BY_NAME)
 CONTENT = tuple(tool.name for tool in TOOLS if tool.content)
@@ -180,7 +208,7 @@ def redacted(values):
     """What the log keeps of a call's arguments: identifiers as they are, field names only for values and filters."""
     kept = {}
     for key, value in values.items():
-        if key in ('values', 'filters', 'arguments') and isinstance(value, dict):
+        if key in ('values', 'filters', 'arguments', 'files') and isinstance(value, dict):
             kept[key] = sorted(value)[:50]
         elif key == 'search':
             kept[key] = '…'
@@ -335,6 +363,8 @@ class Tools:
         files = any(entry.get('attachments') for entry in schema['models'])
         activities = any(entry.get('activity') for entry in schema['models'])
         services = bool(self.services(user))
+        from .sites import available, manages_sites
+        sites = available(self.business) and manages_sites(self.business, user)
         result = []
         for tool in (*TOOLS, *(entry[0] for entry in self.extra.values())):
             if origin not in tool.origins or tool.name in disabled or (tool.writes and not writes):
@@ -351,6 +381,8 @@ class Tools:
                     or tool.name == 'answer_prompt' and not (actions or services):
                 continue
             if tool.name in ('list_files', 'read_file') and not files or tool.name == 'record_history' and not activities:
+                continue
+            if tool.name in SITE_NAMES and not sites:
                 continue
             result.append(tool)
         return result
@@ -507,6 +539,8 @@ class Tools:
             return {**result, 'view': '/reports/' + values['report'] + ('?' + urlencode(plain) if plain else '')}
         if name == 'list_services':
             return {'services': [self.describe_service(endpoint) for endpoint in self.services(user)]}
+        if name in SITE_NAMES:
+            return self.site_call(user, origin, tool, values, run_id, client, request)
         if name == 'call_service':
             endpoint = next((item for item in self.services(user) if item.name == values['service']), None)
             if endpoint is None:
@@ -573,6 +607,29 @@ class Tools:
         if self.opens_prompt(values['model'], values['action']):
             return run()  # It writes nothing: a read. The prompt's submit (answer_prompt) is what asks for approval.
         return self.approved(user, origin, tool, values, run_id, client, {**summary, 'action': values['action']}, run, revision)
+
+    def site_call(self, user, origin, tool, values, run_id, client, request):
+        """A site tool: a call to the site routes (/api/_sites), which check "Manage sites" again."""
+        name, site = tool.name, values.get('site')
+        if name == 'site_list':
+            return request.get('/api/_sites')
+        if name == 'site_files_list':
+            return request.get(f'/api/_sites/{site}/files')
+        if name == 'site_file_read':
+            query = {'path': values['path'], **({'release': values['release']} if 'release' in values else {})}
+            return request.get(f'/api/_sites/{site}/file?' + urlencode(query))
+        if name == 'site_files_write':
+            files = values['files']
+            return self.approved(user, origin, tool, values, run_id, client, {'operation': 'write site files', 'record': {'site': site, 'files': len(files)}},
+                                 lambda: request('POST', f'/api/_sites/{site}/files', {'files': files})[0])
+        if name == 'site_publish':
+            note = values.get('note', '')
+            return self.approved(user, origin, tool, values, run_id, client, {'operation': 'publish site', 'record': {'site': site, 'note': note}},
+                                 lambda: request('POST', f'/api/_sites/{site}/publish', {'note': note})[0])
+        body = {'release': values['release']} if 'release' in values else {}
+        return self.approved(user, origin, tool, values, run_id, client,
+                             {'operation': 'roll back site', 'record': {'site': site, 'release': values.get('release', 'the one before the current release')}},
+                             lambda: request('POST', f'/api/_sites/{site}/rollback', body)[0])
 
     def opens_prompt(self, model, action):
         """Whether running this action only opens a prompt: its body is `return SomePrompt` (prompts.opens_prompt), or
@@ -712,6 +769,11 @@ class Tools:
 
     def permitted(self, user, tool, values, record=None):
         """Refuse (403) a model change this user's role can't make, from the same schema the screens use."""
+        if tool.name in SITE_NAMES:
+            from .sites import manages_sites
+            if not manages_sites(self.business, user):
+                raise ConnectorError(403, 'Managing sites needs an admin, or a role with "Manage sites" on.')
+            return
         if 'model' not in values:
             return
         entry = self.model_entry(user, values['model'])

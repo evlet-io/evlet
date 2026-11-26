@@ -235,8 +235,10 @@ class Application:
             raise ValueError("Unsupported ASGI scope")
         admission = deadline = None
         if self.live_routes is not None and self.live_routes.due():
-            # At most once a second: pick up hosts another process added or removed (evlet.hosts).
-            await asyncio.to_thread(self.live_routes.refresh)
+            # At most once a second: pick up hosts another process added or removed (evlet.hosts). The same statement
+            # reads the Controls config version, which Controls.refresh uses for this request instead of reading it again.
+            from .hosts import CONFIG_SEEN
+            CONFIG_SEEN.set(await asyncio.to_thread(self.live_routes.poll))
         try:
             headers = []
             path = scope['path']
@@ -417,7 +419,7 @@ class Application:
             name = parts[2]
             if name in self.registry.exposed:
                 return '/api/' + name + ('/{record_or_operation}' if len(parts) > 3 else '')
-            if name in ('auth', '_controls', '_settings', '_events', '_eva', '_reports', '_services', '_unsaved', '_nav'):
+            if name in ('auth', '_controls', '_settings', '_events', '_eva', '_reports', '_services', '_unsaved', '_nav', '_sites'):
                 return '/api/' + name + '/*'
             return '/api/{unknown}'
         if path in PUBLIC_PATHS:

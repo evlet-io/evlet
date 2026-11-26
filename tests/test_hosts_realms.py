@@ -159,7 +159,11 @@ def test_portal_role_sees_nothing_without_an_app_rule(portal):
     policy = portal.business.policy
     from evlet import User
     assert not policy.allows(User(1, 'buyer', 'portal'), Project, 'read')
-    assert not policy.allows(User(0, 'public', 'public'), Project, 'read')
+    # The public role reads only what the Playground's Rule for its news site names: finished projects, four fields.
+    public = User(0, 'public', 'public')
+    assert policy.allows(public, Project, 'read') and not policy.allows(public, Project, 'update')
+    assert set(policy.fields(public, Project)) == {'title', 'docstate', 'starts_on', 'progress'}
+    assert policy.scope(public, Project) is not None
     assert policy.allows(User(1, 'viewer', 'viewer'), Project, 'read') and project.id
 
 

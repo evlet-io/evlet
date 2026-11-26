@@ -3,8 +3,11 @@
 A site is a row of evlet_sites (its routing, CSP origins, public API scopes, current release and limits) and
 a folder, instances/<name>/sites/<site>/:
 
-    draft/                     files written before publishing (write_file, delete_file)
-    releases/<release>/files/  one published copy of the draft, never changed again
+    draft/                     files written before publishing (write_file, delete_file); draft/_site/ holds
+                               the collections, templates and partials (evlet.site_pages)
+    releases/<release>/files/  one published copy of the draft and the pages its collections generated, never
+                               changed again
+    releases/<release>/source/ the draft's _site/ as published, never served
     releases/<release>/release.json
 
 Publishing copies the draft into a new release folder, then switches the site's current_release column in the
@@ -14,11 +17,16 @@ used anywhere. Rollback switches the column back. The newest KEEP releases are k
 
 A site is served only on a host from data whose target is its name (evlet.hosts), with status active: the
 primary host and every other host never serve it. Each change is audited under Sites.
+
+When a record of a model the current release's collections read changes, the evlet_site_render job renders the
+release again (rerender) into a new one, DEBOUNCE seconds later. The /api/_sites routes (route) and the site
+tools (evlet.tools) need "Manage sites" (manages_sites).
 """
 
 from datetime import datetime, timezone
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path, PurePosixPath
 import re
@@ -59,8 +67,16 @@ TYPES = frozenset(('.html', '.js', '.css', '.svg', '.png', '.jpg', '.jpeg', '.we
 SEGMENT = re.compile(r'[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}')
 MAX_PATH, MAX_DEPTH = 512, 16
 ORIGIN = re.compile(r'https://[a-z0-9.-]+(:[0-9]+)?')
-DRAFT, RELEASES, FILES, RECORD = 'draft', 'releases', 'files', 'release.json'
+DRAFT, RELEASES, FILES, SOURCE, RECORD = 'draft', 'releases', 'files', 'source', 'release.json'
 RELEASE = re.compile(r'[0-9]{8}T[0-9]{12}Z')
+# Collections (evlet.site_pages): the declaration in a release's sources, and the job that renders them again.
+DECLARATION = '_site/collections.json'
+RENDER_TASK, RENDER_ACTOR = 'evlet_site_render', 'system'
+# Seconds a change waits before its site renders again, so a burst of changes renders once.
+DEBOUNCE = 10
+# The text a file read through the site routes returns at most.
+TEXT_LIMIT = 200_000
+logger = logging.getLogger('evlet.sites')
 
 
 def ensure(connection):
@@ -167,8 +183,13 @@ class SiteStore:
         return dict(sorted(found.items()))
 
     def read(self, path, release=None):
+        """A draft file's bytes, or a release's: a path in _site/ reads the release's sources."""
+        from .site_pages import is_source
         check_path(path)
-        root = self.draft if release is None else self.release_files(release)
+        if release is None:
+            root = self.draft
+        else:
+            root = self.release_source(release) if is_source(path) else self.release_files(release)
         target = root / path
         self._no_link(target, self.folder)
         if not target.is_file():
@@ -243,6 +264,10 @@ class SiteStore:
             raise ValueError(f'{release!r} is not a release id')
         return self.releases / release / FILES
 
+    def release_source(self, release):
+        """The folder of a release's _site/ sources (collections, templates, partials), never served."""
+        return self.release_files(release).parent / SOURCE
+
     def release_ids(self):
         """Release ids, oldest first (they sort by the time they were published)."""
         if not self.releases.is_dir():
@@ -250,20 +275,60 @@ class SiteStore:
         return sorted(item.name for item in self.releases.iterdir()
                       if RELEASE.fullmatch(item.name) and item.is_dir() and not item.is_symlink())
 
-    def release_record(self, release):
+    KEYS = ('release', 'files', 'bytes', 'published_at', 'published_by', 'note', 'generated', 'collections')
+
+    def release_record(self, release, *, full=False):
+        """A release's record (full: with its manifest, sources and generated paths)."""
         try:
             record = json.loads((self.releases / release / RECORD).read_text(encoding='utf-8'))
         except (OSError, ValueError):
-            return {'release': release, 'files': None, 'bytes': None, 'published_at': None, 'published_by': None, 'note': ''}
-        return {key: record.get(key) for key in ('release', 'files', 'bytes', 'published_at', 'published_by', 'note')}
+            return {'release': release, 'files': None, 'bytes': None, 'published_at': None, 'published_by': None, 'note': '',
+                    'generated': 0, 'collections': []}
+        if full:
+            return record
+        return {**{key: record.get(key) for key in self.KEYS}, 'generated': len(record.get('generated') or ()),
+                'collections': record.get('collections') or []}
 
-    def snapshot(self, *, actor, note=''):
-        """Copy the draft into a new, complete release folder and return its record. Nothing points at it yet."""
-        files = self.files()
-        if 'index.html' not in files:
+    def _sources(self, base):
+        """{path: Path} to publish from: the draft, or (to render again) the release base without its generated files."""
+        if base is None:
+            return {path: item for path, item in self._walk(self.draft)}
+        record = self.release_record(base, full=True)
+        generated = set(record.get('generated') or ())
+        found = {path: item for path, item in self._walk(self.release_files(base)) if path not in generated}
+        found.update((path, item) for path, item in self._walk(self.release_source(base)))
+        return found
+
+    def snapshot(self, *, actor, note='', render=None, base=None):
+        """Copy the draft (or the release base) into a new, complete release folder and return its record. Nothing
+        points at it yet. Files in _site/ go to the release's sources, never served; render(read) returns the
+        generated files ({path: bytes}) and what the collections wrote, from read(path) -> bytes or None.
+
+        With base, the release is the base's own files and sources with its pages rendered again, and None is
+        returned when they render exactly as the base has them."""
+        from .site_pages import is_source
+        sources = self._sources(base)
+
+        def read(path):
+            item = sources.get(path)
+            return None if item is None else item.read_bytes()
+
+        generated, collections = render(read) if render is not None else ({}, [])
+        served = {path: item for path, item in sources.items() if not is_source(path)}
+        clash = sorted(set(served) & set(generated))
+        if clash:
+            raise ValueError(f'{clash[0]} is a file of the site and a page a collection writes; remove one of them')
+        if 'index.html' not in served and 'index.html' not in generated:
             raise ValueError('Write index.html to the draft before publishing; a site serves it at /')
-        if len(files) > self.max_files or sum(size for size, _ in files.values()) > self.max_site_bytes:
-            raise ValueError('The draft is over the limits of this site')
+        if base is not None:
+            record = self.release_record(base, full=True)
+            before = {path: record['manifest'].get(path, {}).get('sha256') for path in record.get('generated') or ()}
+            if before == {path: _digest(content) for path, content in generated.items()}:
+                return None
+        sizes = {path: item.stat().st_size for path, item in sources.items()}
+        total = sum(sizes.values()) + sum(len(content) for content in generated.values())
+        if len(sources) + len(generated) > self.max_files or total > self.max_site_bytes:
+            raise ValueError(f'The release would hold {len(sources) + len(generated)} files and {total} bytes, over the limits of this site')
         releases = self._folder(RELEASES)
         last = (self.release_ids() or [''])[-1]
         release = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
@@ -271,24 +336,32 @@ class SiteStore:
             time.sleep(0.001)
             release = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
         stage = releases / ('.tmp-' + release)
+        manifest, source = {}, {}
         try:
-            for path, (size, digest) in files.items():
-                source, target = self.draft / path, stage / FILES / path
+            def put(folder, path, content, into):
+                target = stage / folder / path
                 target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-                content = source.read_bytes()
-                if _digest(content) != digest:
-                    raise ValueError(f'{path} changed while it was published; publish again')
                 target.write_bytes(content)
                 target.chmod(0o444)
-            record = {'release': release, 'files': len(files), 'bytes': sum(size for size, _ in files.values()),
-                      'published_at': int(time.time()), 'published_by': actor, 'note': note,
-                      'manifest': {path: {'size': size, 'sha256': digest} for path, (size, digest) in files.items()}}
+                into[path] = {'size': len(content), 'sha256': _digest(content)}
+
+            for path, item in sorted(sources.items()):
+                content = item.read_bytes()
+                if len(content) != sizes[path]:
+                    raise ValueError(f'{path} changed while it was published; publish again')
+                put(SOURCE if is_source(path) else FILES, path, content, source if is_source(path) else manifest)
+            for path, content in sorted(generated.items()):
+                put(FILES, path, content, manifest)
+            record = {'release': release, 'files': len(manifest), 'bytes': sum(item['size'] for item in manifest.values()),
+                      'published_at': int(time.time()), 'published_by': actor, 'note': note, 'manifest': manifest,
+                      'source': source, 'generated': sorted(generated), 'collections': collections,
+                      **({'base': base} if base is not None else {})}
             (stage / RECORD).write_text(json.dumps(record, indent=1, sort_keys=True) + '\n', encoding='utf-8')
             (stage / RECORD).chmod(0o444)
             os.replace(stage, releases / release)
         finally:
             if stage.exists():
-                shutil.rmtree(stage, ignore_errors=True)
+                shutil.rmtree(stage, onexc=_writable)
         return self.release_record(release)
 
     def prune(self, keep_also):
@@ -557,22 +630,61 @@ def list_releases(business, site):
             for release in reversed(store.release_ids())]
 
 
-def _switch(business, live, name, release, actor, detail):
+def _switch(business, live, name, release, actor, detail, *, current=False):
+    """Point the site at release. current: switch only while the site still serves that release (a render job
+    must not undo a publish or rollback that happened while it rendered)."""
     with business.database.transaction() as tx:
         row = _site(tx.connection, name)
+        if current is not False and row['current_release'] != current:
+            raise ValueError(f'Site {name} was published or rolled back while its pages were rendered; they render again next change')
         tx.connection.run(qb.update('evlet_sites', current_release=release, changed_at=int(time.time())).where(name=name))
         _changed(business, live, tx, actor, name, detail, {'current_release': row['current_release']}, {'current_release': release})
     live.refresh(force=True)
 
 
+def _renderer(business, row):
+    """render(read) for SiteStore.snapshot: the site's collections (evlet.site_pages), rendered as the public role."""
+    from . import site_pages
+
+    def render(read):
+        collections = site_pages.declared(read)
+        if not collections:
+            return {}, []
+        files, info, _ = site_pages.render(business, read, collections, max_file_bytes=row['max_file_bytes'])
+        return files, info
+    return render
+
+
 def publish(business, site, *, actor, note=''):
-    """Copy the draft into a new release and serve it: every process switches within a second. Keeps the newest
-    KEEP releases. Returns the release."""
+    """Copy the draft into a new release, render its collections into it, and serve it: every process switches
+    within a second. Keeps the newest KEEP releases. Returns the release."""
     live, row, store = _store_of(business, site)
     if not isinstance(note, str) or len(note) > 500:
         raise ValueError('A release note is text of at most 500 characters')
-    record = store.snapshot(actor=actor, note=note)
+    record = store.snapshot(actor=actor, note=note, render=_renderer(business, row))
     _switch(business, live, site, record['release'], actor, f'Published {record["release"]}')
+    store.prune(record['release'])
+    return {**record, 'current': True}
+
+
+def rerender(business, site, *, actor=RENDER_ACTOR):
+    """Render the collections of the site's current release again, from that release's own files and templates
+    (never the draft), into a new release that is served at once. Returns it, or None when nothing changed (or
+    the site has no release or no collections). The render job calls it after a model it reads changed."""
+    live, row, store = _store_of(business, site)
+    current = row['current_release']
+    if current is None or not store.release_files(current).is_dir():
+        return None
+    if not store.release_source(current).joinpath(DECLARATION).is_file():
+        return None
+    record = store.snapshot(actor=actor, note=f'Pages rendered again from {current}', render=_renderer(business, row), base=current)
+    if record is None:
+        return None
+    try:
+        _switch(business, live, site, record['release'], actor, f'Rendered {record["release"]} again from {current}', current=current)
+    except ValueError:
+        shutil.rmtree(store.releases / record['release'], onexc=_writable)
+        raise
     store.prune(record['release'])
     return {**record, 'current': True}
 
@@ -595,3 +707,152 @@ def rollback(business, site, release=None, *, actor):
     if release != current:
         _switch(business, live, site, release, actor, f'Rolled back to {release}')
     return {**store.release_record(release), 'current': True}
+
+
+# ---------- rendering again when records change ----------
+
+def watching(sites):
+    """{model API name: (site, ...)} of the collections each site's current release declares, from the live
+    route table's sites ({name: (Frontend, files folder)}). Read from disk when the hosts version moves."""
+    found = {}
+    for name, (_, files) in sorted(sites.items()):
+        if files is None:
+            continue
+        declaration = files.parent / SOURCE / DECLARATION
+        try:
+            if declaration.is_symlink() or not declaration.is_file():
+                continue
+            document = json.loads(declaration.read_text(encoding='utf-8'))
+            models = {item['model'] for item in document['collections'] if isinstance(item.get('model'), str)}
+        except (OSError, ValueError, TypeError, KeyError, AttributeError):
+            continue
+        for model in models:
+            found.setdefault(model, ())
+            found[model] += (name,)
+    return found
+
+
+def changed(business, tx, model):
+    """Queue the render job of each site whose current release reads model, DEBOUNCE seconds from now, unless
+    one is already waiting: a burst of changes renders once. Called with every record event (Business.changed)."""
+    live = getattr(business, 'live_routes', None)
+    if live is None or business.jobs is None or not live.site_watches:
+        return
+    names = live.site_watches.get(business.registry.name_for(model))
+    if not names:
+        return
+    for name in names:
+        payload = json.dumps({'site': name}, separators=(',', ':'))
+        waiting = tx.connection.run(qb.select('evlet_jobs', 'id').where(task=RENDER_TASK, state='queued', payload=payload).limit(1)).one()
+        if waiting is None:
+            business.jobs.enqueue(tx, RENDER_TASK, {'site': name}, run_at=int(time.time()) + DEBOUNCE, system_role='viewer')
+
+
+def render_job(business):
+    """The evlet_site_render task: render one site's collections again (an external task: no transaction is held
+    while it reads records and writes files)."""
+    def run(context, payload):
+        try:
+            record = rerender(business, payload['site'])
+        except ValueError as exc:
+            # A site deleted since, or a collection that no longer renders: the current release stays, and why is logged.
+            logger.warning('Site %s was not rendered again: %s', payload.get('site'), exc)
+            return {'rendered': None, 'error': str(exc)[:500]}
+        return {'rendered': None if record is None else record['release']}
+    return run
+
+
+def register_task(business):
+    if business.jobs is None:
+        return
+    from .jobs import Task
+    business.jobs.tasks.setdefault(RENDER_TASK, Task(RENDER_TASK, render_job(business), max_attempts=1, external=True))
+
+
+# ---------- who manages sites ----------
+
+def manages_sites(business, user):
+    """Whether user may manage the instance's sites: admin, or a desk role with "Manage sites" on (Controls,
+    Roles). It holds for the person's own sessions, their API keys and the AI assistants acting for them."""
+    controls = getattr(business, 'controls', None)
+    if controls is None or user is None or not user.id:
+        return False
+    role = controls.roles.get(user.role)
+    if role is None or role.get('realm') != 'desk':
+        return False
+    return user.role == 'admin' or bool(role.get('manage_sites'))
+
+
+def available(business):
+    """Whether this instance can hold sites at all (an application with sign-in whose database is a file)."""
+    live = getattr(business, 'live_routes', None)
+    return live is not None and live.sites_folder is not None
+
+
+# ---------- HTTP: /api/_sites ----------
+
+def route(business, scope, body, user):
+    """The site routes, for the site tools and the browser. Each needs "Manage sites" (manages_sites).
+
+    GET  /api/_sites                          the sites
+    GET  /api/_sites/<site>/files             the draft's files
+    GET  /api/_sites/<site>/file?path=..[&release=..]   one file's text
+    POST /api/_sites/<site>/files             {"files": {path: text}}: write draft files
+    GET  /api/_sites/<site>/releases          the releases, newest first
+    POST /api/_sites/<site>/publish           {"note": ...}
+    POST /api/_sites/<site>/rollback          {"release": ...} (optional)
+    """
+    from urllib.parse import parse_qs
+    from .auth import AccessError
+    from .models import ValidationError, checked_body
+    if not available(business):
+        raise AccessError(404, 'This instance has no sites')
+    if not manages_sites(business, user):
+        raise AccessError(403, 'Managing sites needs an admin, or a role with "Manage sites" on (Controls, Roles).')
+    method, parts = scope['method'], scope['path'].removeprefix('/api/_sites').split('/')[1:]
+    actor = user.username
+    try:
+        if not parts and method == 'GET':
+            return 200, {'items': list_sites(business)}, []
+        if len(parts) != 2:
+            raise AccessError(404, 'Route not found')
+        site, what = parts
+        _check_name(site)
+        if what == 'files' and method == 'GET':
+            return 200, {'items': list_files(business, site)}, []
+        if what == 'file' and method == 'GET':
+            query = parse_qs(scope.get('query_string', b'').decode('latin-1'), max_num_fields=4)
+            if set(query) - {'path', 'release'} or 'path' not in query or any(len(value) != 1 for value in query.values()):
+                raise ValidationError({'query': 'Use path and, for a release, release'})
+            path, release = query['path'][0], query.get('release', [None])[0]
+            content = read_file(business, site, path, release=release)
+            return 200, file_text(path, content), []
+        if what == 'files' and method == 'POST':
+            checked_body(body, {'files'}, 'Use files: {path: text}', nonempty=True)
+            files = body['files']
+            if not isinstance(files, dict) or not files or len(files) > 500 or any(not isinstance(value, str) for value in files.values()):
+                raise ValidationError({'files': 'Give 1 to 500 files as {path: text}'})
+            return 200, {'items': write_files(business, site, files, actor=actor)}, []
+        if what == 'releases' and method == 'GET':
+            return 200, {'items': list_releases(business, site)}, []
+        if what == 'publish' and method == 'POST':
+            checked_body(body, {'note'}, 'Use note')
+            return 200, publish(business, site, actor=actor, note=body.get('note', '')), []
+        if what == 'rollback' and method == 'POST':
+            checked_body(body, {'release'}, 'Use release')
+            return 200, rollback(business, site, body.get('release'), actor=actor), []
+    except ValueError as exc:
+        if isinstance(exc, ValidationError):
+            raise
+        message = str(exc)
+        raise AccessError(404 if 'is not a site of this instance' in message else 422, message) from None
+    raise AccessError(404 if what not in ('files', 'file', 'releases', 'publish', 'rollback') else 405, 'Route not found')
+
+
+def file_text(path, content):
+    """A site file as a tool reads it: its text, or its size when it isn't UTF-8 text."""
+    try:
+        text = content.decode('utf-8')
+    except UnicodeError:
+        return {'path': path, 'size': len(content), 'text': None, 'note': 'This file is not text.'}
+    return {'path': path, 'size': len(content), 'text': text[:TEXT_LIMIT], 'truncated': len(text) > TEXT_LIMIT}

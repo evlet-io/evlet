@@ -207,6 +207,10 @@ production ready, but the rules below hold from 0.3 on.
   override routes (`/api/_controls/workspaces`), their value format, the `custom` source and the
   role flag `customize_workspaces`, with their answers to people without access: 404, or 403 for
   someone who opens Controls without the flag ([controls.md](controls.md#workspaces)).
+- **Site collections and tools.** The `_site/collections.json` format, the template tags of
+  `evlet.templates`, the `evlet_site_render` job and its debounce, the `/api/_sites` routes, the site
+  tools (`site_list`, `site_files_list`, `site_file_read`, `site_files_write`, `site_publish`,
+  `site_rollback`) and the role flag `manage_sites` ([sites.md](sites.md#collections)).
 
 - **How a state shows.** `State(..., show=...)` takes `"badge"` (the default), `"bar"` or `"none"`,
   and `State.Step(color=...)` and `Select(..., colors=...)` take the badge colours `blue`, `green`,

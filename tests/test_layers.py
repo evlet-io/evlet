@@ -12,11 +12,11 @@ PACKAGE = Path(__file__).resolve().parents[1] / 'evlet'
 # Lowest first.
 LAYERS = {
     'core': 'adapter qb identity fields models declarations expressions calc reactivity currencies richtext naming indexes '
-            'query audit sections periods',
+            'query audit sections periods templates',
     'access': 'auth permissions',
     'data': 'database sqlite migrations ledger writes storage object_storage secrets sequences images',
     'engine': 'documents statemanager guards activity measures unsaved mentions meaning prompts',
-    'web': 'app runtime oidc routing business forms workspaces services events jobs framework devlink discovery search hosts sites',
+    'web': 'app runtime oidc routing business forms workspaces services events jobs framework devlink discovery search hosts sites site_pages',
     'admin': 'controls controls_export controls_system customization settings printing',
     'ai': 'eva tools mcp connector connectors assistants mailboxes',
     'site': 'instances packages builds deployment tenancy serverless testing',

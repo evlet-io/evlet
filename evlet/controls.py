@@ -365,11 +365,20 @@ class Controls:
         self.refresh(force=True)
 
     def refresh(self, force=False):
-        """Rebuild the Policy and settings when another process saved a change (one indexed read)."""
+        """Rebuild the Policy and settings when another process saved a change (one indexed read, or none when
+        this request's hosts check read the version already: evlet.hosts.CONFIG_SEEN)."""
         if not self.ready:
             return
-        with self.database._connection() as connection:
-            version = connection.run(qb.select('evlet_config', 'version').where(id=1)).value()
+        from .hosts import CONFIG_SEEN, REFRESH_SECONDS
+        seen = CONFIG_SEEN.get()
+        if seen is not None:
+            # Used once: a later refresh in this request (after a save, say) reads the row itself.
+            CONFIG_SEEN.set(None)
+        if seen is not None and seen[0] is self.database and time.monotonic() - seen[2] < REFRESH_SECONDS:
+            version = seen[1]
+        else:
+            with self.database._connection() as connection:
+                version = connection.run(qb.select('evlet_config', 'version').where(id=1)).value()
         if version == self.version and not force:
             return
         with self.lock:
@@ -1051,7 +1060,8 @@ class Controls:
             framework_first = qb.when((qb.eq('id', 'admin'), 0), (qb.eq('id', 'editor'), 1), (qb.eq('id', 'viewer'), 2), otherwise=3)
             rows = [dict(row) for row in connection.run(qb.select('evlet_roles').order_by('-kind', framework_first, 'id'))]
         return [{**row, 'opens_controls': bool(row['opens_controls'] or row['id'] == 'admin'),
-                 'customize_workspaces': bool(row['customize_workspaces'] or row['id'] == 'admin'), 'users': counts.get(row['id'], 0),
+                 'customize_workspaces': bool(row['customize_workspaces'] or row['id'] == 'admin'),
+                 'manage_sites': bool(row.get('manage_sites') or row['id'] == 'admin'), 'users': counts.get(row['id'], 0),
                  'app': self.app_roles.get(row['id'], (None,))[0], 'declared': row['id'] in self.file.roles} for row in rows]
 
     def create_role(self, actor, body):
@@ -1079,11 +1089,12 @@ class Controls:
         self.refresh()
 
     def change_role(self, actor, role, body):
-        flags = (('opens_controls', 'Opens Controls'), ('customize_workspaces', 'Customize workspaces'))
+        flags = (('opens_controls', 'Opens Controls'), ('customize_workspaces', 'Customize workspaces'), ('manage_sites', 'Manage sites'))
         refusals = {'opens_controls': ('Admin always opens Controls, so the instance cannot be locked out.', 'Portal roles can never open Controls.'),
-                    'customize_workspaces': ('Admin always customizes workspaces.', 'Portal roles can never customize workspaces.')}
-        checked_body(body, {'opens_controls', 'customize_workspaces', 'description'},
-                     'Use opens_controls, customize_workspaces or description', nonempty=True)
+                    'customize_workspaces': ('Admin always customizes workspaces.', 'Portal roles can never customize workspaces.'),
+                    'manage_sites': ('Admin always manages sites.', 'Portal roles can never manage sites.')}
+        checked_body(body, {'opens_controls', 'customize_workspaces', 'manage_sites', 'description'},
+                     'Use opens_controls, customize_workspaces, manage_sites or description', nonempty=True)
         for flag, _ in flags:
             if flag in body and type(body[flag]) is not bool:
                 raise ValidationError({flag: 'Use true or false'})

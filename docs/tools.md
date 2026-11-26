@@ -25,6 +25,8 @@ it.
 | `create_record`, `update_record` | Write |
 | `change_state` (State moves), `run_action`, `call_service` | Write |
 | `delete_record` | Destructive |
+| `site_list`, `site_files_list`, `site_file_read` | Read; MCP and Eva, with "Manage sites" |
+| `site_files_write`, `site_publish`, `site_rollback` | Write; MCP and Eva, with "Manage sites" |
 
 A tool is listed only when it can apply (an app with reports, actions, documents, files or
 Activity), but listing grants nothing: every call is authorized again by the route it uses.
@@ -55,6 +57,18 @@ A parameter annotated `RecordId` takes a record's text id (`"01hc1sd9vc1ye"`) an
 
 The Playground offers `playground.project_overview` this way.
 
+### Site tools
+
+The instance's sites ([sites.md](sites.md#site-tools-and-manage-sites)) have six tools, for MCP
+clients and Eva only. They are listed only on an instance that can hold sites and only for people
+whose role has **Manage sites** ([controls.md](controls.md#manage-sites)); every call goes to the
+`/api/_sites` routes, which check it again. `site_files_write` takes `{site, files: {path: text}}`
+and writes the draft (the create/change group: an MCP client asks its user, Eva follows its
+settings). `site_publish` `{site, note?}` and `site_rollback` `{site, release?}` change what the
+public sees, so they are in the confirm group and approved in Evlet. `site_file_read`
+`{site, path, release?}` returns stored content, so an Eva chat that used it asks before every
+change after. The log keeps the file paths a write named, never their content.
+
 ## Approvals
 
 Being allowed to make a change does not always mean making it without a click. These are
@@ -65,7 +79,7 @@ levels. For MCP clients:
 | --- | --- |
 | Read, search, totals, files | Run |
 | Create or change a record | Run; the client asks its user |
-| Move a document, app actions, business services | Approved in Evlet |
+| Move a document, app actions, business services, publish or roll back a site | Approved in Evlet |
 | Delete, a move into a final step | Approved in Evlet |
 
 An app action that only opens a prompt (its body is `return SomePrompt` or `return SomePrompt(...)`

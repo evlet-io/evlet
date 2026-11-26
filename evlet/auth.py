@@ -544,6 +544,9 @@ class LocalAuth:
             # Customize workspaces (Controls, Roles): edit the site's workspace overrides. Admin always may.
             if 'customize_workspaces' not in tx.connection.columns('evlet_roles'):
                 tx.connection.add_column('evlet_roles', Column('customize_workspaces', 'INTEGER', required=True), default=0)
+            # Manage sites (Controls, Roles): the instance's sites, through the site routes and tools. Admin always may.
+            if 'manage_sites' not in tx.connection.columns('evlet_roles'):
+                tx.connection.add_column('evlet_roles', Column('manage_sites', 'INTEGER', required=True), default=0)
             # A role's realm decides where its users sign in: desk roles on desk hosts, portal roles on portal hosts.
             for role, realm, description in (('admin', 'desk', 'Full access to every app. Opens Controls.'), ('editor', 'desk', 'Reads and changes records.'),
                                              ('viewer', 'desk', 'Reads records only.'), (PORTAL, 'portal', 'Signs in on portal hosts. Sees only what an app grants.')):

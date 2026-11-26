@@ -18,6 +18,7 @@ Each change is audited (area Hosts) and bumps the version row.
 """
 
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as Late
+from contextvars import ContextVar
 import ipaddress
 import json
 import logging
@@ -52,6 +53,10 @@ CHECK_TASK = 'evlet_host_check'
 CHECK_EVERY = 60
 # How often a process looks at the version row.
 REFRESH_SECONDS = 1.0
+# (database, evlet_config version, monotonic time) read with the hosts version at the start of this request
+# (LiveRoutes.poll), so Controls.refresh in the same request needs no statement of its own: the once-a-second
+# hosts check costs a request no extra statement.
+CONFIG_SEEN = ContextVar('evlet_config_seen', default=None)
 LOOKUP_SECONDS = 5
 SERVER_FILE = 'server.json'
 DNS = ('points here', 'may point here', 'points elsewhere', 'no A or AAAA record')
@@ -149,6 +154,8 @@ class LiveRoutes:
         # Sites ({name: (Frontend, folder of the current release or None)}) that a row's target may name, read
         # from evlet_sites with the hosts (evlet.sites); sites_folder holds their files (build_instance sets it).
         self.sites = {}
+        # {model API name: (site, ...)}: the models the sites' current releases render collections from (evlet.sites.watching).
+        self.site_watches = {}
         path = getattr(application.database, 'path', None)
         self.sites_folder = None if path is None else Path(path).parent / 'sites'
         # The project folder, for the addresses deploy/server.json saved (build_instance sets it).
@@ -166,32 +173,47 @@ class LiveRoutes:
     def refresh(self, force=False):
         """Swap in a new table when the version row moved since the last look. Never raises: a database it
         can't read leaves the current table in place. Returns whether the table changed."""
+        return self._refresh(force)[0]
+
+    def poll(self):
+        """refresh() for the start of a request: also returns (database, evlet_config version, time), read in the
+        same statement as the hosts version, or None (not due, or no such row yet). Application sets CONFIG_SEEN to it."""
+        return self._refresh(False)[1]
+
+    def _refresh(self, force):
         if not force and not self.due():
-            return False
+            return False, None
         self._checked = time.monotonic()
+        seen = None
         with self._lock:
             try:
                 path = getattr(self.database, 'path', None)
                 if path is not None and not path.exists():
-                    return False
+                    return False, None
                 with self.database._connection() as connection:
-                    # One statement each second; before the 0019_hosts step the table is missing, which is no error.
+                    # One statement each second, with the Controls config version; before the 0019_hosts step the
+                    # table is missing, which is no error.
+                    config = qb.select('evlet_config', 'version').where(id=1)
                     try:
-                        version = connection.run(qb.select('evlet_hosts_version', 'version').where(id=1)).value()
+                        row = connection.run(qb.select('evlet_hosts_version', 'version', qb.named(config, 'config')).where(id=1)).one()
                     except OperationalError:
-                        return False
+                        return False, None
+                    version = None if row is None else row[0]
+                    if row is not None and row[1] is not None:
+                        seen = (self.database, row[1], time.monotonic())
                     if version == self._version and not force:
-                        return False
+                        return False, seen
                     rows = connection.run(qb.select('evlet_hosts', 'host', 'target').where(status='active').order_by('host')).all()
-                    from .sites import serving
+                    from .sites import serving, watching
                     sites = serving(connection, self.sites_folder)
+                    watches = watching(sites)
             except Exception:
                 logger.exception('Could not read evlet_hosts; the current route table stays')
-                return False
+                return False, None
             self._version = version
-            self.sites = sites
+            self.sites, self.site_watches = sites, watches
             self.swap([(row['host'], row['target']) for row in rows])
-            return True
+            return True, seen
 
     def swap(self, entries):
         from .routing import authority, with_hosts

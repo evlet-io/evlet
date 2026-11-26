@@ -31,6 +31,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   files in its output should allow it.
 - A response that sets its own `Cache-Control` (the web app manifest, the service worker, a site's pages and
   hashed files) no longer also carries the default `no-store`; every other response keeps `no-store`.
+- **Site collections need no migration.** The role flag **Manage sites** is a new `evlet_roles.manage_sites`
+  column, added on start like `customize_workspaces` (off for every role but admin). A site folder named `_site/`
+  is now the site's sources: it is published with each release and never served. A site that served files
+  from a `_site/` folder before should move them.
+- **The Playground's public role reads finished projects** (title, state, start date and progress) for the news
+  site's collection. An app that copied the Playground's rules gets the same; remove the `('public', Project)`
+  Rule if you don't want it.
+- **A release can be published by `system`.** Each time a record that a site's collections read changes, the
+  `evlet_site_render` job renders the site again into a new release (note `Pages rendered again from ...`),
+  which counts against the newest 10 releases kept.
 
 ### Added
 
@@ -77,6 +87,30 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - `evlet.sites`: `create_site`, `update_site`, `get_site`, `list_sites`, `delete_site`, `write_file`,
   `write_files`, `delete_file`, `list_files`, `read_file`, `publish`, `rollback` and `list_releases`;
   `RouteTable.api_scopes()` lists the API scope ids a site may name.
+- **Site collections** ([docs/sites.md](docs/sites.md#collections)): `_site/collections.json` in a site's draft
+  declares pages, an index page and a JSON file made from a model's records (filter, order, limit, fields,
+  `page` paths such as `/blog/{slug}.html`). They are rendered into the release at publish, reading as the
+  `public` role through the list route's own permission machinery, so only fields the public role reads can
+  appear, and a filter or order on another field refuses the publish. The debounced framework job
+  `evlet_site_render` renders a site again 10 seconds after a model it reads changes, from the current
+  release's own files (never the draft), into a new release; nothing is published when the pages come out the
+  same, and a render never undoes a publish or rollback made meanwhile. `evlet.sites.rerender` and
+  `manages_sites`.
+- **Templates** (`evlet.templates`): a logic-less renderer, standard library only: `{{field}}` (escaped, dotted
+  names into nested data), `{{#each}}`, `{{#if}}`, `{{else}}`, `{{> partial}}` and comments. No expressions,
+  calls, attribute access or raw output, and bounded size, nesting, partial depth, steps and output.
+- **Manage sites** ([docs/controls.md](docs/controls.md#manage-sites)): a Controls role flag (Roles page,
+  `PATCH /api/_controls/roles/<id>` `{"manage_sites": true}`), always on for admin, never for portal roles.
+  It gives the `/api/_sites` routes and the instance MCP and Eva site tools `site_list`, `site_files_list`,
+  `site_file_read`, `site_files_write`, `site_publish` and `site_rollback` ([docs/tools.md](docs/tools.md#site-tools));
+  publish and rollback are approved in Evlet. Everyone else gets 403, and the tools are not listed for them.
+- The Playground's news site lists finished projects from a collection (`/projects/`, `/data/projects.json`).
+
+### Fixed
+
+- The once-a-second check for hosts from data no longer costs a request a statement of its own: it reads the
+  hosts version and the Controls config version in one statement, and Controls uses that version for the same
+  request instead of reading it again. A request whose check was due ran one statement more than the others.
 
 ## 0.4.21 (22-11-2026)
 
