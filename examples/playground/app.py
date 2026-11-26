@@ -23,7 +23,7 @@ from .migrate import configured_database
 from .settings import ProjectPreferences, ProjectSettings
 from .prints import PRINTS, REPORTS as PRINTED_REPORTS
 from .reports import REPORTS
-from .prompts import quick_invoice
+from .prompts import close_period, quick_invoice
 from .workspaces import WORKSPACES
 
 portal = Frontend('portal', kind='static', dist='portal', path='/portal', title='Customer portal', auth='portal', api=('playground.portal',))
@@ -119,7 +119,8 @@ def project_overview(context, project: RecordId):
 
 # Business services offered to AI assistants through the Tool Engine (list_services and call_service).
 SERVICES = (Endpoint('playground.project_overview', project_overview, 'GET', (Project, 'read'), tool=True),
-            Endpoint('playground.quick_invoice', quick_invoice, 'POST', (Invoice, 'create')))
+            Endpoint('playground.quick_invoice', quick_invoice, 'POST', (Invoice, 'create')),
+            Endpoint('playground.close_period', close_period, 'POST', (Invoice, 'update')))
 
 
 def show_currencies(app):

@@ -133,8 +133,9 @@ def unlocked(session, reason):
         session._periods_unlocked = previous
 
 
-def set_lock(connection, scope, value, actor):
-    """Save (value is a date) or clear (None) one lock and write its audit row; returns the earlier date."""
+def save_lock(connection, scope, value, actor, reason=None):
+    """Save (value is a date) or clear (None) one lock and write its audit row; returns the earlier date.
+    The Periods page and set_lock() both write through it. A reason is added to the audit detail."""
     from .controls import audit
     import time as clock
     row = connection.run(qb.select('evlet_period_locks', 'lock_date').where(scope=scope)).one()
@@ -148,6 +149,62 @@ def set_lock(connection, scope, value, actor):
         changed_at = int(clock.time())
         connection.run(qb.insert('evlet_period_locks', scope=scope, lock_date=after, changed_by=actor.id, changed_at=changed_at)
                        .on_conflict('scope').do_update(lock_date=after, changed_by=actor.id, changed_at=changed_at))
-    audit(connection, actor.username, 'Periods', scope or 'All records', 'Opened' if after is None else 'Locked up to ' + value.strftime('%d-%m-%Y'),
+    detail = 'Opened' if after is None else 'Locked up to ' + value.strftime('%d-%m-%Y')
+    audit(connection, actor.username, 'Periods', scope or 'All records', detail if reason is None else f'{detail}: {reason[:500]}',
           before, after)
     return before
+
+
+# ---------- the public API: evlet.periods.lock_date and evlet.periods.set_lock ----------
+
+def scope_of(context, model, scope_id):
+    """(session, lock key) for a model with Meta.period and an optional record of its Meta.period_scope target."""
+    session = getattr(context, '_tx', context)
+    if not hasattr(session, 'connection') or not hasattr(session, 'registry'):
+        raise ValueError('Pass a document context (business.context(user), self.context) or a transaction session')
+    registry = session.registry
+    model = registry.resolve(model)
+    period = registry.periods.get(model)
+    if period is None:
+        raise ValueError(f'{model.__name__} has no Meta.period')
+    if scope_id is None:
+        return session, ''
+    if period.scope is None:
+        raise ValueError(f'{model.__name__} has no Meta.period_scope, so its periods have one lock: pass scope_id=None')
+    from .identity import RecordId
+    target = model.__fields__[period.scope].target
+    try:
+        record_id = RecordId(scope_id)
+    except (TypeError, ValueError):
+        raise ValidationError({'scope': 'Use a record id'}) from None
+    if session.connection.run(qb.select(registry.name_for(target), 'id').where(id=record_id)).one() is None:
+        raise ValidationError({'scope': f'No {target.__name__} has that id'})
+    return session, scope_key(registry, target, record_id)
+
+
+def lock_date(context, model, scope_id=None):
+    """The lock date that applies to records of `model` (a model with Meta.period) in one scope: the later of the
+    instance lock and the lock of the scope record `scope_id` (a record of its Meta.period_scope Link's target).
+    scope_id=None reads the instance lock alone. None when no period is closed. `context` is a document context
+    (business.context(user), self.context) or a transaction session. Reading a lock needs no permission."""
+    session, key = scope_of(context, model, scope_id)
+    locks = saved(session)
+    dates = [locks.get('')] + ([locks.get(key)] if key else [])
+    return max((item for item in dates if item is not None), default=None)
+
+
+def set_lock(context, model, scope_id, date, reason=None):
+    """Close every period of `model` on or before `date` for one scope (scope_id None: every record), or open them
+    all with date=None. Trusted code only (an action, a job, a script); a caller served over HTTP is refused. It
+    writes the same lock and audit row as Controls, Periods, with the reason, in the context's transaction. Moving
+    a lock earlier or clearing it reopens closed periods, which only an admin may do, as on the page. Returns the
+    scope's earlier lock date (None when it had none).
+
+    The 0.4.21 internal form set_lock(connection, scope_key, date, actor) still works, with a DeprecationWarning."""
+    if hasattr(context, 'run') and not hasattr(context, 'connection') and not hasattr(context, '_tx'):
+        import warnings
+        warnings.warn('set_lock(connection, scope, date, actor) is deprecated: call '
+                      'evlet.periods.set_lock(context, model, scope_id, date, reason)', DeprecationWarning, stacklevel=2)
+        return save_lock(context, model, scope_id, date)
+    from .controls import set_period_lock
+    return set_period_lock(context, model, scope_id, date, reason)

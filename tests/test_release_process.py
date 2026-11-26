@@ -7,7 +7,7 @@ import pytest
 
 from evlet import Database, Date, Decimal, Link, Model, Registry, State, Text, ValidationError, release, state, validate
 from evlet.calc import F
-from evlet.periods import set_lock
+from evlet.periods import save_lock
 from evlet.auth import User
 from evlet.identity import RecordId
 from support import client
@@ -110,7 +110,7 @@ def test_moves_within_the_release_make_no_release_snapshot_or_recalculation(bill
 def test_moves_within_the_release_pass_a_closed_period_but_edits_there_are_refused(bills):
     app, c, url, record_id = bills
     with app.database.transaction() as tx:
-        set_lock(tx.connection, '', date(2026, 1, 31), ADMIN)
+        save_lock(tx.connection, '', date(2026, 1, 31), ADMIN)
     assert move(c, url, 'overdue')[0] == 200
     assert move(c, url, 'pay', {'paid_note': 'cash'})[0] == 200
     status, body, _ = c('PATCH', url, {'paid_note': 'changed'}, headers=etag(c, url))

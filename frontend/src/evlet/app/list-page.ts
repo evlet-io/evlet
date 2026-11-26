@@ -31,6 +31,7 @@ import { can, type FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
+import { openImport } from './import-dialog';
 import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureView, MEASURE_TONES, LIST_KEYS, lockedColor, trendValues, numberField, screenModel, stateLook, stepLabel, stepOf, titleOf, type ScreenModel } from './meta';
 import { RecordPage, type PanelHost } from './record-page';
 import { SCREEN_KEYS, useShortcuts } from './shortcuts';
@@ -331,6 +332,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     // Reports declared for this model (Report.model) open from here.
     reportsFor(ctx, name).length ? MenuButton({ label: 'Reports', icon: REPORT_ICON, hideLabelOnPhone: true, menuLabel: `${model.label} reports`,
       items: reportsFor(ctx, name).map(report => ({ label: report.label, icon: REPORT_ICON, tint: 'rose' as const, onSelect: () => void router.go('report', { report: report.name }) })) }) : null,
+    // Meta.importable, for a role that may create: Import (CSV) checks the file, then creates every record or none.
+    canCreate && ctx.schema.model(name)?.importable ? Button({ label: 'Import', icon: 'upload', hideLabelOnPhone: true,
+      onClick: () => void openImport(ctx, name, model.plural, refresh) }) : null,
     canCreate ? newButton() : null,
   ].filter(Boolean) as Child[] });
 

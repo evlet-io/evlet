@@ -7,7 +7,7 @@ import pytest
 from evlet import (Application, Boolean, Currency, Database, Date, DateTime, Link, Model, Reference,
                    Registry, Rule, State, Text, ValidationError, release)
 from evlet.auth import AccessError, LocalAuth, User
-from evlet.periods import set_lock
+from evlet.periods import save_lock
 from finite_fixtures import FiniteMeta
 from support import PASSWORD, client, http
 from test_rules_types import ALL
@@ -110,7 +110,7 @@ def books(tmp_path):
 
 def lock(app, value, scope=''):
     with app.database.transaction() as tx:
-        set_lock(tx.connection, scope, value, ADMIN)
+        save_lock(tx.connection, scope, value, ADMIN)
 
 
 def etag(c, url):

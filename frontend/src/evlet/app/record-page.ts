@@ -101,6 +101,15 @@ function initialValues(model: ScreenModel, query: Record<string, string>) {
   return values;
 }
 
+/** The person's last saved values of the model's remember=True fields; none when the server has none or fails. */
+async function rememberedValues(ctx: AppContext, model: ScreenModel): Promise<Record<string, unknown>> {
+  if (!model.fields.some(field => field.remember)) return {};
+  try {
+    const values = await ctx.api.remembered(model.name);
+    return Object.fromEntries(Object.entries(values).filter(([name]) => { const meta = fieldOf(model, name); return meta && !meta.read_only && !meta.hidden; }));
+  } catch { return {}; }
+}
+
 /**
  * What a list gives a record it opens in its side panel. The address stays the list's, with the
  * record in `?open=`.
@@ -170,7 +179,10 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
     try {
       if (isNew) {
         const addressed = initialValues(model, query);
-        await store.create({ ...addressed, ...(prefill?.values ?? {}), ...(duplicate?.values ?? {}) });
+        // remember=True fields start with what this person saved last; the address, an outcome and a copy win.
+        const remembered = !duplicate && !prefill ? await rememberedValues(ctx, model) : {};
+        if (!alive) return;
+        await store.create({ ...remembered, ...addressed, ...(prefill?.values ?? {}), ...(duplicate?.values ?? {}) });
         // Copied values count as the person's own: the form is dirty from the start, and leaving keeps or asks.
         if (duplicate) for (const field of Object.keys(duplicate.values)) if (store.root.fields.has(field)) store.root.field(field).touched = true;
         // A copy, or values from the address, start with what the server's derive() sets worked out once, before the

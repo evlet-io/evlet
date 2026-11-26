@@ -1326,6 +1326,115 @@ with business.context(user) as context, context.unlocked_periods("Fix a mistyped
     context.update(Invoice, invoice_id, posting_date="2026-03-11")
 ```
 
+### Reading and setting locks from code
+
+Trusted code reads the lock that applies, and sets one, with `evlet.periods` (0.4.22). A month-end action or a job
+closes periods without anyone opening Controls:
+
+```python
+from datetime import date
+from evlet import periods
+
+periods.lock_date(context, Invoice)                       # the instance lock, or None
+periods.lock_date(context, Invoice, company_id)           # the later of the instance lock and that company's lock
+
+class Closing(Model):
+    @action
+    def close(self):
+        periods.set_lock(self.context, Invoice, self.company, self.up_to, "Month end closing")
+```
+
+`lock_date(context, model, scope_id=None)` takes a document context (`business.context(user)`, `self.context`) or a
+transaction session. `model` has `Meta.period`; `scope_id` is a record of its `Meta.period_scope` Link's target, or
+None for the instance lock. It returns a `datetime.date` or None. Reading a lock needs no permission.
+
+`set_lock(context, model, scope_id, date, reason)` saves the lock of one scope (`date=None` opens every period of it)
+in the context's transaction and returns the scope's earlier lock date. It writes the same `evlet_period_locks` row
+and the same audit row as the [Periods page](controls.md#periods), area `Periods`, with the reason after the detail
+(`"Locked up to 31-03-2026: Month end closing"`), and the next write in the transaction sees the new lock. It
+follows the page's rules:
+
+- Trusted code only: an action, a prompt's `submit()`, a state hook, a job, a script, or code inside
+  `evlet.trusted()`. A caller served over HTTP (a route, a tool, MCP) is refused with 403.
+- Moving a lock later needs no role. Moving it earlier or opening it reopens closed periods, so only a user with
+  the admin role may: anyone else gets 403 (`Only an admin can move a period lock earlier or open closed periods`).
+- The reason is required. A read-only context, a `datetime` in place of a date, a model without `Meta.period`, a
+  `scope_id` on a model without `Meta.period_scope` and a scope record that does not exist are refused.
+- Locks are not records, so no Activity entry is written; the audit row is the history, as on the page.
+
+The 0.4.21 internal form `set_lock(connection, scope_key, date, actor)` still works, with a `DeprecationWarning`;
+`evlet.periods.save_lock` is its new name.
+
+## Remembered values
+
+`remember=True` on a field makes a new record's form suggest the value this person last saved in it, for that
+model: the supplier they always buy from, the currency they always pay in. It works on Link, Select and the plain
+field types (text, numbers, dates, Booleans, tags).
+
+```python
+class Payment(Model):
+    currency = Select(CURRENCIES, required=True, default="AED", remember=True)
+    supplier = Link(Supplier, remember=True)
+    terms = Integer(initial=F("supplier.terms"), remember=True)
+```
+
+- Every create and update a person saves over HTTP keeps the saved value in `evlet_user_prefs` (scope `remember`,
+  key `<model>.<field>`), in the save's transaction. An empty value forgets it. Saves through an API key, and
+  writes from Python, keep nothing.
+- `GET /api/<model>/remembered` answers `{"values": {field: value}}`: the person's kept values of the fields they
+  may still write, still valid for the field, and for a Link only a record they can still read. A role that cannot
+  create gets `{}`. The schema marks such fields `"remember": true`.
+- The browser fills a new record with them before it shows the form, like values in the address. The address, an
+  outcome's values and a Duplicate's copy win over them; a field's `default=` and `initial=` apply when the person
+  has no remembered value. A remembered value is a suggestion: the server checks it on save like any other.
+- `remember=True` is refused on calculated, fetched, virtual and read-only fields, Sequences, States, Images and
+  AnyLinks.
+
+## CSV import
+
+`Meta.importable = True` lets people create a model's records from a CSV file (0.4.22). It is opt-in: a model
+without it has no import route and no Import button.
+
+```python
+class Customer(Model):
+    class Meta:
+        importable = True
+```
+
+A model's list then shows **Import** to a role that may create it. The person picks a file, maps its columns to
+fields (the columns that match a field's label or name, and the mapping they saved last, are filled in), **Check**s
+it and then **Import**s it. A Table's columns map as `children.<table>.<field>`; with a **key column**, rows that
+share a key are one record and each row adds its Table rows, and a row with a blank key continues the record above
+it.
+
+| Route | Does |
+| --- | --- |
+| `GET /api/<model>/import` | `{model, label, columns, saved, limits}`: what a column can fill for this person (`path`, `label`, `type`, `required`, `table`, `target`, `options`) and their saved mapping |
+| `POST /api/<model>/import/check` | A dry run: `{csv, mapping, key, save_mapping}`. Every record is created and checked in a transaction that rolls back |
+| `POST /api/<model>/import` | The same body, plus `all_or_nothing` (default true): create every record in one transaction |
+
+Both POST routes answer `{dry_run, records, rows, valid, created, ids, errors, error_csv}`: 201 when records were
+created, else 200 with the errors (`[{line, column, message}]`, line 1 being the header) and `error_csv`, the
+failing records' rows with an `Error` column, ready to fix and import again. A body the route cannot read (no
+header, an unknown column or field, a field mapped twice) is a 422.
+
+- **The same create as a form.** Each record goes through `POST /api/<model>`'s pipeline as the person: create
+  permission, field write rules (a field they cannot write is not offered and is refused in a mapping), naming,
+  Controls rules, `@validate`, `derive()`, required Tables and unique values. A dry run runs all of it and writes
+  nothing: sequence numbers, Activity, jobs and events roll back with the transaction.
+- **All or nothing.** By default one failing record means nothing is created. `all_or_nothing: false` creates the
+  records that pass, each in its own savepoint.
+- **Cells.** A blank cell leaves the field to its default. Whole numbers may have thousands separators; Booleans are
+  yes/no, true/false or 1/0; dates are `2026-03-31` or `31-03-2026`. A Link cell is a record id, or the name or
+  title of exactly one record the person can read; none or several is an error on that row.
+- **Saved mappings.** `save_mapping: true` keeps the mapping and key for this person and model in
+  `evlet_user_prefs` (scope `import`), even on a dry run.
+- **Limits.** 2,000,000 characters (the JSON body may be 4 MiB on these routes, and `evlet proxy` sets nginx to
+  match), 5,000 rows, 1,000 records, 200 columns. Models with `Meta.api` other than `"full"`, ledger models and
+  Table row models cannot be importable.
+
+The Playground's Customer and Expense lists import CSV files.
+
 ## Explicit migrations
 
 Startup creates a fresh database or verifies an existing schema. It does not

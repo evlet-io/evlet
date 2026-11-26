@@ -15,6 +15,8 @@ export interface FieldSchema {
   required: boolean;
   read_only: boolean;
   hidden?: boolean;
+  /** remember=True: a new record suggests the person's last saved value (GET /api/<model>/remembered). */
+  remember?: boolean;
   help_text?: string;
   /** The fields help_text names, as "per {uom}" names uom ({parent.currency}: a field of the record that owns a
    * Table row). The browser fills them in as the values change; a Table row shows such help as subtext. */
@@ -169,6 +171,8 @@ export interface ModelSchema {
   children?: ChildSchema[];
   actions?: ActionSchema[];
   permissions?: { create: boolean; update: boolean; delete: boolean };
+  /** Meta.importable, for a role that may create: the list offers Import (CSV). */
+  importable?: boolean;
   /** "read" when the model's Meta.api is "read": no screen offers a write, for any role. Absent means "full". */
   api?: 'read';
   child_only?: boolean;
@@ -252,6 +256,10 @@ export type WorkspaceItem = { /** Replaces the kind's icon (Shortcut(icon=...)).
 /** A report column: its type, and for a link column the model its values open. */
 export interface ReportColumn { name: string; type: 'text' | 'integer' | 'decimal' | 'currency' | 'date' | 'boolean' | 'link'; label: string | null;
   link: string | null; total: boolean; unit: string | null;
+  /** The unit is worked out per run from the filters (Ref or callable): the page's `units` names it. */
+  unit_from_filters?: boolean;
+  /** Drill down: each cell opens this report, its filters from the row's columns (or this report's filters). */
+  report?: string; filters?: Record<string, string>;
   /** 'model.field' the column reads: hidden from people who cannot read that field; a Select there gives the cell its labels. */
   source?: string | null }
 

@@ -246,6 +246,7 @@ def test_nginx_upload_envelopes_cover_application_limits():
         ('~ ^/api/.*/(attachments|_images)$', '/api/model/_images'),
         ('~ ^/api/_controls/prints', '/api/_controls/prints'),
         ('~ ^/api/_unsaved/', '/api/_unsaved/item'),
+        ('~ ^/api/[^/]+/import(/check)?$', '/api/model/import'),
         ('/', '/api/model'),
     ):
         block = text.split(f'location {match} {{', 1)[1].split('    }', 1)[0]

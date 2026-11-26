@@ -41,10 +41,11 @@ class InvoiceRegister(Report):
 
 An application assembled in Python without an app package passes its reports itself:
 `Application(database, auth=auth, reports=(InvoiceRegister,))`, and the report keeps its
-class name, `InvoiceRegister`. The Playground is built that way and has three: **Invoice register** (a list with sorting and totals), **Invoices by
-customer** (the register grouped by customer, with subtotals) and **Sales by customer** (one row
-per customer, with a chart, run as it opens). See
-`examples/playground/reports.py`.
+class name, `InvoiceRegister`. The Playground is built that way. Its reports include **Invoice register** (a list with sorting and totals),
+**Invoices by customer** (the register grouped by customer, with subtotals), **Sales by customer** (one row
+per customer, with a chart, run as it opens; each customer drills down to the register), **Customer statement**
+(a total in the chosen customer's currency, `unit=Ref('customer.currency')`) and **Points by customer**
+(`trusted = True`, read from the points ledger). See `examples/playground/reports.py`.
 
 ## What a report declares
 
@@ -60,6 +61,7 @@ per customer, with a chart, run as it opens). See
 | `chart` | `None` | A `Chart` drawn above the rows |
 | `export` | `True` | Offer Export (CSV) |
 | `group_by` | `None` | A column whose rows stay together, with a heading and a subtotal for each group |
+| `trusted` | `False` | `True` gives `run()` a read-only transaction session, `self.context.session`, that reads any model without the person's rules ([below](#trusted-reads)) |
 
 These names (and `group_by`) cannot also be filter fields. Filters are the report's own fields: any field type,
 with defaults, `required`, `Ref` filters on Links and `visible_if`, `required_if`, `read_only_if`
@@ -68,15 +70,16 @@ that is not `autorun`. Filters do not run finite expressions yet: a filter that 
 `F(...)` in `compute`, `initial`, `applies_when`, `required_when` or `locked_when` is refused when
 the class is defined, with a message that names the field. Use the string rules for now.
 
-`Column(name, type='text', label=None, link=None, total=False, unit=None, source=None)`:
+`Column(name, type='text', label=None, link=None, total=False, unit=None, source=None, report=None, filters=None)`:
 
 | Option | Meaning |
 | --- | --- |
 | `type` | `text`, `integer`, `decimal`, `currency`, `date`, `boolean` or `link`. Every cell is cleaned through it |
 | `link` | For a `link` column, the model its values open (`'invoice'`). The cell shows the record's title |
 | `total` | Total this number column. Needs `unit`, the one currency or unit all its values share |
-| `unit` | A currency code (`'AED'`) prints as money, with the site's symbol ([controls.md](controls.md#currencies)); any other text follows the number. CSV keeps the plain number and names the code in the header, `Total (AED)` |
+| `unit` | Text, `Ref('filter.field')` or a callable, worked out per run ([below](#a-unit-from-the-filters)). A currency code (`'AED'`) prints as money, with the site's symbol ([controls.md](controls.md#currencies)); any other text follows the number. CSV keeps the plain number and names the code in the header, `Total (AED)` |
 | `source` | `'model.field'`: the column, its values and its total are left out for anyone who cannot read that field |
+| `report`, `filters` | A drill down: each cell links to the report named `report`, its filters set by `filters`, `{'<that report's filter>': '<this row's column, or this report's filter>'}` ([below](#drill-down)) |
 
 `Chart(type, x, y, label=None)`: `type` is `bar` or `line`, `x` a column for the labels and `y`
 one to four number columns. It draws the rows on the current page. The same class with `model=`
@@ -116,6 +119,67 @@ never names the hidden model: `model` and the `link` of a link column on it are 
 shows ids as plain text, and a column `source` on it is not hidden by field rules. Choose `roles`
 with that in mind. A model with `Meta.api = "read"` reads like any other; the Playground's
 `LedgerBalances` report totals its read-only ledger.
+
+### Trusted reads
+
+`run()` reads through `self.context` with the person's role, row scope and field rules, even on a ledger model.
+A report over a ledger that only an accountant role may open, run by people who may see its totals, sets
+`trusted = True` (0.4.22). Its `run()` then also gets `self.context.session`: the transaction session read only
+(`get`, `list`, `count`, `related`, `aggregate`, as `derive()` gets it), which reads every model and row without
+the person's rules. Without `trusted`, `self.context.session` is refused (403).
+
+```python
+class TrialBalance(Report):
+    roles = ('admin', 'editor')
+    trusted = True
+    columns = (Column('account', type='link', link='account'), Column('balance', type='currency', total=True, unit='AED'))
+
+    def run(self):
+        rows = self.context.session.aggregate(GLEntry, measures={'balance': Sum('amount')}, group_by=('account',))
+        return {'rows': rows[self.context.offset:self.context.offset + self.context.limit], 'total': len(rows)}
+```
+
+The report is still a caller-facing route: only its `roles` list and run it, it returns only its columns, and a
+column `source` still hides the column from people who cannot read that field. Choose `roles` with that in mind.
+`evlet.trusted()` (exported in 0.4.22, from `evlet.permissions`) is the other half: inside a request, it runs app
+code as trusted Python, so `Meta.api` does not limit it. Report `run()`, actions, prompts and services already run
+that way; a query function or helper called from a request wraps its reads in `with trusted():` when it must read a
+model with `Meta.api = None`. It never lifts role rules: that is what `Report.trusted` is for.
+
+### A unit from the filters
+
+A total needs one unit. A report filtered to one company can total money in that company's currency:
+
+```python
+class CompanyLedger(Report):
+    company = Link(Company)
+    columns = (Column('account'), Column('amount', type='currency', total=True, unit=Ref('company.currency')))
+```
+
+`Ref('company.currency')` reads the `company` filter and, through the Link, the company's `currency` field, with the
+person's permissions; each hop but the last is a Link. A callable gets the report with its filters and returns the
+text, or None: `unit=lambda report: report.context.get(Company, report.company).currency if report.company else None`.
+The unit is worked out once per run. The catalog sends such a column with `"unit": null` and `"unit_from_filters":
+true`; the page answers `"units": {"amount": "KWD"}`, the CSV header says `Amount (KWD)` and the amounts keep that
+currency's places. When the unit is None (no company chosen, or one the person cannot read), the column has no
+total and no subtotals for that run, since its amounts may be in different currencies. A wrong path fails when the
+application is built.
+
+### Drill down
+
+`Column(report=..., filters=...)` links each cell to another report, run with filters from the row:
+
+```python
+Column('account', type='link', link='account', report='AccountLines',
+       filters={'account': 'account', 'from_date': 'from_date', 'to_date': 'to_date'})
+```
+
+Each key is a filter of the linked report; each value is a column of this report, read from the row, or, when no
+column has that name, one of this report's filters, as this run used it. The cell opens
+`/reports/AccountLines?account=…&from_date=…`, and reports read their filters from the address, so the linked
+report opens with them and runs. The link shows only to people who may run the linked report; for anyone else the
+cell is plain. An unknown report or filter name fails when the application is built. In an app, name the report as
+`/reports/` does (`sales.AccountLines`).
 
 ### Reports over a ledger model
 

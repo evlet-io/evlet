@@ -4,6 +4,57 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## 0.4.22 (unreleased)
+
+### Upgrading to 0.4.22
+
+- **No migrations, no renamed public names; apps keep working.** Everything below is opt-in: a model without
+  `Meta.importable`, a field without `remember=True` and a report without `trusted`, a Ref or callable `unit`, or
+  `report=` on a column behave as in 0.4.21.
+- **`evlet.periods.set_lock` is now the public API** `set_lock(context, model, scope_id, date, reason)`. The 0.4.21
+  internal form `set_lock(connection, scope_key, date, actor)` still works with a `DeprecationWarning`; code that
+  wrote locks that way calls the new form, or `evlet.periods.save_lock` (its new name) for the raw write.
+- **A report's print runs `run()` as trusted code**, as its page and export always did, so a report printed through
+  a print design reads a `Meta.api = None` model the same way on screen and on paper.
+- **Reverse proxies.** `/api/<model>/import` and `/api/<model>/import/check` take bodies up to 4 MiB. `evlet proxy`
+  writes the nginx location for them; regenerate an nginx file written by an earlier version, or raise
+  `client_max_body_size` for those paths by hand. Caddy needs no change.
+- **Field arguments.** `Field` takes `remember=False` and `Column` takes `report` and `filters` after `source`;
+  positional callers are unaffected (`Column` keeps its first seven positions). `tests/fixtures/public-api.json`
+  records the new signatures, `evlet.trusted` and `evlet.periods`.
+
+### Added
+
+- **Period locks from code.** `evlet.periods.lock_date(context, model, scope_id=None)` reads the lock that applies
+  (the later of the instance lock and the scope record's), and `evlet.periods.set_lock(context, model, scope_id,
+  date, reason)` sets one from trusted code with the Periods page's rules: it writes the same lock and audit row
+  (the reason follows the detail), refuses a caller served over HTTP, and only an admin moves a lock earlier or
+  opens it. `evlet.periods` is exported from `evlet`. The Playground's **Close invoices** prompt uses it
+  ([docs/model-engine.md](docs/model-engine.md#reading-and-setting-locks-from-code)).
+- **Trusted reads in reports.** `Report.trusted = True` gives `run()` a read-only transaction session,
+  `self.context.session`, that reads ledgers and other models the runner's own rules close to them; the report's
+  roles still decide who runs it. `evlet.trusted()` (from `evlet.permissions`) is exported for app code a request
+  calls. The Playground's **Points by customer** reads the points ledger this way
+  ([docs/reports.md](docs/reports.md#trusted-reads)).
+- **A total's unit from the filters.** `Column(total=True, unit=Ref('company.currency'))`, or a callable that gets the
+  report, works the unit out per run; the page answers `units`, the CSV header and money places follow it, and a run
+  without a common unit shows no total for the column. The Playground's **Customer statement** totals in the chosen
+  customer's currency ([docs/reports.md](docs/reports.md#a-unit-from-the-filters)).
+- **Report drill down.** `Column(report='<report>', filters={'<its filter>': '<this column or filter>'})` links each
+  cell to another report with filters from the row; reports keep reading their filters from the address. The link
+  shows only to people who may run the target. **Sales by customer** opens the **Invoice register** for a customer
+  ([docs/reports.md](docs/reports.md#drill-down)).
+- **Remembered values.** `remember=True` on a field: a new record's form suggests the value the person last saved
+  there, kept per person in `evlet_user_prefs`; `initial=` and `default=` apply when they have none
+  (`GET /api/<model>/remembered`). The Playground's Payment remembers its currency
+  ([docs/model-engine.md](docs/model-engine.md#remembered-values)).
+- **CSV import.** `Meta.importable = True` (opt-in) adds Import to a model's list and `GET /api/<model>/import`,
+  `POST /api/<model>/import/check` (a dry run that writes nothing) and `POST /api/<model>/import`: map columns to
+  fields (`children.<table>.<field>` for Table rows, a key column groups rows into one record), check every record
+  through the same create pipeline as the form, then create them all in one transaction or none, with an error CSV
+  of the failing rows. Mappings can be saved per person. The Playground imports customers and expenses
+  ([docs/model-engine.md](docs/model-engine.md#csv-import)).
+
 ## 0.4.21 (22-11-2026)
 
 ### Upgrading to 0.4.21

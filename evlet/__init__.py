@@ -24,10 +24,13 @@ __all__ = [
 ]
 
 from .auth import LocalAuth, OIDC, User
-from .permissions import Hierarchy, Policy, Rule, any_of, own_customer
+from .permissions import Hierarchy, Policy, Rule, any_of, own_customer, trusted
 from .business import ChildTable
 
 __all__ += ["ChildTable", "Hierarchy", "LocalAuth", "OIDC", "Policy", "Rule", "User", "any_of", "own_customer"]
+# 0.4.22: trusted() runs app code a request calls as trusted Python; evlet.periods reads and sets period locks.
+from . import periods
+__all__ += ["periods", "trusted"]
 
 from .storage import LocalFileStorage, SQLiteStorage, StorageError
 

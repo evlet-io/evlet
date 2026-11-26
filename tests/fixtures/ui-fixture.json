@@ -298,6 +298,7 @@
         "update": true,
         "delete": true
       },
+      "importable": true,
       "child_only": false,
       "children": [],
       "actions": [
@@ -1084,6 +1085,7 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "remember": true,
           "default_kind": "static",
           "default": "AED",
           "stored": true,
@@ -10773,6 +10775,7 @@
         "update": true,
         "delete": true
       },
+      "importable": true,
       "child_only": false,
       "children": [
         {

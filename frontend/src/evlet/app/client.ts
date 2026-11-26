@@ -195,6 +195,23 @@ export class AppClient extends ApiClient {
     return (await this.request<Attachment>('POST', `/api/${model}/${id}/prints/${encodeURIComponent(design)}/file`)).data;
   }
 
+  /** The values a new record suggests to this person: their last saved value of each remember=True field. */
+  async remembered(model: string, signal?: AbortSignal) {
+    if (!NAME.test(model)) return {};
+    return (await this.request<{ values: Record<string, unknown> }>('GET', `/api/${model}/remembered`, { signal })).data.values;
+  }
+
+  /** CSV import (Meta.importable): what a CSV can fill, then a dry run (check) or the import. A file the server
+   * read answers with its errors and error CSV; nothing is created while any record fails (all or nothing). */
+  async importInfo(model: string) {
+    if (!NAME.test(model)) throw new Error('Unknown model');
+    return (await this.request<ImportInfo>('GET', `/api/${model}/import`)).data;
+  }
+  async importCsv(model: string, body: ImportBody, dryRun: boolean) {
+    if (!NAME.test(model)) throw new Error('Unknown model');
+    return (await this.request<ImportResult>('POST', `/api/${model}/import${dryRun ? '/check' : ''}`, { body })).data;
+  }
+
   /** Check a report's filters without running it (POST /api/_reports/{name}/evaluate). */
   async evaluateReport(name: string, filters: Record<string, unknown>, revision: number) {
     return (await this.request<ReportCheck>('POST', `/api/_reports/${reportName(name)}/evaluate`, { body: { filters, revision } })).data;
@@ -255,7 +272,18 @@ export interface ReportCheck { values: Record<string, unknown>; errors: Record<s
 export interface ReportPage { rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number; sort: string | null;
   totals?: { scope: 'all' | 'page'; values: Record<string, string | null> }; filters: Record<string, unknown>; revision?: unknown;
   /** With Report.group_by: the groups on this page with their row count and totals (of every row, or of the page). */
-  groups?: { scope: 'all' | 'page'; items: Array<{ value: unknown; count: number; totals: Record<string, string | null> }> } }
+  groups?: { scope: 'all' | 'page'; items: Array<{ value: unknown; count: number; totals: Record<string, string | null> }> };
+  /** The units of columns whose unit comes from the filters, for this run (null: no common unit, no total). */
+  units?: Record<string, string | null> }
+
+/** GET /api/<model>/import: the columns a CSV can fill and the person's saved mapping. */
+export interface ImportColumn { path: string; label: string; type: string; required: boolean; table?: string; target?: string; options?: string[] }
+export interface ImportInfo { model: string; label: string; columns: ImportColumn[]; saved: { mapping: Record<string, string>; key: string | null } | null;
+  limits: { characters: number; rows: number; records: number } }
+/** A dry run's or an import's answer. */
+export interface ImportResult { dry_run: boolean; records: number; rows: number; valid: number; created: number; ids: string[];
+  errors: Array<{ line: number; column: string | null; message: string }>; error_csv: string | null }
+export interface ImportBody { csv: string; mapping: Record<string, string>; key?: string | null; save_mapping?: boolean; all_or_nothing?: boolean }
 
 /** An activity entry (docs/activity.md). `actor` is a user id, or null for the engine; `partial` marks an entry
  * the caller sees only in part; `done` is set on follow ups (the completing entry's id, or null). */

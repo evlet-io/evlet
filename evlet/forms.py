@@ -1,6 +1,6 @@
 """Reports: bounded, filtered result pages built by trusted Python."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field as attribute, replace
 import json
 import re
 
@@ -20,13 +20,31 @@ class Column:
     label: str | None = None
     link: str | None = None
     total: bool = False
-    unit: str | None = None
+    # Text ('AED', 'kg'), or worked out per run from the report's filters: Ref('company.currency') reads a filter
+    # (through its Link), a callable gets the report with its filters and returns the text. None leaves the
+    # column without a unit for that run, and a total over it is left out.
+    unit: object = attribute(default=None, hash=False)
     # 'model.field' (the model's route name): the column is left out for anyone who cannot read that field.
     source: str | None = None
+    # Drill down: each cell links to another report, its filters set from this row's columns (or, when no column
+    # has the name, from this report's filters): filters={'account': 'account', 'from_date': 'from_date'}.
+    report: str | None = None
+    filters: object = attribute(default=None, hash=False)
 
     def __post_init__(self):
         from .models import identifier
+        from .declarations import Ref
         identifier(self.name)
+        if self.unit is not None and not (isinstance(self.unit, str) and self.unit or isinstance(self.unit, Ref) or callable(self.unit)):
+            raise ValueError("A column unit is text, Ref('filter.field') or a callable that returns the text")
+        if self.report is not None and (not isinstance(self.report, str) or not self.report):
+            raise ValueError('A column report names a registered report')
+        if self.filters is not None:
+            if self.report is None:
+                raise ValueError('Column filters go with report=: they fill the linked report\'s filters')
+            if not isinstance(self.filters, dict) or not all(isinstance(key, str) and isinstance(value, str) for key, value in self.filters.items()):
+                raise ValueError("Column filters map the linked report's filter to this report's column or filter: {'account': 'account'}")
+            object.__setattr__(self, 'filters', dict(self.filters))
         if self.source is not None and (not isinstance(self.source, str) or self.source.count('.') != 1):
             raise ValueError("A column source is 'model.field'")
         if self.type not in ('text', 'integer', 'decimal', 'currency', 'date', 'boolean', 'link'):
@@ -89,6 +107,9 @@ class Report(Model):
     chart = None
     export = True
     group_by = None  # A column whose rows are kept together, with a subtotal under each group.
+    # True: run() also gets self.context.session, a read-only transaction session that reads any model without the
+    # person's role, row and field rules (a ledger they cannot open). The report's roles still decide who runs it.
+    trusted = False
     __transient__ = True
 
     def __init_subclass__(cls, **kwargs):
@@ -102,6 +123,77 @@ class Report(Model):
 
     def run(self):
         raise NotImplementedError('Define the report run operation')
+
+
+def run_report(context, report, draft):
+    """Call a report's run(). It is trusted app code: it reads models callers cannot reach (Meta.api = None) and
+    returns only its declared columns, to the roles the report names. With Report.trusted, self.context.session
+    is open read only for as long as run() runs (evlet.database.ReadSession, as derive() gets it)."""
+    with trusted():
+        if not report.trusted:
+            return draft.run()
+        from .documents import hook_context
+        with hook_context(context, draft):
+            inner = draft.context
+            inner.limit, inner.offset, inner.sort = context.limit, context.offset, getattr(context, 'sort', None)
+            return draft.run()
+
+
+def dynamic_unit(column):
+    """Whether a column's unit is worked out per run (a Ref or a callable) rather than fixed text."""
+    return column.unit is not None and not isinstance(column.unit, str)
+
+
+def unit_path(registry, report, path):
+    """Check Ref('filter.field...') on a report: a filter, then a field of each Link's target. Returns the fields."""
+    from .fields import Link
+    parts, owner, found = path.split('.'), report, []
+    for index, part in enumerate(parts):
+        field = owner.__declared_fields__.get(part)
+        if field is None:
+            raise ValueError(f'{report.__name__}: a column unit reads {path!r}, but {owner.__name__} has no field {part}')
+        found.append(field)
+        if index < len(parts) - 1:
+            if not isinstance(field, Link):
+                raise ValueError(f'{report.__name__}: a column unit reads {path!r} through {part}, which is not a Link')
+            owner = registry.resolve(field.target)
+    return found
+
+
+def resolve_units(context, report, draft):
+    """{column: unit or None} of the columns whose unit is a Ref or a callable, for the filters this run has.
+    A Ref reads the linked record with the person's permissions; a record they cannot read gives None."""
+    units = {}
+    for column in report.columns:
+        if not dynamic_unit(column): continue
+        if callable(column.unit):
+            with trusted():
+                value = column.unit(draft)
+        else:
+            value = ref_unit(context, report, draft, column.unit.path)
+        if value is not None and (not isinstance(value, str) or not value.strip() or len(value) > 20):
+            raise ValueError(f'The unit of report column {column.name} is text of at most 20 characters, or None')
+        units[column.name] = value or None
+    return units
+
+
+def ref_unit(context, report, draft, path):
+    from .database import NotFoundError
+    registry = context._business.registry
+    fields, parts = unit_path(registry, report, path), path.split('.')
+    value = draft._values.get(parts[0])
+    for field, part in zip(fields, parts[1:]):
+        if value is None: return None
+        try:
+            value = context.get(registry.resolve(field.target), value).get(part)
+        except (AccessError, NotFoundError):
+            return None
+    return None if value is None else str(value)
+
+
+def resolved_columns(report, units):
+    """The report's columns with this run's units in place of Ref and callable units."""
+    return tuple(replace(column, unit=units.get(column.name)) if dynamic_unit(column) else column for column in report.columns)
 
 
 def metadata(definition, name, source=None):
@@ -153,6 +245,8 @@ class Forms:
             if len({column.name for column in report.columns}) != len(report.columns): raise ValueError('Duplicate report column')
             self.check(report)
             self.reports[name] = report
+        for report in self.reports.values():
+            self.check_drill(report)
         from .models import resolve_sources
         from .reactivity import graph
         for definition in self.reports.values():
@@ -164,11 +258,13 @@ class Forms:
         numbers = ('integer', 'decimal', 'currency')
         if not isinstance(report.group, str): raise ValueError('Report group is text')
         if type(report.export) is not bool: raise ValueError('Report export is True or False')
+        if type(report.trusted) is not bool: raise ValueError('Report trusted is True or False')
         if report.model is not None: registry.resolve(report.model)
         if not isinstance(report.sortable, (tuple, list)) or set(report.sortable) - set(columns):
             raise ValueError('Report sortable names declared columns')
         for column in report.columns:
             if column.link is not None: registry.resolve(column.link)
+            if dynamic_unit(column) and not callable(column.unit): unit_path(registry, report, column.unit.path)
             if column.source is not None:
                 model, field = column.source.split('.')
                 if field not in registry.resolve(model).__declared_fields__: raise ValueError('Unknown column source: ' + column.source)
@@ -177,6 +273,18 @@ class Forms:
         if chart is not None and (not isinstance(chart, Chart) or chart.model is not None or chart.x not in columns
                                   or any(columns.get(name) is None or columns[name].type not in numbers for name in chart.y)):
             raise ValueError('A report chart names a declared column and number columns')
+
+    def check_drill(self, report):
+        """A column's report= names a registered report, and its filters name that report's filters and this
+        report's columns or filters."""
+        names = {column.name for column in report.columns} | set(report.__declared_fields__)
+        for column in report.columns:
+            if column.report is None: continue
+            target = self.reports.get(column.report)
+            if target is None: raise ValueError(f'Column {column.name} links to an unknown report: {column.report}')
+            for key, value in (column.filters or {}).items():
+                if key not in target.__declared_fields__: raise ValueError(f'{column.report} has no filter {key}')
+                if value not in names: raise ValueError(f'Column {column.name} fills {key} from {value}, which is neither a column nor a filter')
 
     def hidden(self, user, report):
         """Columns whose source field this person cannot read."""
@@ -220,7 +328,7 @@ class Forms:
                 declared = report.__declared_fields__[field['name']]
                 if declared.compute is not None or declared.query is not None: field['calculated'] = True
             result.append({**descriptor, 'autorun': report.autorun,
-                           'columns': [self.column(column) for column in report.columns if column.name not in hidden],
+                           'columns': [self.column(column, user) for column in report.columns if column.name not in hidden],
                            'group': report.group, 'model': None if report.model is None else self.surfaced(report.model),
                            'source_kind': self.source_kind(report),
                            'sortable': [column for column in report.sortable if column not in hidden], 'export': report.export,
@@ -228,18 +336,23 @@ class Forms:
                            'chart': None if chart is None else {**chart.public(), 'y': [column for column in chart.y if column not in hidden]}})
         return result
 
-    def column(self, column):
-        entry = {key: value for key, value in vars(column).items() if key != 'source'}
+    def column(self, column, user=None):
+        entry = {key: value for key, value in vars(column).items() if key not in ('source', 'report', 'filters')}
         if column.link is not None: entry['link'] = self.surfaced(column.link)
+        if dynamic_unit(column):
+            # Worked out per run: the page's `units` gives it.
+            entry['unit'], entry['unit_from_filters'] = None, True
+        if column.report is not None:
+            target = self.reports[column.report]
+            # A drill-down link only to a report this person may run.
+            if user is None or self.offered(user, target):
+                entry['report'], entry['filters'] = column.report, dict(column.filters or {})
         return entry
 
     def page(self, context, report, draft, limit, offset, sort):
         """One page of a report as the browser gets it: cleaned cells, readable columns and totals."""
         context.limit, context.offset, context.sort = limit, offset, self.order(report, context.user, sort)
-        # A report's run() is trusted app code: it reads models callers cannot reach (Meta.api = None) and
-        # returns only its declared columns, to the roles the report names.
-        with trusted():
-            result = draft.run()
+        result = run_report(context, report, draft)
         if not isinstance(result, dict) or not isinstance(result.get('rows'), list) or len(result['rows']) > limit:
             raise ValueError('Reports return a bounded rows/total result from context.list')
         if type(result.get('total')) is not int or result['total'] < len(result['rows']): raise ValueError('Report total must be a nonnegative row count')
@@ -255,6 +368,9 @@ class Forms:
         # A link column holds record ids, which the response writes as text ids.
         types = {'text': Text, 'integer': Integer, 'decimal': Decimal, 'currency': Currency, 'date': Date, 'boolean': Boolean, 'link': lambda: Link(None)}
         hidden = self.hidden(context.user, report)
+        units = resolve_units(context, report, draft)
+        # A total over a column whose unit this run could not work out would add up unlike amounts: it is left out.
+        unitless = {name for name, unit in units.items() if unit is None}
         given = result.get('totals')
         if given is not None and (not isinstance(given, dict) or set(given) - {column.name for column in report.columns if column.total}):
             raise ValueError('Report totals name columns that declare total')
@@ -265,7 +381,7 @@ class Forms:
             field = types[column.type]()
             for row, source in zip(rows, result['rows']):
                 row[column.name] = field.serialize(field.clean(source.get(column.name)))
-            if not column.total: continue
+            if not column.total or column.name in unitless: continue
             if given is not None:
                 value = field.serialize(field.clean(given.get(column.name)))
                 totals[column.name] = None if value is None else str(value)
@@ -273,8 +389,9 @@ class Forms:
                 totals[column.name] = str(sum((Number(str(row[column.name])) for row in rows if row[column.name] is not None), Number(0)))
         page = {'rows': rows, 'total': result['total']}
         if totals: page['totals'] = {'scope': 'page' if given is None else 'all', 'values': totals}
+        if units: page['units'] = {name: unit for name, unit in units.items() if name not in hidden}
         grouping = self.grouping(context.user, report)
-        if grouping is not None: page['groups'] = self.groups(report, grouping, hidden, result.get('groups'), rows, types)
+        if grouping is not None: page['groups'] = self.groups(report, grouping, hidden | unitless, result.get('groups'), rows, types)
         elif result.get('groups') is not None: raise ValueError('Report groups need Report.group_by')
         return page
 
@@ -373,14 +490,14 @@ class Forms:
             draft = form_draft(report, context, body.get('filters', {}))
             settle(context, draft, complete=True)
             object.__setattr__(draft, '_readonly', True)
-            hidden = self.hidden(user, report)
+            hidden, units = self.hidden(user, report), resolve_units(context, report, draft)
             while total is None or offset < min(total, EXPORT_ROWS):
                 page = self.page(context, report, draft, min(100, EXPORT_ROWS - offset), offset, sort)
                 total = page['total']
                 if not page['rows']: break
                 rows.extend(page['rows'])
                 offset += len(page['rows'])
-        columns = [column for column in report.columns if column.name not in hidden]
+        columns = [column for column in resolved_columns(report, units) if column.name not in hidden]
         out = io.StringIO()
         writer = csv.writer(out, lineterminator='\r\n')
         # Money stays a plain number; a currency column names its ISO code in the header, never a symbol or image.

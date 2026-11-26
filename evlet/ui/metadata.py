@@ -28,7 +28,7 @@ META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list
                           'calculation_language', 'numeric_profile', 'measures', 'key_fields', 'relations', 'attachments',
                           'activity', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'autosave',
                           'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'panel_summary', 'ledger', 'append_only', 'timestamps', 'indexes',
-                          'focus', 'cards', 'duplicate', 'image', 'script', 'on_open', 'abstract'))
+                          'focus', 'cards', 'duplicate', 'image', 'script', 'on_open', 'abstract', 'importable'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -823,6 +823,8 @@ def field_schema(field):
               **({'copy': False} if getattr(field, 'copy', True) is False else {}),
               # Left out of the default list and Table columns (display only).
               **({'column': False} if getattr(field, 'column', True) is False else {}),
+              # A new record's form suggests this person's last saved value (GET /api/<model>/remembered).
+              **({'remember': True} if getattr(field, 'remember', False) else {}),
               **({'sequence': field.schema()} if field.kind == 'sequence' else {}),
               # The model script's hooks on this field and its fixed look (docs/model-scripts.md).
               **({'script': dict(field.hooks)} if getattr(field, 'hooks', None) else {}),

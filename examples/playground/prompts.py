@@ -86,3 +86,30 @@ class QuickInvoice(Prompt):
 def quick_invoice(context):
     """Open Quick invoice: an @api function that returns a prompt has no record."""
     return QuickInvoice
+
+
+class ClosePeriod(Prompt):
+    """Close invoices up to a date (Meta.period on Invoice) from trusted code: evlet.periods.set_lock writes the same
+    lock and audit row as Controls, Periods. Moving the lock earlier, or opening it, is for an admin."""
+
+    class Meta:
+        title = 'Close invoices'
+        primary = 'Close'
+
+    up_to = Date(required=True, label='Close up to')
+    reason = Text(required=True, max_length=200)
+
+    def load(self, source):
+        from evlet import periods
+        current = periods.lock_date(self.context, Invoice)
+        self.up_to = current
+
+    def submit(self):
+        from evlet import periods
+        periods.set_lock(self.context, Invoice, None, self.up_to, self.reason)
+        return Outcome(f'Invoices are closed up to {self.up_to:%d-%m-%Y}')
+
+
+def close_period(context):
+    """Open Close invoices: a prompt that sets the invoice period lock."""
+    return ClosePeriod

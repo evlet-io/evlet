@@ -87,7 +87,12 @@ production ready, but the rules below hold from 0.3 on.
   as the status badge, [states-actions.md](states-actions.md#meta-status)), `list_tabs` and `list_tab`
   (the list's tabs and the one it opens on, [ui.md](ui.md#list-tabs)). `Session.unlocked_periods(reason)`
   and `Context.unlocked_periods(reason)` are public for trusted code
-  ([model-engine.md](model-engine.md#closed-periods)).
+  ([model-engine.md](model-engine.md#closed-periods)). From 0.4.22, `evlet.periods.lock_date(context, model,
+  scope_id=None)` and `evlet.periods.set_lock(context, model, scope_id, date, reason)`, `evlet.trusted()`,
+  `Report.trusted`, `Column(unit=Ref(...) or a callable, report=, filters=)`, `Field(remember=)` and
+  `Meta.importable` with the `/api/<model>/import`, `/api/<model>/import/check` and `/api/<model>/remembered`
+  routes are public too ([model-engine.md](model-engine.md#reading-and-setting-locks-from-code),
+  [reports.md](reports.md#trusted-reads)).
 
 - **Compact record pages.** `Meta.cards` (zero to five derived fields, including those `derive()` sets, or per-record measures),
   `Main(fields, title=None)` and `Main('table')` for the main zone (the 0.4.9 form `Main(fields, *tables)` still

@@ -449,6 +449,10 @@ class Business:
                     if field['name'] == naming.field and placeholder and not field.get('placeholder'):
                         field['placeholder'] = placeholder
             entry['permissions'] = {op: self.policy.allows(user, model, op) for op in ('create', 'update', 'delete')}
+            # Meta.importable: the list offers Import (CSV) to a role that may create (evlet/imports.py).
+            from .imports import importable
+            if entry['permissions']['create'] and importable(self, model):
+                entry['importable'] = True
             # The designs this role may print the model with; absent when there are none.
             designs = self.prints.for_model(user, model) if self.prints is not None else []
             if designs:
@@ -873,7 +877,7 @@ class Business:
                 context.delete(model, record.id)
             return 204, None, []
         # Attachments and line pages have their own routes on every model.
-        own_route = len(parts) >= 5 and parts[4] in ('attachments', 'lines', 'related', 'prints')
+        own_route = len(parts) >= 5 and parts[4] in ('attachments', 'lines', 'related', 'prints') or len(parts) in (4, 5) and parts[3] == 'import'
         if getattr(model, '__declaration_mode__', False) and method in ('POST', 'PATCH') and not own_route:
             record_id = None
             if len(parts) >= 4:
@@ -923,6 +927,8 @@ class Business:
                     # A save replaces the saver's unsaved changes (docs/internal/unsaved-changes.md).
                     self.unsaved.record_saved(context._tx.connection, user, parts[2], record_id,
                                               if_match=dict(scope.get('headers', [])).get(b'x-evlet-draft-revision'))
+                if not (action or move):
+                    self.remember(context._tx, user, model, result['id'])
                 answer = self.saved_answer(context._tx, user, model, result['id'], context=context, written=result,
                                            status=201 if record_id is None else 200)
                 self.remember_create(context._tx, retry, result['id'])
@@ -936,12 +942,20 @@ class Business:
                     if repeated is not None:
                         return repeated
                 record = self.create_plain(tx, user, model, body)
+                self.remember(tx, user, model, record.id)
                 status, result, headers = self.saved_answer(tx, user, model, record.id)
                 self.remember_create(tx, retry, record.id)
             return status, result, [*headers, (b'location', f'/api/{parts[2]}/{record.id}'.encode())]
         if len(parts) == 4 and parts[3] == 'search':
             from .search import route
             return route(self, scope, user, model)
+        if len(parts) == 4 and parts[3] == 'remembered':
+            allow(method, 'GET')
+            with self.database.transaction() as tx:
+                return 200, {'values': self.remembered(tx, user, model)}, []
+        if len(parts) == 4 and parts[3] == 'import' or len(parts) == 5 and parts[3] == 'import' and parts[4] == 'check':
+            from .imports import route
+            return route(self, scope, body, user, model, dry_run=len(parts) == 5)
         if len(parts) == 4 and parts[3] in ('aggregate', 'measures', 'list_tabs') or len(parts) == 5 and parts[4] == 'measures':
             from .measures import route
             return route(self, scope, user, model, parts)
@@ -987,6 +1001,7 @@ class Business:
                 self.policy.record(tx, user, model, record_id, 'update')
                 self.save_children(tx, user, record, children)
                 self.changed(tx, model, record_id)
+                self.remember(tx, user, model, record_id)
                 self.unsaved.record_saved(tx.connection, user, parts[2], record_id,
                                           if_match=dict(scope.get('headers', [])).get(b'x-evlet-draft-revision'))
             loaded = {} if method == 'GET' else None
@@ -1333,6 +1348,54 @@ class Business:
             self.controls.change_user(user, int(match[1]), body)
             return 204, None, []
         raise AccessError(405, 'Method not allowed')
+
+    # ---------- remember=True: a person's last saved values (evlet_user_prefs, scope "remember") ----------
+
+    @staticmethod
+    def remembered_fields(model):
+        return [name for name, field in model.__declared_fields__.items() if getattr(field, 'remember', False)]
+
+    def remember(self, tx, user, model, record_id):
+        """Keep what a person just saved in the model's remember=True fields, for the next new record's form.
+        Saves through an API key are integrations, not a person's habit, so they are not kept."""
+        names = self.remembered_fields(model)
+        if not names or user is None or not user.id or getattr(user, 'access', None) is not None or not tx.connection.table_exists('evlet_user_prefs'):
+            return
+        from .identity import jsonable
+        record, resource = tx.get(model, record_id), self.registry.name_for(model)
+        for name in names:
+            value = jsonable(model.__declared_fields__[name].serialize(record._values.get(name)))
+            key = f'{resource}.{name}'
+            if value in (None, '', []):
+                tx.connection.run(qb.delete('evlet_user_prefs').where(user_id=user.id, scope='remember', key=key))
+            else:
+                tx.connection.run(qb.insert('evlet_user_prefs', user_id=user.id, scope='remember', key=key, value=json.dumps(value))
+                                  .on_conflict('user_id', 'scope', 'key').do_update(value=qb.col('excluded.value')))
+
+    def remembered(self, tx, user, model):
+        """{field: value} a new record's form suggests to this person: their last saved value in each remember=True
+        field they may still write, still valid, and for a Link still a record they can read."""
+        names = self.remembered_fields(model)
+        if not names or not self.policy.allows(user, model, 'create') or not user.id or not tx.connection.table_exists('evlet_user_prefs'):
+            return {}
+        resource, writable = self.registry.name_for(model), self.policy.fields(user, model, write=True)
+        stored = {row['key']: row['value'] for row in tx.connection.run(
+            qb.select('evlet_user_prefs', 'key', 'value').where(qb.in_('key', [f'{resource}.{name}' for name in names]), user_id=user.id, scope='remember'))}
+        values = {}
+        for name in names:
+            field, raw = model.__declared_fields__[name], stored.get(f'{resource}.{name}')
+            if raw is None or name not in writable:
+                continue
+            try:
+                value = field.clean(json.loads(raw))
+            except (ValueError, TypeError):
+                continue
+            if isinstance(field, Link) and not field.ledger_target:
+                target = self.registry.resolve(field.target)
+                if not self.policy.visible(tx, user, target, [value]):
+                    continue
+            values[name] = field.serialize(value)
+        return values
 
     def create_plain(self, tx, user, model, body):
         """POST /api/{model} for a model that is not declarative: permissions, Controls, naming, child rows.
