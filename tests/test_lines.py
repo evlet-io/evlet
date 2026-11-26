@@ -221,7 +221,9 @@ def test_nested_rows_load_with_a_bounded_statement_count(make_app):
     (status, detail, headers), statements = counted(c, 'GET', url)
     assert status == 200 and len(detail['children']['lines']) == 100 and 'children_pages' not in detail
     assert all(len(line['children']['parts']) == 9 and line['hours'] == '9.0000' for line in detail['children']['lines'])
-    assert statements <= 11, statements  # 2,407 before batching; one claims the write lock of the main file only.
+    # 2,407 before batching; one claims the write lock of the main file only, and at most one a second reads
+    # the hosts version row (evlet/hosts.py).
+    assert statements <= 12, statements
     assert Counting.draft_clock_writes == 0
     (status, saved, _), statements = counted(c, 'PATCH', url, {'title': 'nested'}, headers={b'if-match': headers[b'etag']})
     assert status == 200, saved

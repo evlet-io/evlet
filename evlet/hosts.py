@@ -23,7 +23,7 @@ from threading import Lock
 import time
 
 from . import qb
-from .adapter import Column, TableDefinition
+from .adapter import Column, OperationalError, TableDefinition
 
 logger = logging.getLogger(__name__)
 
@@ -168,9 +168,11 @@ class LiveRoutes:
                 if path is not None and not path.exists():
                     return False
                 with self.database._connection() as connection:
-                    if not connection.table_exists('evlet_hosts_version'):
+                    # One statement each second; before the 0019_hosts step the table is missing, which is no error.
+                    try:
+                        version = connection.run(qb.select('evlet_hosts_version', 'version').where(id=1)).value()
+                    except OperationalError:
                         return False
-                    version = connection.run(qb.select('evlet_hosts_version', 'version').where(id=1)).value()
                     if version == self._version and not force:
                         return False
                     rows = connection.run(qb.select('evlet_hosts', 'host', 'target').where(status='active').order_by('host')).all()
