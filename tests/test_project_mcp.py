@@ -296,3 +296,29 @@ def test_the_endpoint_reaches_a_running_instance_only_through_the_management_cha
         assert oplog.operations(project)[0]['kind'] == 'instance_restart' and oplog.operations(project)[0]['origin'] == 'cli'
     finally:
         served.stop()
+
+
+def test_the_project_site_tools_publish_render_collections_as_the_public_role(project):
+    """Phase 8: /_/manage/sites/publish renders a site's collections like every publish (docs/sites.md#collections)."""
+    import base64
+    from evlet import sites
+    from evlet.cli import channel
+    token = channel.token(project, 'acme')
+    app = instance_app(project)
+    bearer = {b'authorization': f'Bearer {token}'.encode()}
+    encode = lambda text: base64.b64encode(text.encode()).decode()
+    sites.create_site(app.business, 'www', actor='admin')
+    declaration = json.dumps({'collections': [{'name': 'notes', 'model': 'notesitem', 'json': '/data/notes.json'}]})
+    files = {'index.html': encode('<!doctype html><title>Home</title>'), '_site/collections.json': encode(declaration)}
+    status, data, _ = http(app, 'POST', '/_/manage/sites/files', {'site': 'www', 'files': files}, headers=bearer)
+    assert status == 200, data
+    # The instance's public role has no Rule for notesitem, so the collection refuses the publish and says why.
+    status, data, _ = http(app, 'POST', '/_/manage/sites/publish', {'site': 'www'}, headers=bearer)
+    assert status != 200 and 'the public role cannot read notesitem' in data['error'], data
+    assert sites.list_releases(app.business, 'www') == []
+    files = {'_site/collections.json': encode('{"collections": []}')}
+    assert http(app, 'POST', '/_/manage/sites/files', {'site': 'www', 'files': files}, headers=bearer)[0] == 200
+    status, data, _ = http(app, 'POST', '/_/manage/sites/publish', {'site': 'www', 'note': 'From the project'}, headers=bearer)
+    assert status == 200 and data['current'] and data['generated'] == 0 and data['published_by'] == 'project', data
+    status, data, _ = http(app, 'POST', '/_/manage/sites/rollback', {'site': 'www', 'release': data['release']}, headers=bearer)
+    assert status == 200 and data['current'], data
